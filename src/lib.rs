@@ -251,9 +251,9 @@ impl PlcValue {
 /// # Example
 /// 
 /// ```rust
-/// # use your_crate::EipClient;
+/// # use rust_ethernet_ip::{EipClient, PlcValue};
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let mut client = EipClient::connect("192.168.1.100:44818").await?;
+/// let mut client = EipClient::connect("192.168.0.1:44818").await?;
 /// 
 /// // Read a boolean tag
 /// let running = client.read_tag("MotorRunning").await?;
@@ -311,6 +311,7 @@ impl EipClient {
     /// # Example
     /// 
     /// ```rust
+    /// # use rust_ethernet_ip::EipClient;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let client = EipClient::connect("192.168.1.100:44818").await?;
     /// println!("Connected successfully!");
@@ -436,6 +437,7 @@ impl EipClient {
     /// # Example
     /// 
     /// ```rust
+    /// # use rust_ethernet_ip::{EipClient, PlcValue};
     /// # async fn example(client: &mut EipClient) -> Result<(), Box<dyn std::error::Error>> {
     /// let motor_speed = client.read_tag("MotorSpeed").await?;
     /// match motor_speed {
@@ -520,6 +522,7 @@ impl EipClient {
     /// # Example
     /// 
     /// ```rust
+    /// # use rust_ethernet_ip::{EipClient, PlcValue};
     /// # async fn example(client: &mut EipClient) -> Result<(), Box<dyn std::error::Error>> {
     /// // Write different data types
     /// client.write_tag("StartMotor", PlcValue::Bool(true)).await?;
