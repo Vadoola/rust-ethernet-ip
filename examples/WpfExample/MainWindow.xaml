@@ -1,0 +1,196 @@
+<Window x:Class="WpfExample.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:WpfExample.ViewModels"
+        xmlns:local="clr-namespace:WpfExample"
+        xmlns:converters="clr-namespace:WpfExample.Converters"
+        Title="🦀 Rust EtherNet/IP - WPF Demo" 
+        Height="700" Width="1000"
+        Background="{StaticResource BackgroundBrush}"
+        WindowStartupLocation="CenterScreen">
+    
+    <Window.Resources>
+        <!-- Boolean to Visibility Converter -->
+        <BooleanToVisibilityConverter x:Key="BoolToVisConverter"/>
+        
+        <!-- Inverted Boolean Converter -->
+        <converters:InvertedBooleanConverter x:Key="InvertedBoolConverter"/>
+    </Window.Resources>
+    
+    <Window.DataContext>
+        <vm:MainViewModel/>
+    </Window.DataContext>
+    
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        
+        <!-- Header -->
+        <Border Grid.Row="0" Background="{StaticResource SurfaceBrush}" 
+                CornerRadius="8" Padding="16" Margin="0,0,0,16">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <!-- Title -->
+                <TextBlock Grid.Row="0" Grid.Column="0" 
+                          Text="🦀 Rust EtherNet/IP Driver - WPF Demo"
+                          FontSize="24" FontWeight="Bold" 
+                          Foreground="{StaticResource PrimaryBrush}"/>
+                
+                <!-- Connection Controls -->
+                <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="0,8,0,0">
+                    <TextBlock Text="PLC Address:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBox Text="{Binding PlcAddress}" Width="200" Padding="8,4">
+                        <TextBox.IsEnabled>
+                            <Binding Path="IsConnected" Converter="{StaticResource InvertedBoolConverter}"/>
+                        </TextBox.IsEnabled>
+                    </TextBox>
+                    <Button Content="Connect" Command="{Binding ConnectCommand}" 
+                            Style="{StaticResource SuccessButton}" Margin="8,0,0,0">
+                        <Button.IsEnabled>
+                            <Binding Path="IsConnected" Converter="{StaticResource InvertedBoolConverter}"/>
+                        </Button.IsEnabled>
+                    </Button>
+                    <Button Content="Disconnect" Command="{Binding DisconnectCommand}" 
+                            Style="{StaticResource ErrorButton}"
+                            IsEnabled="{Binding IsConnected}"/>
+                </StackPanel>
+                
+                <!-- Status -->
+                <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" 
+                           Orientation="Vertical" HorizontalAlignment="Right">
+                    <TextBlock Text="{Binding ConnectionStatus}" FontWeight="Bold" FontSize="16">
+                        <TextBlock.Foreground>
+                            <SolidColorBrush Color="{Binding IsConnected, Converter={StaticResource BoolToColorConverter}}"/>
+                        </TextBlock.Foreground>
+                    </TextBlock>
+                    <TextBlock Text="{Binding SessionId, StringFormat='Session: \{0\}'}" FontSize="12" Opacity="0.7"/>    
+                </StackPanel>
+            </Grid>
+        </Border>
+        
+        <!-- Performance Info -->
+        <Border Grid.Row="1" Background="{StaticResource SurfaceBrush}" 
+                CornerRadius="8" Padding="16" Margin="0,0,0,16">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <TextBlock Text="📊 Read Rate:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBlock Text="{Binding ReadRate, StringFormat={}{0} ops/sec}" 
+                                FontWeight="Bold" VerticalAlignment="Center"/>
+                </StackPanel>
+                
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <TextBlock Text="📝 Write Rate:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBlock Text="{Binding WriteRate, StringFormat={}{0} ops/sec}" 
+                                FontWeight="Bold" VerticalAlignment="Center"/>
+                </StackPanel>
+                
+                <Button Grid.Column="2" Content="Run Benchmark" 
+                        Command="{Binding RunBenchmarkCommand}"
+                        Style="{StaticResource ModernButton}"
+                        IsEnabled="{Binding IsConnected}"/>
+            </Grid>
+        </Border>
+        
+        <!-- Main Content -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            
+            <!-- Left Panel: Tag Monitoring -->
+            <Border Grid.Column="0" Background="{StaticResource SurfaceBrush}" 
+                    CornerRadius="8" Padding="16" Margin="0,0,8,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- Tag Monitor Title -->
+                    <TextBlock Grid.Row="0" Text="📊 Tag Monitoring" 
+                               FontSize="18" FontWeight="Bold" Margin="0,0,0,16"/>
+                    
+                    <!-- Tags DataGrid -->
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding Tags}" 
+                              AutoGenerateColumns="False" CanUserAddRows="False"
+                              GridLinesVisibility="Horizontal" HeadersVisibility="Column"
+                              Background="Transparent" BorderThickness="0">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Tag Name" Binding="{Binding Name}" Width="*"/>
+                            <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*"/>
+                            <DataGridTextColumn Header="Type" Binding="{Binding DataType}" Width="Auto"/>
+                            <DataGridTextColumn Header="Updated" 
+                                              Binding="{Binding LastUpdated, StringFormat='HH:mm:ss'}" Width="Auto"/>
+                        </DataGrid.Columns>
+                        <DataGrid.RowStyle>
+                            <Style TargetType="DataGridRow">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasError}" Value="True">
+                                        <Setter Property="Background" Value="#FFEBEE"/>
+                                        <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.RowStyle>
+                    </DataGrid>
+                    
+                    <!-- Control Buttons -->
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,16,0,0">
+                        <Button Content="🔄 Toggle Motor" Command="{Binding ToggleMotorCommand}"
+                                Style="{StaticResource WarningButton}" IsEnabled="{Binding IsConnected}"/>
+                        <Button Content="🔄 Reset Counter" Command="{Binding ResetCounterCommand}"
+                                Style="{StaticResource ModernButton}" IsEnabled="{Binding IsConnected}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+            
+            <!-- Right Panel: Activity Log -->
+            <Border Grid.Column="1" Background="{StaticResource SurfaceBrush}" 
+                    CornerRadius="8" Padding="16" Margin="8,0,0,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- Log Title -->
+                    <TextBlock Grid.Row="0" Text="📝 Activity Log" 
+                               FontSize="18" FontWeight="Bold" Margin="0,0,0,16"/>
+                    
+                    <!-- Log ListBox -->
+                    <ListBox Grid.Row="1" ItemsSource="{Binding LogMessages}"
+                             Background="#1E1E1E" Foreground="#00FF00" 
+                             FontFamily="Consolas" FontSize="12"
+                             BorderThickness="0" Padding="8">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Padding" Value="2"/>
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                    </ListBox>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>
