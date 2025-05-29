@@ -1,0 +1,33 @@
+[package]
+name = "rust_ethernet_ip"
+version = "0.1.0"
+edition = "2021"
+authors = ["Sergio Gallegos"]
+description = "High-performance EtherNet/IP driver for Allen-Bradley PLCs"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/sergiogallegos/rust-ethernet-ip"
+homepage = "https://github.com/sergiogallegos/rust-ethernet-ip"
+documentation = "https://docs.rs/rust_ethernet_ip"
+readme = "README.md"
+keywords = ["ethernet-ip", "plc", "industrial", "automation", "allen-bradley"]
+categories = ["network-programming", "embedded", "api-bindings"]
+rust-version = "1.70"
+
+[lib]
+name = "rust_ethernet_ip"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "enip-test"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1.0", features = ["full"] }
+lazy_static = "1.4"
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[features]
+default = []
+ffi = []  # Enable C FFI exports
