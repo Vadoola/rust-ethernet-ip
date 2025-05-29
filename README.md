@@ -484,24 +484,33 @@ For commercial support, custom development, or enterprise licensing:
 
 ## 📈 Roadmap
 
-### v1.1 (Planned)
-- [ ] STRING data type support
-- [ ] Array element operations  
+### v0.2.0 (Current - Polish & C# Parity)
+- [ ] Complete C# wrapper (STRING, arrays, batch ops)
 - [ ] Connection pooling
-- [ ] Enhanced error recovery
-- [ ] TypeScript/WASM bindings
+- [ ] Enhanced documentation
+- [ ] More comprehensive testing
 
-### v1.2 (Future)
-- [ ] Additional PLC models (ControlLogix, MicroLogix)
+### v0.5.0 (Advanced Features)
 - [ ] UDT (User Defined Type) support
-- [ ] Tag browsing/discovery
+- [ ] Connected messaging
 - [ ] Real-time data streaming
+- [ ] Additional PLC models
 
-### v2.0 (Long-term)
-- [ ] CIP Object services
-- [ ] Advanced security features
+### v1.0.0 (Production Ready)
+- [ ] Full test coverage
+- [ ] Performance optimizations
+- [ ] Security review
+- [ ] Documentation website
+
+### v1.5.0 (Extended Platform)
+- [ ] TypeScript/WASM bindings
 - [ ] Multi-PLC coordination
-- [ ] Cloud integration capabilities
+- [ ] Cloud integration
+
+### v2.0.0 (Industrial IoT Platform)
+- [ ] CIP Object services
+- [ ] Protocol extensions
+- [ ] Enterprise features
 
 ---
 
