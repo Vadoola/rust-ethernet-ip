@@ -1,8 +1,14 @@
 # 🦀 Rust EtherNet/IP Driver
 
+> **⚠️ DEVELOPMENT STATUS**  
+> **This project is currently under active development and is NOT ready for production use.**  
+> Breaking changes may occur between versions. Use at your own risk in development/testing environments only.  
+> Production-ready release is planned for Q2 2025.
+
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Performance](https://img.shields.io/badge/performance-1500%2B%20ops%2Fsec-green.svg)]()
+[![Development](https://img.shields.io/badge/status-in%20development-yellow.svg)]()
 
 A high-performance, production-ready EtherNet/IP communication library for Allen-Bradley CompactLogix PLCs, written in pure Rust with seamless C# integration.
 
@@ -64,6 +70,18 @@ A high-performance, production-ready EtherNet/IP communication library for Allen
 │  • Memory-safe tag operations                     │
 └─────────────────────────────────────────────────────┘
 ```
+
+## 🚧 Development Status & Known Limitations
+
+> **Important**: This library is in active development. Current limitations include:
+> 
+> - **API Stability**: Public APIs may change between versions
+> - **Testing Coverage**: Limited testing with real PLC hardware
+> - **Error Handling**: Some edge cases may not be handled gracefully
+> - **Documentation**: Some features may lack complete documentation
+> - **Platform Support**: Primarily tested on Windows with limited Linux/macOS testing
+> 
+> **Contributions and feedback are welcome!** Please report issues and help improve the library.
 
 ## 🚀 Quick Start
 
@@ -224,7 +242,7 @@ public static class EtherNetIpExtensions
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/rust_enip_driver.git
+git clone https://github.com/sergiogallegos/rust-ethernet-ip.git
 cd rust_enip_driver
 
 # Add dependencies
@@ -422,7 +440,7 @@ Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTIN
 
 ```bash
 # Fork and clone
-git clone https://github.com/yourusername/rust_enip_driver.git
+git clone https://github.com/sergiogallegos/rust-ethernet-ip.git
 
 # Create feature branch
 git checkout -b feature/amazing-feature
@@ -447,8 +465,8 @@ cargo run --bin main
 
 ### Getting Help
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/rust_enip_driver/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/rust_enip_driver/discussions)
+- **Issues**: [GitHub Issues](https://github.com/sergiogallegos/rust-ethernet-ip/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/sergiogallegos/rust-ethernet-ip/discussions)
 - **Documentation**: See inline code documentation
 - **Examples**: Check `main.rs` and C# samples
 
