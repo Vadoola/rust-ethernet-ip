@@ -153,7 +153,7 @@ impl EipClient {
         let value_bytes = value.to_bytes();
         let data_type = value.get_data_type();
         
-        let mut cip_request = vec![0x4D, 0x00];
+        let mut cip_request = vec![0x53, 0x02]; // Write Tag Service with verification
         let mut path = vec![0x91, tag_bytes.len() as u8];
         path.extend_from_slice(tag_bytes);
         

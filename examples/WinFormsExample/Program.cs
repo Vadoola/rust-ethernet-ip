@@ -2,7 +2,7 @@
 using System;
 using System.Windows.Forms;
 
-namespace PlcMonitorWinForms
+namespace WinFormsExample
 {
     internal static class Program
     {

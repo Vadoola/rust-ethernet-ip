@@ -172,9 +172,72 @@ namespace RustEtherNetIp
             IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
             try
             {
+                // Try to read the current value first
+                try
+                {
+                    var currentValue = ReadBool(tagName);
+                    if (currentValue == value)
+                    {
+                        Console.WriteLine($"ℹ️ Tag '{tagName}' already has value {value}, skipping write");
+                        return; // No need to write if value is already set
+                    }
+                }
+                catch (Exception ex)
+                {
+                    throw new Exception($"Failed to read current value of tag '{tagName}': {ex.Message}");
+                }
+
+                // Try to get metadata, but don't fail if we can't
+                try
+                {
+                    var metadata = GetTagMetadata(tagName);
+                    if (metadata.DataType != 0xC1) // 0xC1 is BOOL type
+                    {
+                        throw new Exception($"Tag '{tagName}' exists but is not a BOOL type. Actual type: 0x{metadata.DataType:X2}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Log but continue - we know the tag exists and is readable as a BOOL
+                    Console.WriteLine($"Warning: Could not get metadata for tag '{tagName}': {ex.Message}");
+                }
+
+                // Log the write attempt
+                Console.WriteLine($"📝 Writing BOOL: {value} to tag '{tagName}'");
+
+                // Attempt the write
                 int result = eip_write_bool(_clientId, tagPtr, value ? 1 : 0);
                 if (result != 0)
-                    throw new Exception($"Failed to write BOOL tag '{tagName}'. Check tag exists and is writable.");
+                {
+                    string errorMsg = result switch
+                    {
+                        -1 => "Tag not found",
+                        -2 => "Tag is read-only",
+                        -3 => "Tag is protected",
+                        -4 => "Invalid data type",
+                        -5 => "Access denied",
+                        _ => $"Unknown error (code: {result})"
+                    };
+                    throw new Exception($"Failed to write BOOL tag '{tagName}'. {errorMsg}");
+                }
+
+                // Add a small delay to allow the PLC to process the write
+                System.Threading.Thread.Sleep(100);
+
+                // Verify the write by reading back
+                try
+                {
+                    var verifyValue = ReadBool(tagName);
+                    if (verifyValue != value)
+                    {
+                        throw new Exception($"Write verification failed for tag '{tagName}'. Expected: {value}, Got: {verifyValue}");
+                    }
+                    Console.WriteLine($"✅ Successfully wrote and verified BOOL: {value} to tag '{tagName}'");
+                }
+                catch (Exception ex)
+                {
+                    throw new Exception($"Write verification failed for tag '{tagName}': {ex.Message}");
+                }
             }
             finally
             {

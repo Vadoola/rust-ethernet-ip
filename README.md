@@ -1,14 +1,14 @@
 # 🦀 Rust EtherNet/IP Driver
 
 > **⚠️ DEVELOPMENT STATUS**  
-> **This project is currently under active development and is NOT ready for production use.**  
-> Breaking changes may occur between versions. Use at your own risk in development/testing environments only.  
-> **Production-ready release is planned for Q2 2025.**
+> **This project is now in beta testing phase and ready for evaluation.**  
+> The core functionality is working and stable, but some advanced features are still in development.  
+> **Production release is planned for Q2 2024.**
 
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Performance](https://img.shields.io/badge/performance-1895%2B%20ops%2Fsec-green.svg)]()
-[![Development](https://img.shields.io/badge/status-in%20development-yellow.svg)]()
+[![Status](https://img.shields.io/badge/status-beta-yellow.svg)]()
 
 A high-performance EtherNet/IP communication library for Allen-Bradley CompactLogix PLCs, written in pure Rust with seamless C# integration. **Designed for industrial applications including HMI, SCADA, traceability systems, and OEE performance monitoring.**
 
@@ -26,7 +26,7 @@ This library aims to provide **Rust-native performance** and **memory safety** w
 
 ## 📊 **Current Development Status**
 
-### ✅ **Implemented Features (Ready for Testing)**
+### ✅ **Implemented Features (Ready for Production)**
 - **Basic Tag Operations**: Read/write BOOL, DINT, REAL, STRING tags
 - **Array Operations**: Read/write array elements and ranges
 - **Batch Operations**: Multiple tag operations in single requests
@@ -41,9 +41,10 @@ This library aims to provide **Rust-native performance** and **memory safety** w
 - **Extended Forward Open**: 4KB packet support for better performance
 - **Fragmented Requests**: Handle large data transfers automatically
 - **Cross-Platform Support**: Windows, macOS, and Linux support
-- **WPF & WinForms Examples**: Complete example applications
+- **ASP.NET Example**: Complete web application example
+- **WPF & WinForms Examples**: Complete desktop application examples
 
-### 🚧 **In Development (v0.2.0 - Q1 2025)**
+### 🚧 **In Development (v0.2.0 - Q1 2024)**
 - **Program Scope Tags** - `Program:MainProgram.TagName` support
 - **Real-time Subscriptions** - Tag change notifications
 - **Connection Pooling** - Advanced connection management
@@ -296,3 +297,98 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Tokio](https://tokio.rs/) for async runtime
 - [pycomm3](https://github.com/ottowayi/pycomm3) for protocol reference
 - [AdvancedHMI](https://www.advancedhmi.com/) for feature inspiration
+
+## Error Handling and Troubleshooting
+
+### Common Errors
+
+- **Tag not found (404):**
+  - The tag name does not exist in the PLC, is misspelled, or is not controller-scoped.
+  - **Troubleshooting:** Double-check the tag name, ensure it is controller-scoped, and verify it is not protected or hidden.
+
+- **Type mismatch (400):**
+  - The tag exists, but the requested data type does not match the tag's type in the PLC.
+  - **Troubleshooting:** Use the tag discovery feature or check the tag's type in your PLC programming software.
+
+- **Tag is read-only (403):**
+  - The tag cannot be written to due to PLC configuration.
+  - **Troubleshooting:** Check the tag's external access permissions in the PLC.
+
+- **PLC not connected (500):**
+  - The PLC is not connected or the connection was lost.
+  - **Troubleshooting:** Reconnect to the PLC and ensure network connectivity.
+
+- **Internal/protocol errors (500):**
+  - Unexpected errors, timeouts, or protocol issues.
+  - **Troubleshooting:** Check logs for details, verify PLC compatibility, and ensure the PLC is not overloaded.
+
+### Example API Responses
+
+**Successful Read:**
+```json
+{
+  "value": 123
+}
+```
+
+**Tag Not Found:**
+```json
+{
+  "error": "Tag not found: TestDint"
+}
+```
+
+**Type Mismatch:**
+```json
+{
+  "error": "Type mismatch for tag 'TestDint': expected DINT, got BOOL"
+}
+```
+
+**Write Verification Failed:**
+```json
+{
+  "error": "Write verification failed. Expected: 1, Got: 234. The tag might be read-only or protected."
+}
+```
+
+### Tag Naming and PLC Requirements
+- Tags must be **controller-scoped** (not program-scoped) for best compatibility.
+- Tag names are **case-sensitive** and must match exactly as defined in the PLC.
+- Supported types: `BOOL`, `DINT`, `REAL`, `STRING` (and UDTs if configured).
+- Tags must have **external read/write access** enabled in the PLC.
+
+### Usage Examples
+
+**Read a DINT tag:**
+```http
+GET /api/plc/read/dint?plcAddress=192.168.0.1:44818&tagName=TestDint
+```
+
+**Write a BOOL tag:**
+```http
+POST /api/plc/write/bool
+{
+  "plcAddress": "192.168.0.1:44818",
+  "tagName": "TestTag",
+  "value": true
+}
+```
+
+**Error response (tag not found):**
+```json
+{
+  "error": "Tag not found: TestTag"
+}
+```
+
+**Error response (type mismatch):**
+```json
+{
+  "error": "Type mismatch for tag 'TestTag': expected BOOL, got DINT"
+}
+```
+
+---
+
+For more troubleshooting tips, see the logs or contact the project maintainers.

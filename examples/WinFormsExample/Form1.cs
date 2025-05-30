@@ -5,412 +5,236 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using RustEtherNetIp;
 
-namespace PlcMonitorWinForms
+namespace WinFormsExample
 {
-    public class Form1 : Form
+    public partial class Form1 : Form
     {
-        private EtherNetIpClient? _plcClient;
-        private System.Windows.Forms.Timer? _refreshTimer;
-        private bool _isConnected = false;
+        private EtherNetIpClient? _client;
+        private string _plcAddress = "192.168.0.1:44818";
 
         public Form1()
         {
-            InitializeComponent();
-            SetupTimer();
+            InitializeControls();
         }
 
-        private void InitializeComponent()
+        private void InitializeControls()
         {
-            // Form setup
-            this.SuspendLayout();
-            
-            this.Text = "🦀 Rust EtherNet/IP - PLC Monitor";
-            this.ClientSize = new Size(480, 450);
-            this.StartPosition = FormStartPosition.CenterScreen;
-            this.FormBorderStyle = FormBorderStyle.FixedSingle;
-            this.MaximizeBox = false;
-
-            // Connection controls
-            var lblAddress = new Label()
+            // Create controls
+            var connectButton = new Button
             {
-                Text = "PLC Address:",
-                Location = new Point(20, 20),
-                Size = new Size(80, 23),
-                AutoSize = false
-            };
-            this.Controls.Add(lblAddress);
-
-            var txtAddress = new TextBox()
-            {
-                Name = "txtAddress",
-                Text = "192.168.0.1:44818",
-                Location = new Point(110, 20),
-                Size = new Size(150, 23)
-            };
-            this.Controls.Add(txtAddress);
-
-            var btnConnect = new Button()
-            {
-                Name = "btnConnect",
                 Text = "Connect",
-                Location = new Point(280, 20),
-                Size = new Size(75, 23),
-                BackColor = Color.LightGreen,
-                UseVisualStyleBackColor = false
+                Location = new System.Drawing.Point(10, 10),
+                Size = new System.Drawing.Size(100, 30)
             };
-            this.Controls.Add(btnConnect);
+            connectButton.Click += ConnectButton_Click;
 
-            var btnDisconnect = new Button()
+            var addressTextBox = new TextBox
             {
-                Name = "btnDisconnect",
-                Text = "Disconnect",
-                Location = new Point(365, 20),
-                Size = new Size(75, 23),
-                BackColor = Color.LightCoral,
-                UseVisualStyleBackColor = false,
-                Enabled = false
+                Text = _plcAddress,
+                Location = new System.Drawing.Point(120, 10),
+                Size = new System.Drawing.Size(200, 30)
             };
-            this.Controls.Add(btnDisconnect);
+            addressTextBox.TextChanged += (s, e) => _plcAddress = addressTextBox.Text;
 
-            var lblStatus = new Label()
+            var tagNameTextBox = new TextBox
             {
-                Name = "lblStatus",
-                Text = "❌ Disconnected",
-                Location = new Point(20, 55),
-                Size = new Size(200, 23),
-                ForeColor = Color.Red,
-                Font = new Font("Arial", 9, FontStyle.Bold),
-                AutoSize = false
+                Location = new System.Drawing.Point(10, 50),
+                Size = new System.Drawing.Size(200, 30),
+                PlaceholderText = "Enter tag name"
             };
-            this.Controls.Add(lblStatus);
 
-            // Separator line
-            var separator1 = new Label()
+            var discoverButton = new Button
             {
-                Text = "────────────────────────────────────────────────",
-                Location = new Point(20, 85),
-                Size = new Size(440, 20),
-                ForeColor = Color.Gray,
-                AutoSize = false
+                Text = "Discover Tag",
+                Location = new System.Drawing.Point(220, 50),
+                Size = new System.Drawing.Size(100, 30)
             };
-            this.Controls.Add(separator1);
+            discoverButton.Click += (s, e) => DiscoverTag(tagNameTextBox.Text);
 
-            // Tag monitoring section
-            var lblMonitorTitle = new Label()
+            var valueTextBox = new TextBox
             {
-                Text = "📊 Tag Monitoring:",
-                Location = new Point(20, 110),
-                Size = new Size(200, 23),
-                Font = new Font("Arial", 10, FontStyle.Bold),
-                AutoSize = false
+                Location = new System.Drawing.Point(10, 90),
+                Size = new System.Drawing.Size(200, 30),
+                PlaceholderText = "Enter value to write"
             };
-            this.Controls.Add(lblMonitorTitle);
 
-            var lblMotorStatus = new Label()
+            var writeButton = new Button
             {
-                Name = "lblMotorStatus",
-                Text = "Motor Status: Unknown",
-                Location = new Point(40, 140),
-                Size = new Size(200, 23),
-                AutoSize = false
+                Text = "Write Value",
+                Location = new System.Drawing.Point(220, 90),
+                Size = new System.Drawing.Size(100, 30)
             };
-            this.Controls.Add(lblMotorStatus);
+            writeButton.Click += (s, e) => WriteTag(tagNameTextBox.Text, valueTextBox.Text);
 
-            var lblCounter = new Label()
+            var logTextBox = new TextBox
             {
-                Name = "lblCounter",
-                Text = "Counter: Unknown",
-                Location = new Point(40, 170),
-                Size = new Size(200, 23),
-                AutoSize = false
-            };
-            this.Controls.Add(lblCounter);
-
-            var lblTemperature = new Label()
-            {
-                Name = "lblTemperature",
-                Text = "Temperature: Unknown",
-                Location = new Point(40, 200),
-                Size = new Size(200, 23),
-                AutoSize = false
-            };
-            this.Controls.Add(lblTemperature);
-
-            // Separator line
-            var separator2 = new Label()
-            {
-                Text = "────────────────────────────────────────────────",
-                Location = new Point(20, 230),
-                Size = new Size(440, 20),
-                ForeColor = Color.Gray,
-                AutoSize = false
-            };
-            this.Controls.Add(separator2);
-
-            // Control section
-            var lblControlTitle = new Label()
-            {
-                Text = "🎮 Controls:",
-                Location = new Point(20, 255),
-                Size = new Size(200, 23),
-                Font = new Font("Arial", 10, FontStyle.Bold),
-                AutoSize = false
-            };
-            this.Controls.Add(lblControlTitle);
-
-            var btnToggleMotor = new Button()
-            {
-                Name = "btnToggleMotor",
-                Text = "Toggle Motor",
-                Location = new Point(40, 285),
-                Size = new Size(100, 30),
-                BackColor = Color.LightBlue,
-                UseVisualStyleBackColor = false,
-                Enabled = false
-            };
-            this.Controls.Add(btnToggleMotor);
-
-            var btnResetCounter = new Button()
-            {
-                Name = "btnResetCounter",
-                Text = "Reset Counter",
-                Location = new Point(150, 285),
-                Size = new Size(100, 30),
-                BackColor = Color.LightYellow,
-                UseVisualStyleBackColor = false,
-                Enabled = false
-            };
-            this.Controls.Add(btnResetCounter);
-
-            // Log section
-            var lblLogTitle = new Label()
-            {
-                Text = "📝 Activity Log:",
-                Location = new Point(20, 325),
-                Size = new Size(200, 23),
-                Font = new Font("Arial", 10, FontStyle.Bold),
-                AutoSize = false
-            };
-            this.Controls.Add(lblLogTitle);
-
-            var txtLog = new TextBox()
-            {
-                Name = "txtLog",
-                Location = new Point(20, 355),
-                Size = new Size(440, 80),
                 Multiline = true,
                 ScrollBars = ScrollBars.Vertical,
-                ReadOnly = true,
-                Font = new Font("Consolas", 8),
-                BackColor = Color.Black,
-                ForeColor = Color.Lime
+                Location = new System.Drawing.Point(10, 130),
+                Size = new System.Drawing.Size(310, 200),
+                ReadOnly = true
             };
-            this.Controls.Add(txtLog);
 
-            // Wire up events
-            btnConnect.Click += async (s, e) => await BtnConnect_Click(s, e);
-            btnDisconnect.Click += (s, e) => BtnDisconnect_Click(s, e);
-            btnToggleMotor.Click += async (s, e) => await BtnToggleMotor_Click(s, e);
-            btnResetCounter.Click += async (s, e) => await BtnResetCounter_Click(s, e);
+            // Add controls to form
+            Controls.AddRange(new Control[] 
+            { 
+                connectButton, 
+                addressTextBox, 
+                tagNameTextBox, 
+                discoverButton,
+                valueTextBox,
+                writeButton,
+                logTextBox
+            });
 
-            this.ResumeLayout(true);
-            this.PerformLayout();
+            // Store log textbox for later use
+            Tag = logTextBox;
         }
 
-        private void SetupTimer()
+        private void Log(string message)
         {
-            _refreshTimer = new System.Windows.Forms.Timer();
-            _refreshTimer.Interval = 1000; // 1 second
-            _refreshTimer.Tick += async (s, e) => await RefreshTimer_Tick(s, e);
+            if (Tag is TextBox logBox)
+            {
+                logBox.AppendText($"{DateTime.Now:HH:mm:ss} - {message}{Environment.NewLine}");
+            }
         }
 
-        private async Task BtnConnect_Click(object? sender, EventArgs e)
+        private void ConnectButton_Click(object? sender, EventArgs e)
         {
             try
             {
-                var btnConnect = this.Controls["btnConnect"] as Button;
-                var txtAddress = this.Controls["txtAddress"] as TextBox;
-                var lblStatus = this.Controls["lblStatus"] as Label;
-                var btnDisconnect = this.Controls["btnDisconnect"] as Button;
-
-                if (btnConnect == null || txtAddress == null || lblStatus == null || btnDisconnect == null) return;
-
-                btnConnect.Enabled = false;
-                LogMessage("🔌 Connecting to PLC...");
-
-                _plcClient = new EtherNetIpClient();
-
-                bool connected = await Task.Run(() => _plcClient.Connect(txtAddress.Text));
-
-                if (connected)
-                {
-                    _isConnected = true;
-                    lblStatus.Text = "✅ Connected";
-                    lblStatus.ForeColor = Color.Green;
-
-                    btnConnect.Enabled = false;
-                    btnDisconnect.Enabled = true;
-                    txtAddress.Enabled = false;
-
-                    // Enable control buttons
-                    if (this.Controls["btnToggleMotor"] is Button btnToggle)
-                        btnToggle.Enabled = true;
-                    if (this.Controls["btnResetCounter"] is Button btnReset)
-                        btnReset.Enabled = true;
-
-                    _refreshTimer?.Start();
-                    LogMessage($"✅ Connected! Client ID: {_plcClient.ClientId}");
-                }
-                else
-                {
-                    LogMessage("❌ Connection failed!");
-                    btnConnect.Enabled = true;
-                    _plcClient?.Dispose();
-                    _plcClient = null;
-                }
+                _client = new EtherNetIpClient();
+                _client.Connect(_plcAddress);
+                Log($"Connected to PLC at {_plcAddress}");
             }
             catch (Exception ex)
             {
-                LogMessage($"❌ Connection error: {ex.Message}");
-                var btnConnect = this.Controls["btnConnect"] as Button;
-                if (btnConnect != null) btnConnect.Enabled = true;
+                Log($"Error connecting to PLC: {ex.Message}");
+                _client = null;
             }
         }
 
-        private void BtnDisconnect_Click(object? sender, EventArgs e)
+        private void DiscoverTag(string tagName)
         {
-            DisconnectFromPlc();
-        }
-
-        private async Task BtnToggleMotor_Click(object? sender, EventArgs e)
-        {
-            if (!_isConnected || _plcClient == null) return;
+            if (_client == null)
+            {
+                Log("Not connected to PLC");
+                return;
+            }
 
             try
             {
-                // Read current state
-                bool currentState = await Task.Run(() => _plcClient.ReadBool("TestTag"));
-                
-                // Toggle it
-                bool newState = !currentState;
-                await Task.Run(() => _plcClient.WriteBool("TestTag", newState));
-                
-                LogMessage($"✏️ Motor toggled to: {(newState ? "ON" : "OFF")}");
-            }
-            catch (Exception ex)
-            {
-                LogMessage($"❌ Toggle error: {ex.Message}");
-            }
-        }
-
-        private async Task BtnResetCounter_Click(object? sender, EventArgs e)
-        {
-            if (!_isConnected || _plcClient == null) return;
-
-            try
-            {
-                await Task.Run(() => _plcClient.WriteDint("TestDint", 0));
-                LogMessage("✏️ Counter reset to 0");
-            }
-            catch (Exception ex)
-            {
-                LogMessage($"❌ Reset error: {ex.Message}");
-            }
-        }
-
-        private async Task RefreshTimer_Tick(object? sender, EventArgs e)
-        {
-            if (!_isConnected || _plcClient == null) return;
-
-            try
-            {
-                await Task.Run(() =>
+                // Try to read the tag to determine its type
+                try
                 {
-                    // Read all tags
-                    bool motorRunning = _plcClient.ReadBool("TestTag");
-                    int counter = _plcClient.ReadDint("TestDint");
-                    float temperature = _plcClient.ReadReal("TestReal");
-
-                    // Update UI on main thread
-                    this.Invoke(new Action(() =>
-                    {
-                        if (this.Controls["lblMotorStatus"] is Label lblMotor)
-                            lblMotor.Text = $"Motor Status: {(motorRunning ? "🟢 RUNNING" : "🔴 STOPPED")}";
-
-                        if (this.Controls["lblCounter"] is Label lblCounter)
-                            lblCounter.Text = $"Counter: {counter:N0}";
-
-                        if (this.Controls["lblTemperature"] is Label lblTemp)
-                            lblTemp.Text = $"Temperature: {temperature:F1}°C";
-                    }));
-                });
-            }
-            catch (Exception ex)
-            {
-                this.Invoke(new Action(() => LogMessage($"⚠️ Read error: {ex.Message}")));
-            }
-        }
-
-        private void DisconnectFromPlc()
-        {
-            _refreshTimer?.Stop();
-            _isConnected = false;
-
-            _plcClient?.Dispose();
-            _plcClient = null;
-
-            // Update UI
-            if (this.Controls["lblStatus"] is Label lblStatus)
-            {
-                lblStatus.Text = "❌ Disconnected";
-                lblStatus.ForeColor = Color.Red;
-            }
-
-            if (this.Controls["btnConnect"] is Button btnConnect)
-                btnConnect.Enabled = true;
-            if (this.Controls["btnDisconnect"] is Button btnDisconnect)
-                btnDisconnect.Enabled = false;
-            if (this.Controls["txtAddress"] is TextBox txtAddress)
-                txtAddress.Enabled = true;
-
-            // Disable control buttons
-            if (this.Controls["btnToggleMotor"] is Button btnToggle)
-                btnToggle.Enabled = false;
-            if (this.Controls["btnResetCounter"] is Button btnReset)
-                btnReset.Enabled = false;
-
-            // Reset displays
-            if (this.Controls["lblMotorStatus"] is Label lblMotor)
-                lblMotor.Text = "Motor Status: Unknown";
-            if (this.Controls["lblCounter"] is Label lblCounter)
-                lblCounter.Text = "Counter: Unknown";
-            if (this.Controls["lblTemperature"] is Label lblTemp)
-                lblTemp.Text = "Temperature: Unknown";
-
-            LogMessage("📤 Disconnected from PLC");
-        }
-
-        private void LogMessage(string message)
-        {
-            if (this.Controls["txtLog"] is TextBox txtLog)
-            {
-                if (txtLog.InvokeRequired)
-                {
-                    txtLog.Invoke(new Action(() => LogMessage(message)));
+                    var boolValue = _client.ReadBool(tagName);
+                    Log($"Tag {tagName} is BOOL type, current value: {boolValue}");
                     return;
                 }
+                catch { }
 
-                var timestamp = DateTime.Now.ToString("HH:mm:ss");
-                txtLog.AppendText($"[{timestamp}] {message}\r\n");
-                txtLog.SelectionStart = txtLog.Text.Length;
-                txtLog.ScrollToCaret();
+                try
+                {
+                    var dintValue = _client.ReadDint(tagName);
+                    Log($"Tag {tagName} is DINT type, current value: {dintValue}");
+                    return;
+                }
+                catch { }
+
+                try
+                {
+                    var realValue = _client.ReadReal(tagName);
+                    Log($"Tag {tagName} is REAL type, current value: {realValue}");
+                    return;
+                }
+                catch { }
+
+                try
+                {
+                    var stringValue = _client.ReadString(tagName);
+                    Log($"Tag {tagName} is STRING type, current value: {stringValue}");
+                    return;
+                }
+                catch { }
+
+                Log($"Could not determine type for tag {tagName}");
+            }
+            catch (Exception ex)
+            {
+                Log($"Error discovering tag: {ex.Message}");
             }
         }
 
-        protected override void OnFormClosing(FormClosingEventArgs e)
+        private void WriteTag(string tagName, string value)
         {
-            DisconnectFromPlc();
-            base.OnFormClosing(e);
+            if (_client == null)
+            {
+                Log("Not connected to PLC");
+                return;
+            }
+
+            if (string.IsNullOrEmpty(tagName))
+            {
+                Log("Please enter a tag name");
+                return;
+            }
+
+            if (string.IsNullOrEmpty(value))
+            {
+                Log("Please enter a value to write");
+                return;
+            }
+
+            try
+            {
+                // Try to write as different types
+                try
+                {
+                    if (bool.TryParse(value, out bool boolValue))
+                    {
+                        _client.WriteBool(tagName, boolValue);
+                        Log($"Successfully wrote BOOL value {boolValue} to tag {tagName}");
+                        return;
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    if (int.TryParse(value, out int dintValue))
+                    {
+                        _client.WriteDint(tagName, dintValue);
+                        Log($"Successfully wrote DINT value {dintValue} to tag {tagName}");
+                        return;
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    if (float.TryParse(value, out float realValue))
+                    {
+                        _client.WriteReal(tagName, realValue);
+                        Log($"Successfully wrote REAL value {realValue} to tag {tagName}");
+                        return;
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    _client.WriteString(tagName, value);
+                    Log($"Successfully wrote STRING value {value} to tag {tagName}");
+                    return;
+                }
+                catch { }
+
+                Log($"Could not write value {value} to tag {tagName}");
+            }
+            catch (Exception ex)
+            {
+                Log($"Error writing to tag: {ex.Message}");
+            }
         }
     }
 }

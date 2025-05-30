@@ -638,21 +638,48 @@ impl EipClient {
     /// - `Connection`: Lost connection to PLC
     /// - `Timeout`: Operation timed out
     pub async fn write_tag(&mut self, tag_name: &str, value: PlcValue) -> crate::error::Result<()> {
-        // Check if we have metadata for this tag
-        if let Some(metadata) = self.get_tag_metadata(tag_name) {
-            // Handle UDT tags
-            if metadata.data_type == 0x00A0 {
-                if let PlcValue::Udt(members) = value {
-                    let data = self.udt_manager.serialize_udt_instance(tag_name, &members)?;
-                    return self.write_tag_raw(tag_name, &data).await;
-                }
-            }
+        let tag_bytes = tag_name.as_bytes();
+        let value_bytes = value.to_bytes();
+        let data_type = value.get_data_type();
+        
+        let mut cip_request = vec![0x4D, 0x00]; // Write Tag Service (0x4D)
+        let mut path = vec![0x91, tag_bytes.len() as u8];
+        path.extend_from_slice(tag_bytes);
+        
+        if path.len() % 2 != 0 {
+            path.push(0x00);
         }
-
-        // Standard tag writing
-        let request = self.build_write_request(tag_name, &value)?;
-        self.send_cip_request(&request).await?;
-        Ok(())
+        
+        cip_request[1] = (path.len() / 2) as u8;
+        cip_request.extend_from_slice(&path);
+        cip_request.extend_from_slice(&data_type.to_le_bytes());
+        cip_request.extend_from_slice(&[0x01, 0x00]);
+        cip_request.extend_from_slice(&value_bytes);
+        
+        println!("📝 Writing {} to tag '{}'", 
+                 match &value {
+                     PlcValue::Bool(v) => format!("BOOL: {}", v),
+                     PlcValue::Dint(v) => format!("DINT: {}", v),
+                     PlcValue::Real(v) => format!("REAL: {}", v),
+                     PlcValue::String(v) => format!("STRING: '{}'", v),
+                     PlcValue::Udt(v) => format!("UDT: {:?}", v),
+                 }, 
+                 tag_name);
+        
+        let response = self.send_cip_request(&cip_request).await?;
+        
+        if response.len() >= 4 {
+            let general_status = response[2];
+            if general_status == 0x00 {
+                println!("✅ Tag '{}' written successfully!", tag_name);
+                Ok(())
+            } else {
+                let error_msg = self.get_cip_error_message(general_status);
+                Err(EtherNetIpError::Protocol(format!("Write failed - CIP Error 0x{:02X}: {}", general_status, error_msg)))
+            }
+        } else {
+            Err(EtherNetIpError::Protocol("Invalid write response".to_string()))
+        }
     }
     
     /// Reads raw data from a tag
@@ -662,6 +689,7 @@ impl EipClient {
     }
     
     /// Writes raw data to a tag
+    #[allow(dead_code)]
     async fn write_tag_raw(&mut self, tag_name: &str, data: &[u8]) -> crate::error::Result<()> {
         let request = self.build_write_request_raw(tag_name, data)?;
         self.send_cip_request(&request).await?;
@@ -994,22 +1022,13 @@ impl EipClient {
         cip_request
     }
 
+    #[allow(dead_code)]
     fn build_write_request(&self, tag_name: &str, value: &PlcValue) -> crate::error::Result<Vec<u8>> {
         let mut request = Vec::new();
         
-        // Add CIP header
-        request.extend_from_slice(&[
-            0x00, 0x00, 0x00, 0x00,  // Interface Handle
-            0x00, 0x00, 0x00, 0x00,  // Timeout
-            0x02, 0x00,              // Item Count
-            0x00, 0x00, 0x00, 0x00,  // Null Address Item
-            0xB2, 0x00,              // Connected Address Item
-        ]);
-
         // Add CIP Write Request
         request.extend_from_slice(&[
-            0x53, 0x02,              // Write Tag Service
-            0x20,                    // Path Size
+            0x4D,                    // Write Tag Service (0x4D)
         ]);
 
         // Add Tag Path
@@ -1020,9 +1039,16 @@ impl EipClient {
         let value_data = self.serialize_value(value)?;
         request.extend_from_slice(&value_data);
 
+        // Log the complete request for debugging
+        println!("📤 Write request for tag '{}':", tag_name);
+        println!("  Service: 0x{:02X}", request[0]);
+        println!("  Path: {:02X?}", &request[1..tag_path.len()+1]);
+        println!("  Value: {:02X?}", &request[tag_path.len()+1..]);
+
         Ok(request)
     }
 
+    #[allow(dead_code)]
     fn build_write_request_raw(&self, tag_name: &str, data: &[u8]) -> crate::error::Result<Vec<u8>> {
         let mut request = Vec::new();
         
@@ -1051,48 +1077,65 @@ impl EipClient {
         Ok(request)
     }
 
+    #[allow(dead_code)]
     fn build_tag_path(&self, tag_name: &str) -> Vec<u8> {
         let mut path = Vec::new();
         let tag_bytes = tag_name.as_bytes();
-        path.push(0x91); // Symbolic segment
-        path.push(tag_bytes.len() as u8);
+        
+        // Add path size (in 16-bit words)
+        let path_size = (tag_bytes.len() + 1) / 2;  // +1 for segment type, round up
+        path.push(path_size as u8);
+        
+        // Add segment type (0x91 for symbolic segment)
+        path.push(0x91);
+        
+        // Add tag name
         path.extend_from_slice(tag_bytes);
+        
+        // Pad to even length if needed
         if path.len() % 2 != 0 {
-            path.push(0x00); // Pad to even length
+            path.push(0x00);
         }
+        
         path
     }
 
+    #[allow(dead_code)]
     fn serialize_value(&self, value: &PlcValue) -> crate::error::Result<Vec<u8>> {
         let mut data = Vec::new();
         
         match value {
             PlcValue::Bool(v) => {
                 data.push(0xC1);  // BOOL type
+                data.push(0x00);  // Reserved
                 data.push(*v as u8);
             }
             PlcValue::Dint(v) => {
                 data.push(0xC4);  // DINT type
-                data.extend_from_slice(&v.to_le_bytes());
+                data.push(0x00);  // Reserved
+                data.extend_from_slice(&v.to_be_bytes());  // Big-endian for PLC
             }
             PlcValue::Real(v) => {
                 data.push(0xCA);  // REAL type
-                data.extend_from_slice(&v.to_le_bytes());
+                data.push(0x00);  // Reserved
+                data.extend_from_slice(&v.to_be_bytes());  // Big-endian for PLC
             }
             PlcValue::String(v) => {
                 data.push(0xD0);  // STRING type
+                data.push(0x00);  // Reserved
                 let bytes = v.as_bytes();
-                data.extend_from_slice(&(bytes.len() as u16).to_le_bytes());
+                data.extend_from_slice(&(bytes.len() as u16).to_be_bytes());  // Big-endian length
                 data.extend_from_slice(bytes);
             }
             PlcValue::Udt(members) => {
                 data.push(0xA0);  // UDT type
+                data.push(0x00);  // Reserved
                 let mut udt_data = Vec::new();
                 for (_name, value) in members {
                     let member_data = self.serialize_value(value)?;
                     udt_data.extend_from_slice(&member_data);
                 }
-                data.extend_from_slice(&(udt_data.len() as u16).to_le_bytes());
+                data.extend_from_slice(&(udt_data.len() as u16).to_be_bytes());  // Big-endian length
                 data.extend_from_slice(&udt_data);
             }
         }
@@ -1121,6 +1164,66 @@ impl EipClient {
         req.push(1); req.push(2); req.push(3);
 
         req
+    }
+
+    /// Gets a human-readable error message for a CIP status code
+    /// 
+    /// # Arguments
+    /// 
+    /// * `status` - The CIP status code to look up
+    /// 
+    /// # Returns
+    /// 
+    /// A string describing the error
+    fn get_cip_error_message(&self, status: u8) -> String {
+        match status {
+            0x00 => "Success".to_string(),
+            0x01 => "Connection failure".to_string(),
+            0x02 => "Resource unavailable".to_string(),
+            0x03 => "Invalid parameter value".to_string(),
+            0x04 => "Path segment error".to_string(),
+            0x05 => "Path destination unknown".to_string(),
+            0x06 => "Partial transfer".to_string(),
+            0x07 => "Connection lost".to_string(),
+            0x08 => "Service not supported".to_string(),
+            0x09 => "Invalid attribute value".to_string(),
+            0x0A => "Attribute list error".to_string(),
+            0x0B => "Already in requested mode/state".to_string(),
+            0x0C => "Object state conflict".to_string(),
+            0x0D => "Object already exists".to_string(),
+            0x0E => "Attribute not settable".to_string(),
+            0x0F => "Privilege violation".to_string(),
+            0x10 => "Device state conflict".to_string(),
+            0x11 => "Reply data too large".to_string(),
+            0x12 => "Fragmentation of a primitive value".to_string(),
+            0x13 => "Not enough data".to_string(),
+            0x14 => "Attribute not supported".to_string(),
+            0x15 => "Too much data".to_string(),
+            0x16 => "Object does not exist".to_string(),
+            0x17 => "Service fragmentation sequence not in progress".to_string(),
+            0x18 => "No stored attribute data".to_string(),
+            0x19 => "Store operation failure".to_string(),
+            0x1A => "Routing failure, request packet too large".to_string(),
+            0x1B => "Routing failure, response packet too large".to_string(),
+            0x1C => "Missing attribute list entry data".to_string(),
+            0x1D => "Invalid attribute value list".to_string(),
+            0x1E => "Embedded service error".to_string(),
+            0x1F => "Vendor specific error".to_string(),
+            0x20 => "Invalid parameter".to_string(),
+            0x21 => "Write-once value or medium already written".to_string(),
+            0x22 => "Invalid reply received".to_string(),
+            0x23 => "Buffer overflow".to_string(),
+            0x24 => "Invalid message format".to_string(),
+            0x25 => "Key failure in path".to_string(),
+            0x26 => "Path size invalid".to_string(),
+            0x27 => "Unexpected attribute in list".to_string(),
+            0x28 => "Invalid member ID".to_string(),
+            0x29 => "Member not settable".to_string(),
+            0x2A => "Group 2 only server general failure".to_string(),
+            0x2B => "Unknown Modbus error".to_string(),
+            0x2C => "Attribute not gettable".to_string(),
+            _ => format!("Unknown CIP error code: 0x{:02X}", status)
+        }
     }
 }
 

@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rust EtherNet/IP Web Interface</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .result-box {
+            min-height: 100px;
+            max-height: 300px;
+            overflow-y: auto;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 0.25rem;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
+        .error {
+            color: #dc3545;
+        }
+        .success {
+            color: #198754;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="mb-4">Rust EtherNet/IP Web Interface</h1>
+        
+        <!-- Connection Section -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">PLC Connection</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="plcAddress" class="form-label">PLC Address</label>
+                            <input type="text" class="form-control" id="plcAddress" value="192.168.0.1:44818">
+                        </div>
+                    </div>
+                    <div class="col-md-6 d-flex align-items-end">
+                        <button class="btn btn-primary" onclick="connect()">Connect</button>
+                    </div>
+                </div>
+                <div id="connectionStatus" class="mt-3"></div>
+            </div>
+        </div>
+
+        <!-- Tag Discovery Section -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Tag Discovery</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="discoverTag" class="form-label">Tag Name</label>
+                            <input type="text" class="form-control" id="discoverTag" placeholder="Enter tag name to discover">
+                        </div>
+                    </div>
+                    <div class="col-md-6 d-flex align-items-end">
+                        <button class="btn btn-info" onclick="discoverTag()">Discover Tag</button>
+                    </div>
+                </div>
+                <div id="discoveryResult" class="mt-3"></div>
+            </div>
+        </div>
+
+        <!-- Tag Operations Section -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Tag Operations</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label for="tagName" class="form-label">Tag Name</label>
+                            <input type="text" class="form-control" id="tagName">
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label for="dataType" class="form-label">Data Type</label>
+                            <select class="form-select" id="dataType">
+                                <option value="bool">BOOL</option>
+                                <option value="dint">DINT</option>
+                                <option value="real">REAL</option>
+                                <option value="string">STRING</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label for="tagValue" class="form-label">Value</label>
+                            <input type="text" class="form-control" id="tagValue">
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <button class="btn btn-success" onclick="readTag()">Read Tag</button>
+                    </div>
+                    <div class="col-md-6">
+                        <button class="btn btn-warning" onclick="writeTag()">Write Tag</button>
+                    </div>
+                </div>
+                <div id="operationResult" class="result-box mt-3"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentPlcAddress = null;
+
+        async function connect() {
+            const plcAddress = document.getElementById('plcAddress').value;
+            const statusDiv = document.getElementById('connectionStatus');
+            
+            try {
+                const response = await fetch('/api/plc/connect', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ plcAddress })
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    currentPlcAddress = plcAddress;
+                    statusDiv.innerHTML = `<div class="alert alert-success">Connected to PLC at ${plcAddress}</div>`;
+                } else {
+                    statusDiv.innerHTML = `<div class="alert alert-danger">Failed to connect: ${result.error || 'Unknown error'}</div>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+            }
+        }
+
+        async function discoverTag() {
+            if (!currentPlcAddress) {
+                showError('Please connect to a PLC first');
+                return;
+            }
+
+            const tagName = document.getElementById('discoverTag').value;
+            if (!tagName) {
+                showError('Please enter a tag name');
+                return;
+            }
+
+            const resultDiv = document.getElementById('discoveryResult');
+            resultDiv.innerHTML = '<div class="alert alert-info">Discovering tag...</div>';
+            
+            try {
+                const response = await fetch(`/api/plc/discover?plcAddress=${encodeURIComponent(currentPlcAddress)}&tagName=${encodeURIComponent(tagName)}`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Update the tag operations section with the discovered type
+                    const dataTypeSelect = document.getElementById('dataType');
+                    dataTypeSelect.value = result.metadata.type.toLowerCase();
+                    document.getElementById('tagName').value = tagName;
+                    
+                    resultDiv.innerHTML = `
+                        <div class="alert alert-success">
+                            <h6>Tag Information:</h6>
+                            <p>Name: ${tagName}</p>
+                            <p>Type: ${result.metadata.type}</p>
+                            <p>Current Value: ${result.metadata.value}</p>
+                        </div>`;
+                } else {
+                    resultDiv.innerHTML = `<div class="alert alert-danger">Failed to discover tag: ${result.error || 'Unknown error'}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+            }
+        }
+
+        async function readTag() {
+            if (!currentPlcAddress) {
+                showError('Please connect to a PLC first');
+                return;
+            }
+
+            const tagName = document.getElementById('tagName').value;
+            const dataType = document.getElementById('dataType').value;
+            const resultDiv = document.getElementById('operationResult');
+
+            // Input validation
+            if (!tagName) {
+                showError('Please enter a tag name');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/plc/read/${dataType}?plcAddress=${encodeURIComponent(currentPlcAddress)}&tagName=${encodeURIComponent(tagName)}`);
+                const result = await response.json();
+
+                if (response.ok) {
+                    resultDiv.innerHTML = `
+                        <div class="alert alert-success">
+                            <h6>Read Result:</h6>
+                            <p>Tag: ${tagName}</p>
+                            <p>Type: ${dataType.toUpperCase()}</p>
+                            <p>Value: ${result.value}</p>
+                        </div>`;
+                } else {
+                    // Enhanced error handling based on status code
+                    if (response.status === 404) {
+                        resultDiv.innerHTML = `<div class="alert alert-danger">Tag not found: <b>${tagName}</b>. Please check the tag name and try again.</div>`;
+                    } else if (response.status === 400) {
+                        resultDiv.innerHTML = `<div class="alert alert-warning">Type mismatch for tag <b>${tagName}</b>. Try a different data type.</div>`;
+                    } else {
+                        resultDiv.innerHTML = `<div class="alert alert-danger">Failed to read tag: ${result.error || 'Unknown error'}</div>`;
+                    }
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+            }
+        }
+
+        async function writeTag() {
+            if (!currentPlcAddress) {
+                showError('Please connect to a PLC first');
+                return;
+            }
+
+            const tagName = document.getElementById('tagName').value;
+            const dataType = document.getElementById('dataType').value;
+            const value = document.getElementById('tagValue').value;
+            const resultDiv = document.getElementById('operationResult');
+
+            // Input validation
+            if (!tagName) {
+                showError('Please enter a tag name');
+                return;
+            }
+            if (!value) {
+                showError('Please enter a value');
+                return;
+            }
+
+            let parsedValue;
+            try {
+                parsedValue = parseValue(value, dataType);
+            } catch (error) {
+                showError(`Invalid value for type ${dataType.toUpperCase()}: ${error.message}`);
+                return;
+            }
+
+            const requestBody = {
+                plcAddress: currentPlcAddress,
+                tagName,
+                value: parsedValue
+            };
+
+            resultDiv.innerHTML = '<div class="alert alert-info">Writing tag...</div>';
+
+            try {
+                const response = await fetch(`/api/plc/write/${dataType}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    resultDiv.innerHTML = `
+                        <div class="alert alert-success">
+                            <h6>Write Result:</h6>
+                            <p>Tag: ${tagName}</p>
+                            <p>Type: ${dataType.toUpperCase()}</p>
+                            <p>Value: ${value}</p>
+                            <p>Status: ${result.message || 'Success'}</p>
+                        </div>`;
+                    document.getElementById('tagValue').value = '';
+                } else {
+                    // Enhanced error handling based on status code
+                    if (response.status === 404) {
+                        resultDiv.innerHTML = `<div class="alert alert-danger">Tag not found: <b>${tagName}</b>. Please check the tag name and try again.</div>`;
+                    } else if (response.status === 400) {
+                        resultDiv.innerHTML = `<div class="alert alert-warning">Type mismatch for tag <b>${tagName}</b>. Try a different data type.</div>`;
+                    } else {
+                        resultDiv.innerHTML = `<div class="alert alert-danger">Failed to write tag: ${result.error || 'Unknown error'}</div>`;
+                    }
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+            }
+        }
+
+        function parseValue(value, dataType) {
+            console.log('Parsing value:', value, 'as type:', dataType);
+            switch (dataType) {
+                case 'bool':
+                    const boolValue = value.toLowerCase();
+                    if (boolValue !== 'true' && boolValue !== 'false') {
+                        throw new Error('Boolean value must be "true" or "false"');
+                    }
+                    return boolValue === 'true';
+                case 'dint':
+                    const intValue = parseInt(value);
+                    if (isNaN(intValue)) {
+                        throw new Error('Invalid integer value');
+                    }
+                    return intValue;
+                case 'real':
+                    const floatValue = parseFloat(value);
+                    if (isNaN(floatValue)) {
+                        throw new Error('Invalid floating-point value');
+                    }
+                    return floatValue;
+                case 'string':
+                    if (value === '') {
+                        throw new Error('String value cannot be empty');
+                    }
+                    return value;
+                default:
+                    throw new Error(`Unsupported data type: ${dataType}`);
+            }
+        }
+
+        function showError(message) {
+            const resultDiv = document.getElementById('operationResult');
+            resultDiv.innerHTML = `<div class="alert alert-danger">${message}</div>`;
+        }
+    </script>
+</body>
+</html> 
