@@ -141,12 +141,21 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::{timeout, Duration};
 use std::error::Error;
 use std::collections::HashMap;
-use std::ffi::{CStr, c_char, c_int, c_double};
+use std::ffi::{CStr, CString, c_char, c_int, c_double};
 use tokio::runtime::Runtime;
 use std::sync::Mutex;
+use lazy_static::lazy_static;
+
+mod tag_manager;
+mod udt;
+mod plc_manager;
+
+pub use tag_manager::{TagManager, TagMetadata, TagScope, TagPermissions};
+pub use udt::{UdtManager, UserDefinedType, UdtMember};
+pub use plc_manager::{PlcManager, PlcConfig, ConnectionHealth};
 
 // Static runtime and client management for FFI
-lazy_static::lazy_static! {
+lazy_static! {
     /// Global Tokio runtime for handling async operations in FFI context
     /// 
     /// This is necessary because C FFI functions cannot be async, but our
@@ -169,7 +178,7 @@ lazy_static::lazy_static! {
 /// These correspond to the CIP data type codes used in EtherNet/IP
 /// communication. Each variant maps to a specific 16-bit type identifier
 /// that the PLC uses to describe tag data.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PlcValue {
     /// Boolean value (single bit)
     /// 
@@ -190,6 +199,10 @@ pub enum PlcValue {
     /// and any data requiring decimal precision.
     /// Range: ±1.18 × 10^-38 to ±3.40 × 10^38
     Real(f32),
+    /// String value
+    String(String),
+    /// User Defined Type instance
+    Udt(HashMap<String, PlcValue>),
 }
 
 impl PlcValue {
@@ -210,6 +223,15 @@ impl PlcValue {
             PlcValue::Bool(val) => vec![if *val { 0xFF } else { 0x00 }],
             PlcValue::Dint(val) => val.to_le_bytes().to_vec(),
             PlcValue::Real(val) => val.to_le_bytes().to_vec(),
+            PlcValue::String(val) => {
+                let mut bytes = vec![val.len() as u8];
+                bytes.extend_from_slice(val.as_bytes());
+                bytes
+            }
+            PlcValue::Udt(_) => {
+                // UDT serialization is handled by the UdtManager
+                vec![]
+            }
         }
     }
     
@@ -226,6 +248,8 @@ impl PlcValue {
             PlcValue::Bool(_) => 0x00C1,  // CIP BOOL type
             PlcValue::Dint(_) => 0x00C4,  // CIP DINT type  
             PlcValue::Real(_) => 0x00CA,  // CIP REAL type
+            PlcValue::String(_) => 0x00D0, // CIP STRING type
+            PlcValue::Udt(_) => 0x00A0,   // CIP UDT type
         }
     }
 }
@@ -266,6 +290,7 @@ impl PlcValue {
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Debug)]
 pub struct EipClient {
     /// TCP stream for network communication
     /// 
@@ -279,6 +304,12 @@ pub struct EipClient {
     /// and must be included in all subsequent requests. It allows the PLC
     /// to track multiple client connections.
     session_handle: u32,
+    /// Tag manager for tag discovery and caching
+    tag_manager: TagManager,
+    /// UDT manager for handling user defined types
+    udt_manager: UdtManager,
+    /// Maximum packet size for communication
+    max_packet_size: u32,
 }
 
 impl EipClient {
@@ -319,19 +350,15 @@ impl EipClient {
     /// # }
     /// ```
     pub async fn connect(addr: &str) -> Result<Self, Box<dyn Error>> {
-        // Establish TCP connection
-        let stream = TcpStream::connect(addr).await
-            .map_err(|e| format!("Failed to connect to {}: {}", addr, e))?;
-        
-        let mut client = EipClient {
+        let stream = TcpStream::connect(addr).await?;
+        let mut client = Self {
             stream,
             session_handle: 0,
+            tag_manager: TagManager::new(),
+            udt_manager: UdtManager::new(),
+            max_packet_size: 4000,
         };
-        
-        // Perform EtherNet/IP session registration
-        client.register_session().await
-            .map_err(|e| format!("Session registration failed: {}", e))?;
-            
+        client.register_session().await?;
         Ok(client)
     }
     
@@ -400,6 +427,27 @@ impl EipClient {
         Ok(())
     }
     
+    /// Sets the maximum packet size for communication
+    pub fn set_max_packet_size(&mut self, size: u32) {
+        self.max_packet_size = size.min(4000);
+    }
+    
+    /// Discovers all tags in the PLC
+    pub async fn discover_tags(&mut self) -> Result<(), Box<dyn Error>> {
+        let response = self.send_cip_request(&self.build_list_tags_request()).await?;
+        let tags = self.tag_manager.parse_tag_list(&response)?;
+        let mut cache = self.tag_manager.cache.write().unwrap();
+        for (name, metadata) in tags {
+            cache.insert(name, metadata);
+        }
+        Ok(())
+    }
+    
+    /// Gets metadata for a tag
+    pub fn get_tag_metadata(&self, tag_name: &str) -> Option<TagMetadata> {
+        self.tag_manager.cache.read().unwrap().get(tag_name).cloned()
+    }
+    
     /// Reads a tag value from the PLC
     /// 
     /// This is the main function for reading PLC tags. It handles the complete
@@ -449,38 +497,18 @@ impl EipClient {
     /// # }
     /// ```
     pub async fn read_tag(&mut self, tag_name: &str) -> Result<PlcValue, Box<dyn Error>> {
-        // Build CIP Read Tag Service request
-        let tag_bytes = tag_name.as_bytes();
-        
-        // CIP request structure: Service Code + Path Size + Path + Elements
-        let mut cip_request = vec![0x4C, 0x00]; // Service: Read Tag (0x4C)
-        
-        // Build EPATH (symbolic addressing path)
-        let mut path = vec![
-            0x91,                    // Logical Segment: Symbolic (ASCII)
-            tag_bytes.len() as u8,   // Length of tag name
-        ];
-        path.extend_from_slice(tag_bytes);
-        
-        // Pad path to even byte boundary (CIP requirement)
-        if path.len() % 2 != 0 {
-            path.push(0x00);
+        // Check if we have metadata for this tag
+        if let Some(metadata) = self.get_tag_metadata(tag_name) {
+            // Handle UDT tags
+            if metadata.data_type == 0x00A0 {
+                let data = self.read_tag_raw(tag_name).await?;
+                return self.udt_manager.parse_udt_instance(tag_name, &data);
+            }
         }
-        
-        // Update path size field (in 16-bit words)
-        cip_request[1] = (path.len() / 2) as u8;
-        cip_request.extend_from_slice(&path);
-        
-        // Number of elements to read (1 for single tag)
-        cip_request.extend_from_slice(&[0x01, 0x00]);
-        
-        // Send CIP request and get response
-        let response = self.send_cip_request(&cip_request).await
-            .map_err(|e| format!("Failed to read tag '{}': {}", tag_name, e))?;
-        
-        // Parse CIP response and extract value
+
+        // Standard tag reading
+        let response = self.send_cip_request(&self.build_read_request(tag_name)).await?;
         self.parse_cip_response(&response)
-            .map_err(|e| -> Box<dyn Error> { format!("Error parsing response for tag '{}': {}", tag_name, e).into() })
     }
     
     /// Writes a value to a PLC tag
@@ -532,42 +560,34 @@ impl EipClient {
     /// # }
     /// ```
     pub async fn write_tag(&mut self, tag_name: &str, value: PlcValue) -> Result<(), Box<dyn Error>> {
-        let tag_bytes = tag_name.as_bytes();
-        let value_bytes = value.to_bytes();
-        let data_type = value.get_data_type();
-        
-        // Build CIP Write Tag Service request
-        let mut cip_request = vec![0x4D, 0x00]; // Service: Write Tag (0x4D)
-        
-        // Build EPATH (same as read)
-        let mut path = vec![0x91, tag_bytes.len() as u8];
-        path.extend_from_slice(tag_bytes);
-        
-        // Pad path to even byte boundary
-        if path.len() % 2 != 0 {
-            path.push(0x00);
+        // Check if we have metadata for this tag
+        if let Some(metadata) = self.get_tag_metadata(tag_name) {
+            // Handle UDT tags
+            if metadata.data_type == 0x00A0 {
+                if let PlcValue::Udt(members) = value {
+                    let data = self.udt_manager.serialize_udt_instance(tag_name, &members)?;
+                    return self.write_tag_raw(tag_name, &data).await;
+                }
+            }
         }
-        
-        // Update path size field (in 16-bit words)
-        cip_request[1] = (path.len() / 2) as u8;
-        cip_request.extend_from_slice(&path);
-        
-        // Add data type and element count
-        cip_request.extend_from_slice(&data_type.to_le_bytes()); // Data type
-        cip_request.extend_from_slice(&[0x01, 0x00]);           // Elements to write: 1
-        cip_request.extend_from_slice(&value_bytes);             // Actual data
-        
-        // Send request and verify response
-        let response = self.send_cip_request(&cip_request).await
-            .map_err(|e| -> Box<dyn Error> { format!("Failed to write tag '{}': {}", tag_name, e).into() })?;
-        
-        // Check write response (simpler than read - just verify success)
-        if response.len() >= 4 && response[2] == 0x00 {
-            Ok(())
-        } else {
-            let status = if response.len() >= 3 { response[2] } else { 0xFF };
-            Err(format!("Write failed for tag '{}' (CIP status: 0x{:02X})", tag_name, status).into())
-        }
+
+        // Standard tag writing
+        let request = self.build_write_request(tag_name, &value)?;
+        self.send_cip_request(&request).await?;
+        Ok(())
+    }
+    
+    /// Reads raw data from a tag
+    async fn read_tag_raw(&mut self, tag_name: &str) -> Result<Vec<u8>, Box<dyn Error>> {
+        let response = self.send_cip_request(&self.build_read_request(tag_name)).await?;
+        Ok(self.extract_cip_from_response(&response)?)
+    }
+    
+    /// Writes raw data to a tag
+    async fn write_tag_raw(&mut self, tag_name: &str, data: &[u8]) -> Result<(), Box<dyn Error>> {
+        let request = self.build_write_request_raw(tag_name, data)?;
+        self.send_cip_request(&request).await?;
+        Ok(())
     }
     
     /// Sends a CIP request wrapped in EtherNet/IP SendRRData command
@@ -871,6 +891,147 @@ impl EipClient {
         // Don't wait for response - some PLCs don't respond to unregister
         Ok(())
     }
+
+    fn build_read_request(&self, tag_name: &str) -> Vec<u8> {
+        let mut request = Vec::new();
+        
+        // Add CIP header
+        request.extend_from_slice(&[
+            0x00, 0x00, 0x00, 0x00,  // Interface Handle
+            0x00, 0x00, 0x00, 0x00,  // Timeout
+            0x02, 0x00,              // Item Count
+            0x00, 0x00, 0x00, 0x00,  // Null Address Item
+            0xB2, 0x00,              // Connected Address Item
+        ]);
+
+        // Add CIP Read Request
+        request.extend_from_slice(&[
+            0x52, 0x02,              // Read Tag Service
+            0x20,                    // Path Size
+        ]);
+
+        // Add Tag Path
+        let tag_path = self.build_tag_path(tag_name);
+        request.extend_from_slice(&tag_path);
+
+        request
+    }
+
+    fn build_write_request(&self, tag_name: &str, value: &PlcValue) -> Result<Vec<u8>, Box<dyn Error>> {
+        let mut request = Vec::new();
+        
+        // Add CIP header
+        request.extend_from_slice(&[
+            0x00, 0x00, 0x00, 0x00,  // Interface Handle
+            0x00, 0x00, 0x00, 0x00,  // Timeout
+            0x02, 0x00,              // Item Count
+            0x00, 0x00, 0x00, 0x00,  // Null Address Item
+            0xB2, 0x00,              // Connected Address Item
+        ]);
+
+        // Add CIP Write Request
+        request.extend_from_slice(&[
+            0x53, 0x02,              // Write Tag Service
+            0x20,                    // Path Size
+        ]);
+
+        // Add Tag Path
+        let tag_path = self.build_tag_path(tag_name);
+        request.extend_from_slice(&tag_path);
+
+        // Add Value
+        let value_data = self.serialize_value(value)?;
+        request.extend_from_slice(&value_data);
+
+        Ok(request)
+    }
+
+    fn build_write_request_raw(&self, tag_name: &str, data: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
+        let mut request = Vec::new();
+        
+        // Add CIP header
+        request.extend_from_slice(&[
+            0x00, 0x00, 0x00, 0x00,  // Interface Handle
+            0x00, 0x00, 0x00, 0x00,  // Timeout
+            0x02, 0x00,              // Item Count
+            0x00, 0x00, 0x00, 0x00,  // Null Address Item
+            0xB2, 0x00,              // Connected Address Item
+        ]);
+
+        // Add CIP Write Request
+        request.extend_from_slice(&[
+            0x53, 0x02,              // Write Tag Service
+            0x20,                    // Path Size
+        ]);
+
+        // Add Tag Path
+        let tag_path = self.build_tag_path(tag_name);
+        request.extend_from_slice(&tag_path);
+
+        // Add Raw Data
+        request.extend_from_slice(data);
+
+        Ok(request)
+    }
+
+    fn build_tag_path(&self, tag_name: &str) -> Vec<u8> {
+        let mut path = Vec::new();
+        
+        // Add Class ID for Tag Object (0x6B)
+        path.extend_from_slice(&[0x20, 0x6B, 0x24, 0x01]);
+        
+        // Add Instance ID (1)
+        path.extend_from_slice(&[0x24, 0x01]);
+        
+        // Add Tag Name
+        let tag_bytes = tag_name.as_bytes();
+        path.push(tag_bytes.len() as u8);
+        path.extend_from_slice(tag_bytes);
+        
+        path
+    }
+
+    fn serialize_value(&self, value: &PlcValue) -> Result<Vec<u8>, Box<dyn Error>> {
+        let mut data = Vec::new();
+        
+        match value {
+            PlcValue::Bool(v) => {
+                data.push(0xC1);  // BOOL type
+                data.push(*v as u8);
+            }
+            PlcValue::Dint(v) => {
+                data.push(0xC4);  // DINT type
+                data.extend_from_slice(&v.to_le_bytes());
+            }
+            PlcValue::Real(v) => {
+                data.push(0xCA);  // REAL type
+                data.extend_from_slice(&v.to_le_bytes());
+            }
+            PlcValue::String(v) => {
+                data.push(0xD0);  // STRING type
+                let bytes = v.as_bytes();
+                data.extend_from_slice(&(bytes.len() as u16).to_le_bytes());
+                data.extend_from_slice(bytes);
+            }
+            PlcValue::Udt(members) => {
+                data.push(0xA0);  // UDT type
+                let mut udt_data = Vec::new();
+                for (_name, value) in members {
+                    let member_data = self.serialize_value(value)?;
+                    udt_data.extend_from_slice(&member_data);
+                }
+                data.extend_from_slice(&(udt_data.len() as u16).to_le_bytes());
+                data.extend_from_slice(&udt_data);
+            }
+        }
+        
+        Ok(data)
+    }
+
+    pub fn build_list_tags_request(&self) -> Vec<u8> {
+        // TODO: Implement actual List Tags Service request
+        vec![]
+    }
 }
 
 // =========================================================================
@@ -919,30 +1080,25 @@ impl EipClient {
 /// ```
 #[no_mangle]
 pub extern "C" fn eip_connect(address: *const c_char) -> c_int {
-    unsafe {
-        // Convert C string to Rust string
-        let addr_str = match CStr::from_ptr(address).to_str() {
+    let address = unsafe {
+        match CStr::from_ptr(address).to_str() {
             Ok(s) => s,
-            Err(_) => return -1, // Invalid UTF-8 in address
-        };
-        
-        // Attempt connection using blocking runtime
-        let client = match RUNTIME.block_on(async {
-            EipClient::connect(addr_str).await
-        }) {
-            Ok(c) => c,
-            Err(_) => return -1, // Connection failed
-        };
-        
-        // Store client and return ID
-        let mut clients = CLIENTS.lock().unwrap();
-        let mut next_id = NEXT_ID.lock().unwrap();
-        let id = *next_id;
-        *next_id += 1;
-        
-        clients.insert(id, client);
-        id
-    }
+            Err(_) => return -1,
+        }
+    };
+
+    let mut clients = CLIENTS.lock().unwrap();
+    let client_id = clients.len() as i32 + 1;
+    
+    let client = match RUNTIME.block_on(async {
+        EipClient::connect(address).await
+    }) {
+        Ok(c) => c,
+        Err(_) => return -1,
+    };
+    
+    clients.insert(client_id, client);
+    client_id
 }
 
 /// Disconnects from PLC and frees resources
@@ -976,14 +1132,10 @@ pub extern "C" fn eip_connect(address: *const c_char) -> c_int {
 #[no_mangle]
 pub extern "C" fn eip_disconnect(client_id: c_int) -> c_int {
     let mut clients = CLIENTS.lock().unwrap();
-    if let Some(mut client) = clients.remove(&client_id) {
-        // Perform clean shutdown
-        RUNTIME.block_on(async {
-            let _ = client.unregister_session().await;
-        });
-        0 // Success
+    if clients.remove(&client_id).is_some() {
+        0
     } else {
-        -1 // Client not found
+        -1
     }
 }
 
@@ -1016,26 +1168,27 @@ pub extern "C" fn eip_disconnect(client_id: c_int) -> c_int {
 /// ```
 #[no_mangle]
 pub extern "C" fn eip_read_bool(client_id: c_int, tag_name: *const c_char, result: *mut c_int) -> c_int {
-    unsafe {
-        let tag_str = match CStr::from_ptr(tag_name).to_str() {
+    let tag_name = unsafe {
+        match CStr::from_ptr(tag_name).to_str() {
             Ok(s) => s,
             Err(_) => return -1,
-        };
-        
-        let mut clients = CLIENTS.lock().unwrap();
-        if let Some(client) = clients.get_mut(&client_id) {
-            match RUNTIME.block_on(async {
-                client.read_tag(tag_str).await
-            }) {
-                Ok(PlcValue::Bool(value)) => {
-                    *result = if value { 1 } else { 0 };
-                    0 // Success
-                }
-                _ => -1, // Error or wrong type
-            }
-        } else {
-            -1 // Client not found
         }
+    };
+
+    let mut clients = CLIENTS.lock().unwrap();
+    let client = match clients.get_mut(&client_id) {
+        Some(c) => c,
+        None => return -1,
+    };
+
+    match RUNTIME.block_on(async {
+        client.read_tag(tag_name).await
+    }) {
+        Ok(PlcValue::Bool(value)) => {
+            unsafe { *result = if value { 1 } else { 0 } };
+            0
+        }
+        _ => -1,
     }
 }
 
@@ -1067,23 +1220,24 @@ pub extern "C" fn eip_read_bool(client_id: c_int, tag_name: *const c_char, resul
 /// ```
 #[no_mangle]
 pub extern "C" fn eip_write_bool(client_id: c_int, tag_name: *const c_char, value: c_int) -> c_int {
-    unsafe {
-        let tag_str = match CStr::from_ptr(tag_name).to_str() {
+    let tag_name = unsafe {
+        match CStr::from_ptr(tag_name).to_str() {
             Ok(s) => s,
             Err(_) => return -1,
-        };
-        
-        let mut clients = CLIENTS.lock().unwrap();
-        if let Some(client) = clients.get_mut(&client_id) {
-            match RUNTIME.block_on(async {
-                client.write_tag(tag_str, PlcValue::Bool(value != 0)).await
-            }) {
-                Ok(()) => 0,  // Success
-                Err(_) => -1, // Error
-            }
-        } else {
-            -1 // Client not found
         }
+    };
+
+    let mut clients = CLIENTS.lock().unwrap();
+    let client = match clients.get_mut(&client_id) {
+        Some(c) => c,
+        None => return -1,
+    };
+
+    match RUNTIME.block_on(async {
+        client.write_tag(tag_name, PlcValue::Bool(value != 0)).await
+    }) {
+        Ok(_) => 0,
+        Err(_) => -1,
     }
 }
 
@@ -1116,26 +1270,27 @@ pub extern "C" fn eip_write_bool(client_id: c_int, tag_name: *const c_char, valu
 /// ```
 #[no_mangle]
 pub extern "C" fn eip_read_dint(client_id: c_int, tag_name: *const c_char, result: *mut c_int) -> c_int {
-    unsafe {
-        let tag_str = match CStr::from_ptr(tag_name).to_str() {
+    let tag_name = unsafe {
+        match CStr::from_ptr(tag_name).to_str() {
             Ok(s) => s,
             Err(_) => return -1,
-        };
-        
-        let mut clients = CLIENTS.lock().unwrap();
-        if let Some(client) = clients.get_mut(&client_id) {
-            match RUNTIME.block_on(async {
-                client.read_tag(tag_str).await
-            }) {
-                Ok(PlcValue::Dint(value)) => {
-                    *result = value;
-                    0 // Success
-                }
-                _ => -1, // Error or wrong type
-            }
-        } else {
-            -1 // Client not found
         }
+    };
+
+    let mut clients = CLIENTS.lock().unwrap();
+    let client = match clients.get_mut(&client_id) {
+        Some(c) => c,
+        None => return -1,
+    };
+
+    match RUNTIME.block_on(async {
+        client.read_tag(tag_name).await
+    }) {
+        Ok(PlcValue::Dint(value)) => {
+            unsafe { *result = value };
+            0
+        }
+        _ => -1,
     }
 }
 
@@ -1167,23 +1322,24 @@ pub extern "C" fn eip_read_dint(client_id: c_int, tag_name: *const c_char, resul
 /// ```
 #[no_mangle]
 pub extern "C" fn eip_write_dint(client_id: c_int, tag_name: *const c_char, value: c_int) -> c_int {
-    unsafe {
-        let tag_str = match CStr::from_ptr(tag_name).to_str() {
+    let tag_name = unsafe {
+        match CStr::from_ptr(tag_name).to_str() {
             Ok(s) => s,
             Err(_) => return -1,
-        };
-        
-        let mut clients = CLIENTS.lock().unwrap();
-        if let Some(client) = clients.get_mut(&client_id) {
-            match RUNTIME.block_on(async {
-                client.write_tag(tag_str, PlcValue::Dint(value)).await
-            }) {
-                Ok(()) => 0,  // Success
-                Err(_) => -1, // Error
-            }
-        } else {
-            -1 // Client not found
         }
+    };
+
+    let mut clients = CLIENTS.lock().unwrap();
+    let client = match clients.get_mut(&client_id) {
+        Some(c) => c,
+        None => return -1,
+    };
+
+    match RUNTIME.block_on(async {
+        client.write_tag(tag_name, PlcValue::Dint(value)).await
+    }) {
+        Ok(_) => 0,
+        Err(_) => -1,
     }
 }
 
@@ -1216,26 +1372,27 @@ pub extern "C" fn eip_write_dint(client_id: c_int, tag_name: *const c_char, valu
 /// ```
 #[no_mangle]
 pub extern "C" fn eip_read_real(client_id: c_int, tag_name: *const c_char, result: *mut c_double) -> c_int {
-    unsafe {
-        let tag_str = match CStr::from_ptr(tag_name).to_str() {
+    let tag_name = unsafe {
+        match CStr::from_ptr(tag_name).to_str() {
             Ok(s) => s,
             Err(_) => return -1,
-        };
-        
-        let mut clients = CLIENTS.lock().unwrap();
-        if let Some(client) = clients.get_mut(&client_id) {
-            match RUNTIME.block_on(async {
-                client.read_tag(tag_str).await
-            }) {
-                Ok(PlcValue::Real(value)) => {
-                    *result = value as c_double;
-                    0 // Success
-                }
-                _ => -1, // Error or wrong type
-            }
-        } else {
-            -1 // Client not found
         }
+    };
+
+    let mut clients = CLIENTS.lock().unwrap();
+    let client = match clients.get_mut(&client_id) {
+        Some(c) => c,
+        None => return -1,
+    };
+
+    match RUNTIME.block_on(async {
+        client.read_tag(tag_name).await
+    }) {
+        Ok(PlcValue::Real(value)) => {
+            unsafe { *result = value as c_double };
+            0
+        }
+        _ => -1,
     }
 }
 
@@ -1267,23 +1424,183 @@ pub extern "C" fn eip_read_real(client_id: c_int, tag_name: *const c_char, resul
 /// ```
 #[no_mangle]
 pub extern "C" fn eip_write_real(client_id: c_int, tag_name: *const c_char, value: c_double) -> c_int {
-    unsafe {
-        let tag_str = match CStr::from_ptr(tag_name).to_str() {
+    let tag_name = unsafe {
+        match CStr::from_ptr(tag_name).to_str() {
             Ok(s) => s,
             Err(_) => return -1,
-        };
-        
-        let mut clients = CLIENTS.lock().unwrap();
-        if let Some(client) = clients.get_mut(&client_id) {
-            match RUNTIME.block_on(async {
-                client.write_tag(tag_str, PlcValue::Real(value as f32)).await
-            }) {
-                Ok(()) => 0,  // Success
-                Err(_) => -1, // Error
-            }
-        } else {
-            -1 // Client not found
         }
+    };
+
+    let mut clients = CLIENTS.lock().unwrap();
+    let client = match clients.get_mut(&client_id) {
+        Some(c) => c,
+        None => return -1,
+    };
+
+    match RUNTIME.block_on(async {
+        client.write_tag(tag_name, PlcValue::Real(value as f32)).await
+    }) {
+        Ok(_) => 0,
+        Err(_) => -1,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn eip_read_string(client_id: c_int, tag_name: *const c_char, result: *mut c_char, max_length: c_int) -> c_int {
+    let tag_name = unsafe {
+        match CStr::from_ptr(tag_name).to_str() {
+            Ok(s) => s,
+            Err(_) => return -1,
+        }
+    };
+
+    let mut clients = CLIENTS.lock().unwrap();
+    let client = match clients.get_mut(&client_id) {
+        Some(c) => c,
+        None => return -1,
+    };
+
+    match RUNTIME.block_on(async {
+        client.read_tag(tag_name).await
+    }) {
+        Ok(PlcValue::String(value)) => {
+            let c_str = match CString::new(value) {
+                Ok(s) => s,
+                Err(_) => return -1,
+            };
+            
+            let bytes = c_str.as_bytes_with_nul();
+            let len = bytes.len().min(max_length as usize);
+            
+            unsafe {
+                let src = bytes.as_ptr() as *const u8;
+                let dst = result as *mut u8;
+                std::ptr::copy_nonoverlapping(src, dst, len);
+            }
+            0
+        }
+        _ => -1,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn eip_write_string(client_id: c_int, tag_name: *const c_char, value: *const c_char) -> c_int {
+    let tag_name = unsafe {
+        match CStr::from_ptr(tag_name).to_str() {
+            Ok(s) => s,
+            Err(_) => return -1,
+        }
+    };
+
+    let value = unsafe {
+        match CStr::from_ptr(value).to_str() {
+            Ok(s) => s,
+            Err(_) => return -1,
+        }
+    };
+
+    let mut clients = CLIENTS.lock().unwrap();
+    let client = match clients.get_mut(&client_id) {
+        Some(c) => c,
+        None => return -1,
+    };
+
+    match RUNTIME.block_on(async {
+        client.write_tag(tag_name, PlcValue::String(value.to_string())).await
+    }) {
+        Ok(_) => 0,
+        Err(_) => -1,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn eip_read_udt(client_id: c_int, tag_name: *const c_char, result: *mut HashMap<String, PlcValue>) -> c_int {
+    let tag_name = unsafe {
+        match CStr::from_ptr(tag_name).to_str() {
+            Ok(s) => s,
+            Err(_) => return -1,
+        }
+    };
+
+    let mut clients = CLIENTS.lock().unwrap();
+    let client = match clients.get_mut(&client_id) {
+        Some(c) => c,
+        None => return -1,
+    };
+
+    match RUNTIME.block_on(async {
+        client.read_tag(tag_name).await
+    }) {
+        Ok(PlcValue::Udt(value)) => {
+            unsafe { *result = value };
+            0
+        }
+        _ => -1,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn eip_write_udt(client_id: c_int, tag_name: *const c_char, value: *const HashMap<String, PlcValue>) -> c_int {
+    let tag_name = unsafe {
+        match CStr::from_ptr(tag_name).to_str() {
+            Ok(s) => s,
+            Err(_) => return -1,
+        }
+    };
+
+    let value = unsafe { &*value };
+
+    let mut clients = CLIENTS.lock().unwrap();
+    let client = match clients.get_mut(&client_id) {
+        Some(c) => c,
+        None => return -1,
+    };
+
+    match RUNTIME.block_on(async {
+        client.write_tag(tag_name, PlcValue::Udt(value.clone())).await
+    }) {
+        Ok(_) => 0,
+        Err(_) => -1,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn eip_discover_tags(client_id: c_int) -> c_int {
+    let mut clients = CLIENTS.lock().unwrap();
+    let client = match clients.get_mut(&client_id) {
+        Some(c) => c,
+        None => return -1,
+    };
+
+    match RUNTIME.block_on(async {
+        client.discover_tags().await
+    }) {
+        Ok(_) => 0,
+        Err(_) => -1,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn eip_get_tag_metadata(client_id: c_int, tag_name: *const c_char, metadata: *mut TagMetadata) -> c_int {
+    let tag_name = unsafe {
+        match CStr::from_ptr(tag_name).to_str() {
+            Ok(s) => s,
+            Err(_) => return -1,
+        }
+    };
+
+    let mut clients = CLIENTS.lock().unwrap();
+    let client = match clients.get_mut(&client_id) {
+        Some(c) => c,
+        None => return -1,
+    };
+
+    match client.get_tag_metadata(tag_name) {
+        Some(m) => {
+            unsafe { *metadata = m };
+            0
+        }
+        None => -1,
     }
 }
 

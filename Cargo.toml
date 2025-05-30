@@ -15,7 +15,7 @@ rust-version = "1.70"
 
 [lib]
 name = "rust_ethernet_ip"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib"]  # This creates a dynamic library (.dll on Windows)
 
 [[bin]]
 name = "enip-test"
@@ -23,6 +23,12 @@ path = "src/main.rs"
 
 [dependencies]
 tokio = { version = "1.0", features = ["full"] }
+bytes = "1.0"
+thiserror = "1.0"
+async-trait = "0.1"
+futures = "0.3"
+log = "0.4"
+env_logger = "0.10"
 lazy_static = "1.4"
 
 [dev-dependencies]
