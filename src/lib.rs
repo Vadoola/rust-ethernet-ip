@@ -865,6 +865,9 @@ impl EipClient {
         let general_status = cip_response[2];    // CIP status code
         let additional_status_size = cip_response[3]; // Size of extended status
         
+        println!("[DEBUG] CIP Response: service={:02X}, status={:02X}, additional_size={}", 
+            service_reply, general_status, additional_status_size);
+        
         // Check for CIP errors
         if general_status != 0x00 {
             let error_msg = match general_status {
@@ -896,6 +899,8 @@ impl EipClient {
             cip_response[data_start + 1]
         ]);
         let value_data = &cip_response[data_start + 2..];
+        
+        println!("[DEBUG] Data type: 0x{:04X}, Value data: {:?}", data_type, value_data);
         
         // Parse value based on data type
         match data_type {
@@ -973,28 +978,20 @@ impl EipClient {
     }
 
     fn build_read_request(&self, tag_name: &str) -> Vec<u8> {
-        let mut request = Vec::new();
+        let mut cip_request = vec![0x4C, 0x00]; // Read Tag Service
+        let tag_bytes = tag_name.as_bytes();
+        let mut path = vec![0x91, tag_bytes.len() as u8];
+        path.extend_from_slice(tag_bytes);
         
-        // Add CIP header
-        request.extend_from_slice(&[
-            0x00, 0x00, 0x00, 0x00,  // Interface Handle
-            0x00, 0x00, 0x00, 0x00,  // Timeout
-            0x02, 0x00,              // Item Count
-            0x00, 0x00, 0x00, 0x00,  // Null Address Item
-            0xB2, 0x00,              // Connected Address Item
-        ]);
-
-        // Add CIP Read Request
-        request.extend_from_slice(&[
-            0x52, 0x02,              // Read Tag Service
-            0x20,                    // Path Size
-        ]);
-
-        // Add Tag Path
-        let tag_path = self.build_tag_path(tag_name);
-        request.extend_from_slice(&tag_path);
-
-        request
+        if path.len() % 2 != 0 {
+            path.push(0x00);
+        }
+        
+        cip_request[1] = (path.len() / 2) as u8;
+        cip_request.extend_from_slice(&path);
+        cip_request.extend_from_slice(&[0x01, 0x00]);
+        
+        cip_request
     }
 
     fn build_write_request(&self, tag_name: &str, value: &PlcValue) -> crate::error::Result<Vec<u8>> {
@@ -1056,18 +1053,13 @@ impl EipClient {
 
     fn build_tag_path(&self, tag_name: &str) -> Vec<u8> {
         let mut path = Vec::new();
-        
-        // Add Class ID for Tag Object (0x6B)
-        path.extend_from_slice(&[0x20, 0x6B, 0x24, 0x01]);
-        
-        // Add Instance ID (1)
-        path.extend_from_slice(&[0x24, 0x01]);
-        
-        // Add Tag Name
         let tag_bytes = tag_name.as_bytes();
+        path.push(0x91); // Symbolic segment
         path.push(tag_bytes.len() as u8);
         path.extend_from_slice(tag_bytes);
-        
+        if path.len() % 2 != 0 {
+            path.push(0x00); // Pad to even length
+        }
         path
     }
 
@@ -1109,8 +1101,26 @@ impl EipClient {
     }
 
     pub fn build_list_tags_request(&self) -> Vec<u8> {
-        // TODO: Implement actual List Tags Service request
-        vec![]
+        // Service: Get_Attribute_List (0x03)
+        // Class: 0x6B (Symbol Object)
+        // Instance: 1 (first instance)
+        // Attributes: 1 (Name), 2 (Type), 3 (Array Info)
+        let service = 0x03;
+        let class = 0x6B;
+        let instance = 1; // Start with instance 1
+        let attribute_count = 3u16; // Name, Type, Array Info
+
+        let mut req = vec![service];
+        // Path: Class, Instance
+        req.push(0x20); req.push(class);      // Class segment
+        req.push(0x24); req.push(instance);   // Instance segment
+
+        // Attribute count
+        req.extend_from_slice(&attribute_count.to_le_bytes());
+        // Attribute list: 1, 2, 3
+        req.push(1); req.push(2); req.push(3);
+
+        req
     }
 }
 
@@ -1682,6 +1692,18 @@ pub extern "C" fn eip_get_tag_metadata(client_id: c_int, tag_name: *const c_char
         }
         None => -1,
     }
+}
+
+#[no_mangle]
+pub extern "C" fn eip_set_max_packet_size(client_id: c_int, size: c_int) -> c_int {
+    let mut clients = CLIENTS.lock().unwrap();
+    let client = match clients.get_mut(&client_id) {
+        Some(c) => c,
+        None => return -1,
+    };
+
+    client.set_max_packet_size(size as u32);
+    0
 }
 
 // =========================================================================

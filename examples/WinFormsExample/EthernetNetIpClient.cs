@@ -40,52 +40,52 @@ namespace RustEtherNetIp
         // These are the low-level FFI calls to the Rust library
         // Users should not call these directly - use the public methods instead
 
-        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_connect(IntPtr address);
 
-        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_disconnect(int client_id);
 
-        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_read_bool(int client_id, IntPtr tag_name, out int result);
 
-        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_write_bool(int client_id, IntPtr tag_name, int value);
 
-        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_read_dint(int client_id, IntPtr tag_name, out int result);
 
-        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_write_dint(int client_id, IntPtr tag_name, int value);
 
-        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_read_real(int client_id, IntPtr tag_name, out double result);
 
-        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_write_real(int client_id, IntPtr tag_name, double value);
 
-        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_read_string(int client_id, IntPtr tag_name, IntPtr result, int max_length);
 
-        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_write_string(int client_id, IntPtr tag_name, IntPtr value);
 
-        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_discover_tags(int client_id);
 
-        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_get_tag_metadata(int client_id, IntPtr tag_name, out TagMetadata metadata);
 
-        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_read_udt(int client_id, IntPtr tag_name, IntPtr result, int max_size);
 
-        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_write_udt(int client_id, IntPtr tag_name, IntPtr value, int size);
 
-        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_set_max_packet_size(int client_id, int size);
 
-        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_check_health(int client_id, out int is_healthy);
         #endregion
 

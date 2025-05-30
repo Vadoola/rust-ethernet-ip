@@ -1,14 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.9.0" />
     <PackageReference Include="xunit" Version="2.6.6" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.6">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -29,7 +29,7 @@
   </PropertyGroup>
 
   <Target Name="CopyRustEtherNetIp" AfterTargets="Build">
-    <Copy SourceFiles="..\RustEtherNetIp\bin\$(Configuration)\net8.0\RustEtherNetIp.dll" DestinationFolder="$(OutputPath)" />
+    <Copy SourceFiles="..\RustEtherNetIp\bin\$(Configuration)\net9.0\RustEtherNetIp.dll" DestinationFolder="$(OutputPath)" />
     <Copy Condition="'$(OS)' == 'OSX'" SourceFiles="..\..\target\release\librust_ethernet_ip.dylib" DestinationFolder="$(OutputPath)" />
     <Copy Condition="'$(OS)' == 'Windows_NT'" SourceFiles="..\..\target\release\rust_ethernet_ip.dll" DestinationFolder="$(OutputPath)" />
     <Message Text="Copying native library to $(OutputPath)" Importance="high" />

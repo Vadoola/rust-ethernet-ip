@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
-use crate::error::{EtherNetIpError, Result};
+use crate::error::Result;
 use crate::EipClient;
 
 /// Represents the scope of a tag in the PLC
@@ -113,25 +113,50 @@ impl TagManager {
     }
 
     pub fn parse_tag_list(&self, response: &[u8]) -> Result<Vec<(String, TagMetadata)>> {
+        println!("[DEBUG] Raw tag list response ({} bytes): {:02X?}", response.len(), response);
         let mut tags = Vec::new();
         let mut offset = 0;
         while offset < response.len() {
+            if offset + 1 > response.len() {
+                println!("[WARN] Not enough bytes for name_len at offset {}", offset);
+                break;
+            }
             let name_len = response[offset] as usize;
             offset += 1;
+            if offset + name_len > response.len() {
+                println!("[WARN] Not enough bytes for tag name at offset {}", offset);
+                break;
+            }
             let name = String::from_utf8_lossy(&response[offset..offset + name_len]).to_string();
             offset += name_len;
+            if offset + 2 > response.len() {
+                println!("[WARN] Not enough bytes for data_type at offset {}", offset);
+                break;
+            }
             let data_type = u16::from_le_bytes([
                 response[offset],
                 response[offset + 1],
             ]);
             offset += 2;
+            if offset + 1 > response.len() {
+                println!("[WARN] Not enough bytes for is_array at offset {}", offset);
+                break;
+            }
             let is_array = response[offset] != 0;
             offset += 1;
             let mut dimensions = Vec::new();
             if is_array {
+                if offset + 1 > response.len() {
+                    println!("[WARN] Not enough bytes for dim_count at offset {}", offset);
+                    break;
+                }
                 let dim_count = response[offset] as usize;
                 offset += 1;
                 for _ in 0..dim_count {
+                    if offset + 4 > response.len() {
+                        println!("[WARN] Not enough bytes for dimension at offset {}", offset);
+                        break;
+                    }
                     let dim = u32::from_le_bytes([
                         response[offset],
                         response[offset + 1],
