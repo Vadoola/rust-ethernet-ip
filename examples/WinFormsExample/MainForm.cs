@@ -11,10 +11,8 @@ namespace WinFormsExample
         private EtherNetIpClient? _plcClient;
         private bool _isConnected;
         private string _currentAddress = string.Empty;
-        private System.Windows.Forms.Timer? _refreshTimer;
         private System.Windows.Forms.Timer? _connectionMonitorTimer;
         private Dictionary<string, TagInfo> _tags = new();
-        private int _retryCount = 0;
         private const int MAX_RETRIES = 3;
         private const int RETRY_DELAY = 2000;
 
@@ -30,10 +28,10 @@ namespace WinFormsExample
         {
             // Set form properties
             this.Text = "🦀 Rust EtherNet/IP - WinForms Demo";
-            this.Size = new Size(1200, 800);
+            this.Size = new Size(1200, 900); // Height for more space
             this.StartPosition = FormStartPosition.CenterScreen;
 
-            // Create main layout
+            // Create main layout (vertical stack)
             var mainLayout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
@@ -41,10 +39,10 @@ namespace WinFormsExample
                 RowCount = 4,
                 Padding = new Padding(10)
             };
-            mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 100));
-            mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 80));
-            mainLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 200));
+            mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 100));   // Header
+            mainLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 80));    // Performance
+            mainLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));        // Tag panel (autosize)
+            mainLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));    // Log panel (fills remaining)
 
             // Header Panel
             var headerPanel = CreateHeaderPanel();
@@ -54,25 +52,13 @@ namespace WinFormsExample
             var performancePanel = CreatePerformancePanel();
             mainLayout.Controls.Add(performancePanel, 0, 1);
 
-            // Main Content Panel
-            var contentPanel = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                ColumnCount = 2,
-                RowCount = 1
-            };
-            contentPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-            contentPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-
-            // Tag Monitoring Panel
+            // Tag Panel (discovery + read/write)
             var tagPanel = CreateTagPanel();
-            contentPanel.Controls.Add(tagPanel, 0, 0);
+            mainLayout.Controls.Add(tagPanel, 0, 2);
 
-            // Activity Log Panel
+            // Log Panel (bottom, full width)
             var logPanel = CreateLogPanel();
-            contentPanel.Controls.Add(logPanel, 1, 0);
-
-            mainLayout.Controls.Add(contentPanel, 0, 2);
+            mainLayout.Controls.Add(logPanel, 0, 3);
 
             // Add the main layout to the form
             this.Controls.Add(mainLayout);
@@ -192,110 +178,97 @@ namespace WinFormsExample
 
         private Panel CreateTagPanel()
         {
-            var panel = new Panel { Dock = DockStyle.Fill };
+            var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(5) };
 
-            // Tag discovery
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                ColumnCount = 4,
+                RowCount = 2,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink
+            };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 200)); // Tag to discover / Tag name
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130)); // Discover / DataType
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180)); // Value
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180)); // Read/Write
+
+            // Row 0: Tag discovery
             var discoverTextBox = new TextBox
             {
                 Name = "discoverTextBox",
-                Location = new Point(10, 10),
-                Size = new Size(200, 23),
-                PlaceholderText = "Tag to discover"
+                PlaceholderText = "Tag to discover",
+                Dock = DockStyle.Fill
             };
-            panel.Controls.Add(discoverTextBox);
+            layout.Controls.Add(discoverTextBox, 0, 0);
 
             var discoverButton = new Button
             {
                 Name = "discoverButton",
                 Text = "Discover Tag",
-                Location = new Point(220, 9),
-                Size = new Size(100, 25),
                 BackColor = Color.FromArgb(59, 130, 246),
                 ForeColor = Color.White,
-                Enabled = false
+                Enabled = false,
+                Dock = DockStyle.Fill
             };
             discoverButton.Click += DiscoverButton_Click;
-            panel.Controls.Add(discoverButton);
+            layout.Controls.Add(discoverButton, 1, 0);
 
-            // Tag operations
+            // Row 1: Tag operations
             var tagNameTextBox = new TextBox
             {
                 Name = "tagNameTextBox",
-                Location = new Point(10, 45),
-                Size = new Size(150, 23),
-                PlaceholderText = "Tag name"
+                PlaceholderText = "Tag name",
+                Dock = DockStyle.Fill
             };
-            panel.Controls.Add(tagNameTextBox);
+            layout.Controls.Add(tagNameTextBox, 0, 1);
 
             var dataTypeComboBox = new ComboBox
             {
                 Name = "dataTypeComboBox",
-                Location = new Point(170, 45),
-                Size = new Size(100, 23),
-                DropDownStyle = ComboBoxStyle.DropDownList
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Dock = DockStyle.Fill
             };
             dataTypeComboBox.Items.AddRange(new string[] { "BOOL", "DINT", "REAL", "STRING" });
             dataTypeComboBox.SelectedIndex = 0;
-            panel.Controls.Add(dataTypeComboBox);
+            layout.Controls.Add(dataTypeComboBox, 1, 1);
 
             var tagValueTextBox = new TextBox
             {
                 Name = "tagValueTextBox",
-                Location = new Point(280, 45),
-                Size = new Size(150, 23),
-                PlaceholderText = "Value"
+                PlaceholderText = "Value",
+                Dock = DockStyle.Fill
             };
-            panel.Controls.Add(tagValueTextBox);
+            layout.Controls.Add(tagValueTextBox, 2, 1);
 
+            var buttonPanel = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
             var readButton = new Button
             {
                 Name = "readButton",
                 Text = "Read",
-                Location = new Point(440, 44),
-                Size = new Size(80, 25),
                 BackColor = Color.FromArgb(34, 197, 94),
                 ForeColor = Color.White,
-                Enabled = false
+                Enabled = false,
+                Width = 80
             };
             readButton.Click += ReadButton_Click;
-            panel.Controls.Add(readButton);
+            buttonPanel.Controls.Add(readButton);
 
             var writeButton = new Button
             {
                 Name = "writeButton",
                 Text = "Write",
-                Location = new Point(530, 44),
-                Size = new Size(80, 25),
                 BackColor = Color.FromArgb(234, 179, 8),
                 ForeColor = Color.White,
-                Enabled = false
+                Enabled = false,
+                Width = 80
             };
             writeButton.Click += WriteButton_Click;
-            panel.Controls.Add(writeButton);
+            buttonPanel.Controls.Add(writeButton);
 
-            // Tags table
-            var tagsDataGridView = new DataGridView
-            {
-                Name = "tagsDataGridView",
-                Location = new Point(10, 80),
-                Size = new Size(panel.Width - 20, panel.Height - 90),
-                Dock = DockStyle.Bottom,
-                AllowUserToAddRows = false,
-                AllowUserToDeleteRows = false,
-                ReadOnly = true,
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-                MultiSelect = false,
-                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
-            };
-            tagsDataGridView.Columns.AddRange(new DataGridViewColumn[]
-            {
-                new DataGridViewTextBoxColumn { Name = "Name", HeaderText = "Tag Name" },
-                new DataGridViewTextBoxColumn { Name = "Value", HeaderText = "Value" },
-                new DataGridViewTextBoxColumn { Name = "Type", HeaderText = "Type" },
-                new DataGridViewTextBoxColumn { Name = "Updated", HeaderText = "Updated" }
-            });
-            panel.Controls.Add(tagsDataGridView);
+            layout.Controls.Add(buttonPanel, 3, 1);
 
+            panel.Controls.Add(layout);
             return panel;
         }
 
@@ -323,15 +296,9 @@ namespace WinFormsExample
 
         private void SetupTimers()
         {
-            _refreshTimer = new System.Windows.Forms.Timer();
-            _refreshTimer.Interval = 2000; // 2 seconds
-            _refreshTimer.Tick += RefreshTimer_Tick;
-
             _connectionMonitorTimer = new System.Windows.Forms.Timer();
             _connectionMonitorTimer.Interval = 10000; // 10 seconds
             _connectionMonitorTimer.Tick += ConnectionMonitorTimer_Tick;
-
-            _refreshTimer.Start();
             _connectionMonitorTimer.Start();
         }
 
@@ -440,6 +407,8 @@ namespace WinFormsExample
 
         private async Task InitializeTags()
         {
+            if (_plcClient == null) return;
+
             var testTags = new TagInfo[]
             {
                 new TagInfo { Name = "TestTag", Type = "BOOL", Value = false },
@@ -457,13 +426,13 @@ namespace WinFormsExample
                         switch (tag.Type)
                         {
                             case "BOOL":
-                                _plcClient.ReadBool(tag.Name);
+                                await Task.Run(() => _plcClient.ReadBool(tag.Name));
                                 break;
                             case "DINT":
-                                _plcClient.ReadDint(tag.Name);
+                                await Task.Run(() => _plcClient.ReadDint(tag.Name));
                                 break;
                             case "REAL":
-                                _plcClient.ReadReal(tag.Name);
+                                await Task.Run(() => _plcClient.ReadReal(tag.Name));
                                 break;
                         }
                         Log($"✅ Tag {tag.Name} already exists");
@@ -476,13 +445,13 @@ namespace WinFormsExample
                     switch (tag.Type)
                     {
                         case "BOOL":
-                            _plcClient.WriteBool(tag.Name, (bool)tag.Value);
+                            await Task.Run(() => _plcClient.WriteBool(tag.Name, (bool)tag.Value));
                             break;
                         case "DINT":
-                            _plcClient.WriteDint(tag.Name, (int)tag.Value);
+                            await Task.Run(() => _plcClient.WriteDint(tag.Name, (int)tag.Value));
                             break;
                         case "REAL":
-                            _plcClient.WriteReal(tag.Name, (float)tag.Value);
+                            await Task.Run(() => _plcClient.WriteReal(tag.Name, (float)tag.Value));
                             break;
                     }
                     Log($"✅ Created {tag.Name}");
@@ -490,67 +459,6 @@ namespace WinFormsExample
                 catch (Exception ex)
                 {
                     Log($"⚠️ Error handling {tag.Name}: {ex.Message}");
-                }
-            }
-        }
-
-        private void RefreshTimer_Tick(object? sender, EventArgs e)
-        {
-            if (!_isConnected || _plcClient == null) return;
-
-            var tagsDataGridView = (DataGridView)Controls.Find("tagsDataGridView", true)[0];
-            foreach (DataGridViewRow row in tagsDataGridView.Rows)
-            {
-                var tagName = row.Cells["Name"].Value?.ToString();
-                if (string.IsNullOrEmpty(tagName)) continue;
-
-                try
-                {
-                    // Try to read the tag
-                    try
-                    {
-                        var boolValue = _plcClient.ReadBool(tagName);
-                        row.Cells["Value"].Value = boolValue;
-                        row.Cells["Type"].Value = "BOOL";
-                        row.Cells["Updated"].Value = DateTime.Now.ToString("HH:mm:ss.fff");
-                        continue;
-                    }
-                    catch { }
-
-                    try
-                    {
-                        var dintValue = _plcClient.ReadDint(tagName);
-                        row.Cells["Value"].Value = dintValue;
-                        row.Cells["Type"].Value = "DINT";
-                        row.Cells["Updated"].Value = DateTime.Now.ToString("HH:mm:ss.fff");
-                        continue;
-                    }
-                    catch { }
-
-                    try
-                    {
-                        var realValue = _plcClient.ReadReal(tagName);
-                        row.Cells["Value"].Value = realValue;
-                        row.Cells["Type"].Value = "REAL";
-                        row.Cells["Updated"].Value = DateTime.Now.ToString("HH:mm:ss.fff");
-                        continue;
-                    }
-                    catch { }
-
-                    Log($"⚠️ Tag {tagName} not found. Will retry initialization later.");
-                }
-                catch (Exception ex)
-                {
-                    Log($"⚠️ Error refreshing tag {tagName}: {ex.Message}");
-                    if (ex.Message.Contains("Failed to fetch") || ex.Message.Contains("Connection refused"))
-                    {
-                        _retryCount++;
-                        if (_retryCount >= MAX_RETRIES)
-                        {
-                            Log("⚠️ Lost connection to server. Attempting to reconnect...");
-                            AttemptReconnect();
-                        }
-                    }
                 }
             }
         }
@@ -599,7 +507,6 @@ namespace WinFormsExample
                 if (_isConnected)
                 {
                     Log("✅ Reconnected successfully");
-                    _retryCount = 0;
                     UpdateConnectionStatus();
                 }
                 else
@@ -869,7 +776,6 @@ namespace WinFormsExample
                 _plcClient.Dispose();
             }
 
-            _refreshTimer?.Dispose();
             _connectionMonitorTimer?.Dispose();
         }
     }
