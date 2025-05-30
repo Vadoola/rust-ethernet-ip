@@ -44,14 +44,14 @@ This library aims to provide **Rust-native performance** and **memory safety** w
 - **ASP.NET Example**: Complete web application example
 - **WPF & WinForms Examples**: Complete desktop application examples
 
-### 🚧 **In Development (v0.2.0 - Q1 2024)**
+### 🚧 **In Development (v0.2.0 - Q2 2025)**
 - **Program Scope Tags** - `Program:MainProgram.TagName` support
 - **Real-time Subscriptions** - Tag change notifications
 - **Connection Pooling** - Advanced connection management
 - **ControlLogix Support** - Full L6x/L7x series compatibility
 - **Advanced Error Recovery** - Automatic reconnection and retry logic
 
-### 🔮 **Planned Features (v0.5.0 - Q2 2025)**
+### 🔮 **Planned Features (v0.5.0 - Q3 2025)**
 - **Security Features** - Authentication and encryption support
 - **Advanced Diagnostics** - Detailed connection and performance metrics
 - **Cloud Integration** - Industrial IoT connectivity
@@ -93,11 +93,11 @@ This library aims to provide **Rust-native performance** and **memory safety** w
 | Feature Category | Current Status | Target Status | Timeline |
 |------------------|----------------|---------------|----------|
 | **Basic I/O Operations** | ✅ **Production Ready** | ✅ **Complete** | ✅ **Done** |
-| **Data Type Support** | ✅ **Excellent** (8 types) | ✅ **Excellent** (12+ types) | Q1 2025 |
+| **Data Type Support** | ✅ **Excellent** (8 types) | ✅ **Excellent** (12+ types) | Q3 2025 |
 | **PLC Discovery** | ✅ **Complete** | ✅ **Complete** | ✅ **Done** |
 | **Structure Support** | ✅ **Complete** | ✅ **Complete** | ✅ **Done** |
 | **Multi-PLC Support** | ✅ **Complete** | ✅ **Complete** | ✅ **Done** |
-| **Performance** | ✅ **Excellent** | ✅ **Industry Leading** | Q2 2025 |
+| **Performance** | ✅ **Excellent** | ✅ **Industry Leading** | Q3 2025 |
 | **Reliability** | ⚠️ **Good** | ✅ **Industrial Grade** | Q3 2025 |
 | **Documentation** | ✅ **Good** | ✅ **Professional** | Q3 2025 |
 
