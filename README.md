@@ -22,7 +22,7 @@ A high-performance EtherNet/IP communication library for Allen-Bradley CompactLo
 - **Data Collection** - Industrial IoT and analytics platforms
 
 ### **Competitive Positioning**
-This library aims to provide **Rust-native performance** and **memory safety** while matching the feature completeness of established libraries like **pycomm3** (Python) and **AdvancedHMI** (VB.NET). Our goal is to become the **go-to solution** for high-performance industrial automation in Rust.
+This library aims to provide **Rust-native performance** and **memory safety** while matching the feature completeness of established libraries like **pycomm3** (Python). Our goal is to become the **go-to solution** for high-performance industrial automation in Rust.
 
 ## 📊 **Current Development Status**
 
@@ -88,7 +88,7 @@ This library aims to provide **Rust-native performance** and **memory safety** w
 - **Connection Pooling**: Efficient connection management
 - **Health Monitoring**: Automatic connection health checks
 - **Cross-Platform**: Windows, macOS, and Linux support
-- **Example Applications**: WPF and WinForms examples included
+- **Example Applications**: Complete examples for WPF, WinForms, and ASP.NET applications
 
 ### 🚧 **Current Limitations**
 - **No Real-time Updates**: No tag change subscriptions
@@ -261,9 +261,10 @@ The library includes comprehensive test coverage across multiple test types:
 - Memory leak detection
 
 #### Example Applications
+- ASP.NET Example: Modern web application with RESTful API
 - WPF Example: Modern UI with MVVM pattern
 - WinForms Example: Traditional Windows application
-- Both examples demonstrate:
+- All examples demonstrate:
   - Connection management
   - Tag discovery
   - Real-time updates
@@ -296,7 +297,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Allen-Bradley](https://www.rockwellautomation.com/) for EtherNet/IP protocol
 - [Tokio](https://tokio.rs/) for async runtime
 - [pycomm3](https://github.com/ottowayi/pycomm3) for protocol reference
-- [AdvancedHMI](https://www.advancedhmi.com/) for feature inspiration
 
 ## Error Handling and Troubleshooting
 
