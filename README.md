@@ -3,7 +3,7 @@
 > **⚠️ DEVELOPMENT STATUS**  
 > **This project is now in beta testing phase and ready for evaluation.**  
 > The core functionality is working and stable, but some advanced features are still in development.  
-> **Production release is planned for Q2 2024.**
+> **Production release is planned for Q4 2025.**
 
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
