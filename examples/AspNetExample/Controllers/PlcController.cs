@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using AspNetExample.Services;
+using System;
+using System.Threading.Tasks;
 
 namespace AspNetExample.Controllers;
 
@@ -19,269 +21,151 @@ public class PlcController : ControllerBase
     [HttpPost("connect")]
     public IActionResult Connect([FromBody] ConnectRequest request)
     {
-        try
-        {
-            var success = _plcService.Connect(request.PlcAddress);
-            return Ok(new { success });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error connecting to PLC at {PlcAddress}", request.PlcAddress);
-            return Ok(new { success = false, error = ex.Message });
-        }
+        if (string.IsNullOrEmpty(request.Address))
+            return BadRequest(new { success = false, message = "PLC address is required" });
+
+        var connected = _plcService.Connect(request.Address);
+        if (connected)
+            return Ok(new { success = true, message = "Connected successfully" });
+        else
+            return BadRequest(new { success = false, message = "Connection failed" });
     }
 
     [HttpPost("disconnect")]
-    public IActionResult Disconnect([FromBody] ConnectRequest request)
+    public IActionResult Disconnect()
     {
+        _plcService.Disconnect();
+        return Ok(new { success = true, message = "Disconnected successfully" });
+    }
+
+    [HttpGet("tag/{tagName}")]
+    public IActionResult ReadTag(string tagName)
+    {
+        if (!_plcService.IsConnected)
+            return StatusCode(503, new { success = false, message = "Not connected to PLC" });
+
         try
         {
-            _plcService.Disconnect(request.PlcAddress);
-            return Ok(new { success = true });
+            // Try all types
+            try { var v = _plcService.ReadBool(tagName); return Ok(new { success = true, value = v, type = "BOOL" }); } catch { }
+            try { var v = _plcService.ReadDint(tagName); return Ok(new { success = true, value = v, type = "DINT" }); } catch { }
+            try { var v = _plcService.ReadReal(tagName); return Ok(new { success = true, value = v, type = "REAL" }); } catch { }
+            try { var v = _plcService.ReadString(tagName); return Ok(new { success = true, value = v, type = "STRING" }); } catch { }
+            return NotFound(new { success = false, message = $"Could not read tag {tagName}" });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error disconnecting from PLC at {PlcAddress}", request.PlcAddress);
-            return Ok(new { success = false, error = ex.Message });
+            _logger.LogError(ex, "Error reading tag {TagName}", tagName);
+            return StatusCode(500, new { success = false, message = ex.Message });
         }
     }
 
-    [HttpGet("discover")]
-    public IActionResult DiscoverTag([FromQuery] string plcAddress, [FromQuery] string tagName)
+    [HttpPost("tag/{tagName}")]
+    public IActionResult WriteTag(string tagName, [FromBody] WriteTagRequest request)
     {
+        if (!_plcService.IsConnected)
+            return StatusCode(503, new { success = false, message = "Not connected to PLC" });
+
         try
         {
-            var metadata = _plcService.GetTagMetadata(plcAddress, tagName);
-            return Ok(new { success = true, metadata });
+            switch (request.Type.ToUpper())
+            {
+                case "BOOL":
+                    if (bool.TryParse(request.Value.ToString(), out bool boolValue))
+                    {
+                        _plcService.WriteBool(tagName, boolValue);
+                        return Ok(new { success = true, message = $"Wrote {boolValue} to {tagName}" });
+                    }
+                    return BadRequest(new { success = false, message = "Invalid boolean value" });
+                case "DINT":
+                    if (int.TryParse(request.Value.ToString(), out int dintValue))
+                    {
+                        _plcService.WriteDint(tagName, dintValue);
+                        return Ok(new { success = true, message = $"Wrote {dintValue} to {tagName}" });
+                    }
+                    return BadRequest(new { success = false, message = "Invalid integer value" });
+                case "REAL":
+                    if (float.TryParse(request.Value.ToString(), out float realValue))
+                    {
+                        _plcService.WriteReal(tagName, realValue);
+                        return Ok(new { success = true, message = $"Wrote {realValue} to {tagName}" });
+                    }
+                    return BadRequest(new { success = false, message = "Invalid float value" });
+                case "STRING":
+                    if (request.Value == null)
+                        return BadRequest(new { success = false, message = "String value cannot be null" });
+                    string stringValue = request.Value.ToString() ?? string.Empty;
+                    _plcService.WriteString(tagName, stringValue);
+                    return Ok(new { success = true, message = $"Wrote {stringValue} to {tagName}" });
+                default:
+                    return BadRequest(new { success = false, message = $"Unsupported type: {request.Type}" });
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error discovering tag {TagName} from PLC at {PlcAddress}", tagName, plcAddress);
-            return Ok(new { success = false, error = ex.Message });
+            _logger.LogError(ex, "Error writing to tag {TagName}", tagName);
+            return StatusCode(500, new { success = false, message = ex.Message });
         }
     }
 
-    [HttpGet("read/bool")]
-    public IActionResult ReadBool([FromQuery] string plcAddress, [FromQuery] string tagName)
+    [HttpPost("benchmark")]
+    public IActionResult RunBenchmark()
     {
-        var result = _plcService.TryReadBool(plcAddress, tagName);
-        if (result.Success)
-            return Ok(new { value = result.Value });
-        if (result.Error != null && result.Error.Contains("not found"))
-            return NotFound(new { error = result.Error });
-        if (result.Error != null && result.Error.Contains("Type mismatch"))
-            return BadRequest(new { error = result.Error });
-        return StatusCode(500, new { error = result.Error ?? "Unknown error" });
-    }
+        if (!_plcService.IsConnected)
+            return StatusCode(503, new { success = false, message = "Not connected to PLC" });
 
-    [HttpGet("read/dint")]
-    public IActionResult ReadDint([FromQuery] string plcAddress, [FromQuery] string tagName)
-    {
-        var result = _plcService.TryReadDint(plcAddress, tagName);
-        if (result.Success)
-            return Ok(new { value = result.Value });
-        if (result.Error != null && result.Error.Contains("not found"))
-            return NotFound(new { error = result.Error });
-        if (result.Error != null && result.Error.Contains("Type mismatch"))
-            return BadRequest(new { error = result.Error });
-        return StatusCode(500, new { error = result.Error ?? "Unknown error" });
-    }
-
-    [HttpGet("read/real")]
-    public IActionResult ReadReal([FromQuery] string plcAddress, [FromQuery] string tagName)
-    {
-        var result = _plcService.TryReadReal(plcAddress, tagName);
-        if (result.Success)
-            return Ok(new { value = result.Value });
-        if (result.Error != null && result.Error.Contains("not found"))
-            return NotFound(new { error = result.Error });
-        if (result.Error != null && result.Error.Contains("Type mismatch"))
-            return BadRequest(new { error = result.Error });
-        return StatusCode(500, new { error = result.Error ?? "Unknown error" });
-    }
-
-    [HttpGet("read/string")]
-    public IActionResult ReadString([FromQuery] string plcAddress, [FromQuery] string tagName)
-    {
-        var result = _plcService.TryReadString(plcAddress, tagName);
-        if (result.Success)
-            return Ok(new { value = result.Value });
-        if (result.Error != null && result.Error.Contains("not found"))
-            return NotFound(new { error = result.Error });
-        if (result.Error != null && result.Error.Contains("Type mismatch"))
-            return BadRequest(new { error = result.Error });
-        return StatusCode(500, new { error = result.Error ?? "Unknown error" });
-    }
-
-    [HttpGet("read/udt")]
-    public IActionResult ReadUdt([FromQuery] string plcAddress, [FromQuery] string tagName)
-    {
         try
         {
-            var value = _plcService.ReadUdt(plcAddress, tagName);
-            return Ok(new { Value = value });
+            var startTime = DateTime.Now;
+            var readCount = 0;
+            var writeCount = 0;
+            while ((DateTime.Now - startTime).TotalSeconds < 5)
+            {
+                try { _plcService.ReadBool("TestTag"); readCount++; } catch { }
+                try { _plcService.WriteBool("TestTag", true); writeCount++; } catch { }
+            }
+            var readRate = (int)(readCount / 5.0);
+            var writeRate = (int)(writeCount / 5.0);
+            return Ok(new { success = true, readRate, writeRate, message = $"Benchmark complete: {readRate} reads/sec, {writeRate} writes/sec" });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error reading UDT tag {Tag} from PLC at {Address}", tagName, plcAddress);
-            return StatusCode(500, new { Error = ex.Message });
+            _logger.LogError(ex, "Error running benchmark");
+            return StatusCode(500, new { success = false, message = ex.Message });
         }
     }
 
-    [HttpPost("write/bool")]
-    public IActionResult WriteBool([FromBody] WriteBoolRequest request)
+    [HttpGet("status")]
+    public IActionResult GetStatus()
     {
         try
         {
-            _logger.LogInformation("Received write bool request: PlcAddress={PlcAddress}, TagName={TagName}, Value={Value}", 
-                request.PlcAddress, request.TagName, request.Value);
-
-            if (string.IsNullOrEmpty(request.PlcAddress))
-                return BadRequest(new { success = false, error = "PLC address is required" });
-            if (string.IsNullOrEmpty(request.TagName))
-                return BadRequest(new { success = false, error = "Tag name is required" });
-
-            _plcService.WriteBool(request.PlcAddress, request.TagName, request.Value);
-            _logger.LogInformation("Successfully wrote bool value {Value} to tag {TagName} on PLC {PlcAddress}", 
-                request.Value, request.TagName, request.PlcAddress);
-            return Ok(new { success = true, message = $"Successfully wrote {request.Value} to {request.TagName}" });
+            var status = new
+            {
+                IsConnected = _plcService.IsConnected,
+                Address = _plcService.CurrentAddress,
+                LastReadTimes = _plcService.LastReadTimes.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => kvp.Value.ToString("HH:mm:ss.fff")
+                )
+            };
+            return Ok(new { success = true, status });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error writing bool tag {TagName} to PLC at {PlcAddress}", request.TagName, request.PlcAddress);
-            return StatusCode(500, new { success = false, error = ex.Message });
-        }
-    }
-
-    [HttpPost("write/dint")]
-    public IActionResult WriteDint([FromBody] WriteDintRequest request)
-    {
-        try
-        {
-            _logger.LogInformation("Received write dint request: PlcAddress={PlcAddress}, TagName={TagName}, Value={Value}", 
-                request.PlcAddress, request.TagName, request.Value);
-
-            if (string.IsNullOrEmpty(request.PlcAddress))
-                return BadRequest(new { success = false, error = "PLC address is required" });
-            if (string.IsNullOrEmpty(request.TagName))
-                return BadRequest(new { success = false, error = "Tag name is required" });
-
-            _plcService.WriteDint(request.PlcAddress, request.TagName, request.Value);
-            _logger.LogInformation("Successfully wrote dint value {Value} to tag {TagName} on PLC {PlcAddress}", 
-                request.Value, request.TagName, request.PlcAddress);
-            return Ok(new { success = true, message = $"Successfully wrote {request.Value} to {request.TagName}" });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error writing dint tag {TagName} to PLC at {PlcAddress}", request.TagName, request.PlcAddress);
-            return StatusCode(500, new { success = false, error = ex.Message });
-        }
-    }
-
-    [HttpPost("write/real")]
-    public IActionResult WriteReal([FromBody] WriteRealRequest request)
-    {
-        try
-        {
-            _logger.LogInformation("Received write real request: PlcAddress={PlcAddress}, TagName={TagName}, Value={Value}", 
-                request.PlcAddress, request.TagName, request.Value);
-
-            if (string.IsNullOrEmpty(request.PlcAddress))
-                return BadRequest(new { success = false, error = "PLC address is required" });
-            if (string.IsNullOrEmpty(request.TagName))
-                return BadRequest(new { success = false, error = "Tag name is required" });
-
-            _plcService.WriteReal(request.PlcAddress, request.TagName, request.Value);
-            _logger.LogInformation("Successfully wrote real value {Value} to tag {TagName} on PLC {PlcAddress}", 
-                request.Value, request.TagName, request.PlcAddress);
-            return Ok(new { success = true, message = $"Successfully wrote {request.Value} to {request.TagName}" });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error writing real tag {TagName} to PLC at {PlcAddress}", request.TagName, request.PlcAddress);
-            return StatusCode(500, new { success = false, error = ex.Message });
-        }
-    }
-
-    [HttpPost("write/string")]
-    public IActionResult WriteString([FromBody] WriteStringRequest request)
-    {
-        try
-        {
-            _logger.LogInformation("Received write string request: PlcAddress={PlcAddress}, TagName={TagName}, Value={Value}", 
-                request.PlcAddress, request.TagName, request.Value);
-
-            if (string.IsNullOrEmpty(request.PlcAddress))
-                return BadRequest(new { success = false, error = "PLC address is required" });
-            if (string.IsNullOrEmpty(request.TagName))
-                return BadRequest(new { success = false, error = "Tag name is required" });
-            if (request.Value == null)
-                return BadRequest(new { success = false, error = "Value is required" });
-
-            _plcService.WriteString(request.PlcAddress, request.TagName, request.Value);
-            _logger.LogInformation("Successfully wrote string value '{Value}' to tag {TagName} on PLC {PlcAddress}", 
-                request.Value, request.TagName, request.PlcAddress);
-            return Ok(new { success = true, message = $"Successfully wrote '{request.Value}' to {request.TagName}" });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error writing string tag {TagName} to PLC at {PlcAddress}", request.TagName, request.PlcAddress);
-            return StatusCode(500, new { success = false, error = ex.Message });
-        }
-    }
-
-    [HttpPost("write/udt")]
-    public IActionResult WriteUdt([FromBody] WriteUdtRequest request)
-    {
-        try
-        {
-            _plcService.WriteUdt(request.PlcAddress, request.TagName, request.Value);
-            return Ok(new { Success = true });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error writing UDT tag {Tag} to PLC at {Address}", request.TagName, request.PlcAddress);
-            return StatusCode(500, new { Error = ex.Message });
+            _logger.LogError(ex, "Error getting status");
+            return StatusCode(500, new { success = false, message = ex.Message });
         }
     }
 }
 
 public class ConnectRequest
 {
-    public string PlcAddress { get; set; } = string.Empty;
+    public string Address { get; set; } = string.Empty;
 }
 
-public class WriteBoolRequest
+public class WriteTagRequest
 {
-    public string PlcAddress { get; set; } = string.Empty;
-    public string TagName { get; set; } = string.Empty;
-    public bool Value { get; set; }
-}
-
-public class WriteDintRequest
-{
-    public string PlcAddress { get; set; } = string.Empty;
-    public string TagName { get; set; } = string.Empty;
-    public int Value { get; set; }
-}
-
-public class WriteRealRequest
-{
-    public string PlcAddress { get; set; } = string.Empty;
-    public string TagName { get; set; } = string.Empty;
-    public float Value { get; set; }
-}
-
-public class WriteStringRequest
-{
-    public string PlcAddress { get; set; } = string.Empty;
-    public string TagName { get; set; } = string.Empty;
-    public string Value { get; set; } = string.Empty;
-}
-
-public class WriteUdtRequest
-{
-    public string PlcAddress { get; set; } = string.Empty;
-    public string TagName { get; set; } = string.Empty;
-    public Dictionary<string, object> Value { get; set; } = new();
+    public string Type { get; set; } = string.Empty;
+    public object Value { get; set; } = null!;
 } 

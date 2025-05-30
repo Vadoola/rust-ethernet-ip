@@ -15,6 +15,8 @@ namespace WpfExample.ViewModels
     {
         private EtherNetIpClient? _plcClient;
         private DispatcherTimer? _refreshTimer;
+        private bool _isRefreshing;
+        private readonly object _refreshLock = new();
 
         [ObservableProperty]
         private string plcAddress = "192.168.0.1:44818";
@@ -33,6 +35,26 @@ namespace WpfExample.ViewModels
 
         [ObservableProperty]
         private int writeRate;
+
+        [ObservableProperty]
+        private string tagToDiscover = string.Empty;
+
+        [ObservableProperty]
+        private string tagName = string.Empty;
+
+        [ObservableProperty]
+        private string tagValue = string.Empty;
+
+        [ObservableProperty]
+        private string selectedDataType = "BOOL";
+
+        public ObservableCollection<string> DataTypes { get; } = new()
+        {
+            "BOOL",
+            "DINT",
+            "REAL",
+            "STRING"
+        };
 
         public ObservableCollection<PlcTag> Tags { get; } = new();
         public ObservableCollection<string> LogMessages { get; } = new();
@@ -54,7 +76,7 @@ namespace WpfExample.ViewModels
         {
             _refreshTimer = new DispatcherTimer
             {
-                Interval = TimeSpan.FromSeconds(1)
+                Interval = TimeSpan.FromMilliseconds(100)
             };
             _refreshTimer.Tick += RefreshTimer_Tick;
         }
@@ -66,23 +88,29 @@ namespace WpfExample.ViewModels
             {
                 LogMessage("🔌 Connecting to PLC...");
                 
-                _plcClient = new EtherNetIpClient();
-                
-                if (_plcClient.Connect(PlcAddress))
+                // Create and connect on background thread
+                await Task.Run(() =>
                 {
-                    IsConnected = true;
-                    ConnectionStatus = "Connected";
-                    SessionId = $"0x{_plcClient.ClientId:X8}";
-                    
-                    _refreshTimer?.Start();
-                    LogMessage($"✅ Connected! Session ID: {SessionId}");
-                }
-                else
+                    _plcClient = new EtherNetIpClient();
+                    return _plcClient.Connect(PlcAddress);
+                }).ContinueWith(t =>
                 {
-                    LogMessage("❌ Connection failed!");
-                    _plcClient?.Dispose();
-                    _plcClient = null;
-                }
+                    if (t.Result)
+                    {
+                        IsConnected = true;
+                        ConnectionStatus = "Connected";
+                        SessionId = $"0x{_plcClient?.ClientId:X8}";
+                        
+                        _refreshTimer?.Start();
+                        LogMessage($"✅ Connected! Session ID: {SessionId}");
+                    }
+                    else
+                    {
+                        LogMessage("❌ Connection failed!");
+                        _plcClient?.Dispose();
+                        _plcClient = null;
+                    }
+                }, TaskScheduler.FromCurrentSynchronizationContext());
             }
             catch (Exception ex)
             {
@@ -123,122 +151,244 @@ namespace WpfExample.ViewModels
         }
 
         [RelayCommand]
-        private void ToggleMotor()
+        private void DiscoverTag()
         {
             if (!IsConnected || _plcClient == null) return;
 
             try
             {
-                var testTag = Tags.FirstOrDefault(t => t.Name == "TestTag");
-                if (testTag?.Value is bool currentValue)
+                LogMessage($"🔍 Discovering tag: {TagToDiscover}");
+                
+                // Try to read the tag to determine its type
+                try
                 {
-                    _plcClient.WriteBool("TestTag", !currentValue);
-                    LogMessage($"✏️ Motor toggled to: {(!currentValue ? "ON" : "OFF")}");
+                    var boolValue = _plcClient.ReadBool(TagToDiscover);
+                    SelectedDataType = "BOOL";
+                    TagName = TagToDiscover;
+                    TagValue = boolValue.ToString();
+                    LogMessage($"✅ Discovered BOOL tag: {TagToDiscover} = {boolValue}");
+                    return;
                 }
+                catch { }
+
+                try
+                {
+                    var dintValue = _plcClient.ReadDint(TagToDiscover);
+                    SelectedDataType = "DINT";
+                    TagName = TagToDiscover;
+                    TagValue = dintValue.ToString();
+                    LogMessage($"✅ Discovered DINT tag: {TagToDiscover} = {dintValue}");
+                    return;
+                }
+                catch { }
+
+                try
+                {
+                    var realValue = _plcClient.ReadReal(TagToDiscover);
+                    SelectedDataType = "REAL";
+                    TagName = TagToDiscover;
+                    TagValue = realValue.ToString();
+                    LogMessage($"✅ Discovered REAL tag: {TagToDiscover} = {realValue}");
+                    return;
+                }
+                catch { }
+
+                try
+                {
+                    var stringValue = _plcClient.ReadString(TagToDiscover);
+                    SelectedDataType = "STRING";
+                    TagName = TagToDiscover;
+                    TagValue = stringValue;
+                    LogMessage($"✅ Discovered STRING tag: {TagToDiscover} = {stringValue}");
+                    return;
+                }
+                catch { }
+
+                LogMessage($"❌ Could not determine type for tag: {TagToDiscover}");
             }
             catch (Exception ex)
             {
-                LogMessage($"❌ Toggle error: {ex.Message}");
+                LogMessage($"❌ Discovery error: {ex.Message}");
             }
         }
 
         [RelayCommand]
-        private void ResetCounter()
+        private void ReadTag()
         {
             if (!IsConnected || _plcClient == null) return;
 
             try
             {
-                _plcClient.WriteDint("TestDint", 0);
-                LogMessage("✏️ Counter reset to 0");
+                LogMessage($"📖 Reading tag: {TagName}");
+                
+                object value = SelectedDataType switch
+                {
+                    "BOOL" => _plcClient.ReadBool(TagName),
+                    "DINT" => _plcClient.ReadDint(TagName),
+                    "REAL" => _plcClient.ReadReal(TagName),
+                    "STRING" => _plcClient.ReadString(TagName),
+                    _ => throw new Exception($"Unsupported data type: {SelectedDataType}")
+                };
+                
+                TagValue = value.ToString() ?? string.Empty;
+                LogMessage($"✅ Read {SelectedDataType} tag: {TagName} = {value}");
             }
             catch (Exception ex)
             {
-                LogMessage($"❌ Reset error: {ex.Message}");
+                LogMessage($"❌ Read error: {ex.Message}");
             }
         }
 
         [RelayCommand]
-        private void RunBenchmark()
+        private void WriteTag()
         {
             if (!IsConnected || _plcClient == null) return;
 
             try
             {
-                LogMessage("⚡ Running performance benchmark...");
+                LogMessage($"✏️ Writing tag: {TagName}");
                 
-                // Read performance test
-                var readStart = DateTime.Now;
-                int readSuccess = 0;
-                
-                for (int i = 0; i < 10; i++)
+                switch (SelectedDataType)
                 {
-                    try
-                    {
-                        _plcClient.ReadBool("TestTag");
-                        readSuccess++;
-                    }
-                    catch { }
+                    case "BOOL":
+                        if (bool.TryParse(TagValue, out bool boolValue))
+                        {
+                            _plcClient.WriteBool(TagName, boolValue);
+                            LogMessage($"✅ Wrote BOOL tag: {TagName} = {boolValue}");
+                        }
+                        else
+                        {
+                            throw new Exception("Invalid boolean value");
+                        }
+                        break;
+                        
+                    case "DINT":
+                        if (int.TryParse(TagValue, out int dintValue))
+                        {
+                            _plcClient.WriteDint(TagName, dintValue);
+                            LogMessage($"✅ Wrote DINT tag: {TagName} = {dintValue}");
+                        }
+                        else
+                        {
+                            throw new Exception("Invalid integer value");
+                        }
+                        break;
+                        
+                    case "REAL":
+                        if (float.TryParse(TagValue, out float realValue))
+                        {
+                            _plcClient.WriteReal(TagName, realValue);
+                            LogMessage($"✅ Wrote REAL tag: {TagName} = {realValue}");
+                        }
+                        else
+                        {
+                            throw new Exception("Invalid float value");
+                        }
+                        break;
+                        
+                    case "STRING":
+                        _plcClient.WriteString(TagName, TagValue);
+                        LogMessage($"✅ Wrote STRING tag: {TagName} = {TagValue}");
+                        break;
+                        
+                    default:
+                        throw new Exception($"Unsupported data type: {SelectedDataType}");
                 }
-                
-                var readDuration = (DateTime.Now - readStart).TotalSeconds;
-                ReadRate = (int)(readSuccess / readDuration);
-                
-                // Write performance test
-                var writeStart = DateTime.Now;
-                int writeSuccess = 0;
-                
-                for (int i = 0; i < 10; i++)
-                {
-                    try
-                    {
-                        _plcClient.WriteDint("TestDint", i);
-                        writeSuccess++;
-                    }
-                    catch { }
-                }
-                
-                var writeDuration = (DateTime.Now - writeStart).TotalSeconds;
-                WriteRate = (int)(writeSuccess / writeDuration);
-                
-                LogMessage($"📊 Performance: {ReadRate} read ops/sec, {WriteRate} write ops/sec");
             }
             catch (Exception ex)
             {
-                LogMessage($"⚠️ Benchmark error: {ex.Message}");
+                LogMessage($"❌ Write error: {ex.Message}");
+            }
+        }
+
+        [RelayCommand]
+        private async Task RunBenchmarkAsync()
+        {
+            if (!IsConnected || _plcClient == null) return;
+
+            try
+            {
+                LogMessage("📊 Running benchmark...");
+                
+                var startTime = DateTime.Now;
+                var readCount = 0;
+                var writeCount = 0;
+                
+                // Run benchmark on background thread
+                await Task.Run(() =>
+                {
+                    while ((DateTime.Now - startTime).TotalSeconds < 5)
+                    {
+                        try
+                        {
+                            _plcClient?.ReadBool("TestTag");
+                            readCount++;
+                        }
+                        catch { }
+                        
+                        try
+                        {
+                            _plcClient?.WriteBool("TestTag", true);
+                            writeCount++;
+                        }
+                        catch { }
+                    }
+                });
+                
+                ReadRate = (int)(readCount / 5.0);
+                WriteRate = (int)(writeCount / 5.0);
+                
+                LogMessage($"✅ Benchmark complete: {ReadRate} reads/sec, {WriteRate} writes/sec");
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"❌ Benchmark error: {ex.Message}");
             }
         }
 
         private async void RefreshTimer_Tick(object? sender, EventArgs e)
         {
-            if (!IsConnected || _plcClient == null) return;
+            if (!IsConnected || _plcClient == null || _isRefreshing) return;
+
+            lock (_refreshLock)
+            {
+                if (_isRefreshing) return;
+                _isRefreshing = true;
+            }
 
             try
             {
-                // Read all tags
-                foreach (var tag in Tags)
+                // Read all tags in parallel on background thread
+                await Task.Run(() =>
                 {
-                    try
+                    Parallel.ForEach(Tags, tag =>
                     {
-                        object value = tag.DataType switch
+                        try
                         {
-                            "BOOL" => _plcClient.ReadBool(tag.Name),
-                            "DINT" => _plcClient.ReadDint(tag.Name),
-                            "REAL" => _plcClient.ReadReal(tag.Name),
-                            _ => "Unknown"
-                        };
-                        
-                        tag.UpdateValue(value);
-                    }
-                    catch (Exception ex)
-                    {
-                        tag.SetError(ex.Message);
-                    }
-                }
+                            object value = tag.DataType switch
+                            {
+                                "BOOL" => _plcClient?.ReadBool(tag.Name) ?? false,
+                                "DINT" => _plcClient?.ReadDint(tag.Name) ?? 0,
+                                "REAL" => _plcClient?.ReadReal(tag.Name) ?? 0.0f,
+                                _ => "Unknown"
+                            };
+                            
+                            Application.Current.Dispatcher.Invoke(() => tag.UpdateValue(value));
+                        }
+                        catch (Exception ex)
+                        {
+                            Application.Current.Dispatcher.Invoke(() => tag.SetError(ex.Message));
+                        }
+                    });
+                });
             }
             catch (Exception ex)
             {
                 LogMessage($"⚠️ Refresh error: {ex.Message}");
+            }
+            finally
+            {
+                _isRefreshing = false;
             }
         }
 

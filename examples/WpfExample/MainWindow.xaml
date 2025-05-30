@@ -129,37 +129,66 @@
                     <TextBlock Grid.Row="0" Text="📊 Tag Monitoring" 
                                FontSize="18" FontWeight="Bold" Margin="0,0,0,16"/>
                     
-                    <!-- Tags DataGrid -->
-                    <DataGrid Grid.Row="1" ItemsSource="{Binding Tags}" 
-                              AutoGenerateColumns="False" CanUserAddRows="False"
-                              GridLinesVisibility="Horizontal" HeadersVisibility="Column"
-                              Background="Transparent" BorderThickness="0">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="Tag Name" Binding="{Binding Name}" Width="*"/>
-                            <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*"/>
-                            <DataGridTextColumn Header="Type" Binding="{Binding DataType}" Width="Auto"/>
-                            <DataGridTextColumn Header="Updated" 
-                                              Binding="{Binding LastUpdated, StringFormat='HH:mm:ss'}" Width="Auto"/>
-                        </DataGrid.Columns>
-                        <DataGrid.RowStyle>
-                            <Style TargetType="DataGridRow">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding HasError}" Value="True">
-                                        <Setter Property="Background" Value="#FFEBEE"/>
-                                        <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </DataGrid.RowStyle>
-                    </DataGrid>
-                    
-                    <!-- Control Buttons -->
-                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,16,0,0">
-                        <Button Content="🔄 Toggle Motor" Command="{Binding ToggleMotorCommand}"
-                                Style="{StaticResource WarningButton}" IsEnabled="{Binding IsConnected}"/>
-                        <Button Content="🔄 Reset Counter" Command="{Binding ResetCounterCommand}"
-                                Style="{StaticResource ModernButton}" IsEnabled="{Binding IsConnected}"/>
-                    </StackPanel>
+                    <!-- Tag Discovery -->
+                    <Grid Grid.Row="1">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Tag Discovery Controls -->
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+                            <TextBox Text="{Binding TagToDiscover}" Width="200" Padding="8,4" Margin="0,0,8,0"/>
+                            <Button Content="Discover Tag" Command="{Binding DiscoverTagCommand}"
+                                    Style="{StaticResource ModernButton}"/>
+                        </StackPanel>
+
+                        <!-- Tag Operations -->
+                        <Grid Grid.Row="1" Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            
+                            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                <TextBox Text="{Binding TagName}" Width="200" Padding="8,4" Margin="0,0,8,0"/>
+                                <ComboBox ItemsSource="{Binding DataTypes}" SelectedItem="{Binding SelectedDataType}" 
+                                          Width="100" Padding="8,4" Margin="0,0,8,0"/>
+                                <TextBox Text="{Binding TagValue}" Width="100" Padding="8,4"/>
+                            </StackPanel>
+                            
+                            <Button Grid.Column="1" Content="Read" Command="{Binding ReadTagCommand}"
+                                    Style="{StaticResource ModernButton}" Margin="0,0,8,0"/>
+                            <Button Grid.Column="2" Content="Write" Command="{Binding WriteTagCommand}"
+                                    Style="{StaticResource ModernButton}"/>
+                        </Grid>
+
+                        <!-- Tags DataGrid -->
+                        <DataGrid Grid.Row="2" ItemsSource="{Binding Tags}" 
+                                  AutoGenerateColumns="False" CanUserAddRows="False"
+                                  GridLinesVisibility="Horizontal" HeadersVisibility="Column"
+                                  Background="Transparent" BorderThickness="0">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Tag Name" Binding="{Binding Name}" Width="*"/>
+                                <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*"/>
+                                <DataGridTextColumn Header="Type" Binding="{Binding DataType}" Width="Auto"/>
+                                <DataGridTextColumn Header="Updated" 
+                                                  Binding="{Binding LastUpdated, StringFormat='HH:mm:ss'}" Width="Auto"/>
+                            </DataGrid.Columns>
+                            <DataGrid.RowStyle>
+                                <Style TargetType="DataGridRow">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasError}" Value="True">
+                                            <Setter Property="Background" Value="#FFEBEE"/>
+                                            <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </DataGrid.RowStyle>
+                        </DataGrid>
+                    </Grid>
                 </Grid>
             </Border>
             

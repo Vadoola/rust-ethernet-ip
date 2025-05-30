@@ -3,336 +3,565 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rust EtherNet/IP Web Interface</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <title>🦀 Rust EtherNet/IP - ASP.NET Demo</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <style>
-        .result-box {
-            min-height: 100px;
-            max-height: 300px;
-            overflow-y: auto;
-            background-color: #f8f9fa;
-            border: 1px solid #dee2e6;
-            border-radius: 0.25rem;
-            padding: 1rem;
-            margin-top: 1rem;
+        .tag-value {
+            font-family: 'Consolas', monospace;
         }
-        .error {
-            color: #dc3545;
+        .log-entry {
+            font-family: 'Consolas', monospace;
+            white-space: pre-wrap;
         }
-        .success {
-            color: #198754;
+        .connected {
+            color: #10B981;
+        }
+        .disconnected {
+            color: #EF4444;
         }
     </style>
 </head>
-<body>
-    <div class="container mt-5">
-        <h1 class="mb-4">Rust EtherNet/IP Web Interface</h1>
-        
-        <!-- Connection Section -->
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0">PLC Connection</h5>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="mb-3">
-                            <label for="plcAddress" class="form-label">PLC Address</label>
-                            <input type="text" class="form-control" id="plcAddress" value="192.168.0.1:44818">
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-800">🦀 Rust EtherNet/IP Driver - ASP.NET Demo</h1>
+                    <div class="mt-2">
+                        <div class="flex items-center space-x-4">
+                            <input type="text" id="plcAddress" placeholder="PLC Address" 
+                                   class="px-4 py-2 border rounded-lg" value="192.168.0.1:44818">
+                            <button id="connectBtn" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600">
+                                Connect
+                            </button>
+                            <button id="disconnectBtn" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600" disabled>
+                                Disconnect
+                            </button>
                         </div>
                     </div>
-                    <div class="col-md-6 d-flex align-items-end">
-                        <button class="btn btn-primary" onclick="connect()">Connect</button>
-                    </div>
                 </div>
-                <div id="connectionStatus" class="mt-3"></div>
+                <div class="text-right">
+                    <div id="connectionStatus" class="text-xl font-bold disconnected">Disconnected</div>
+                    <div id="sessionId" class="text-sm text-gray-600">Session: None</div>
+                </div>
             </div>
         </div>
 
-        <!-- Tag Discovery Section -->
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0">Tag Discovery</h5>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="mb-3">
-                            <label for="discoverTag" class="form-label">Tag Name</label>
-                            <input type="text" class="form-control" id="discoverTag" placeholder="Enter tag name to discover">
-                        </div>
+        <!-- Performance Info -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <div class="flex justify-between items-center">
+                <div class="flex space-x-8">
+                    <div>
+                        <span class="text-gray-600">📊 Read Rate:</span>
+                        <span id="readRate" class="font-bold">0 ops/sec</span>
                     </div>
-                    <div class="col-md-6 d-flex align-items-end">
-                        <button class="btn btn-info" onclick="discoverTag()">Discover Tag</button>
+                    <div>
+                        <span class="text-gray-600">📝 Write Rate:</span>
+                        <span id="writeRate" class="font-bold">0 ops/sec</span>
                     </div>
                 </div>
-                <div id="discoveryResult" class="mt-3"></div>
+                <button id="benchmarkBtn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600" disabled>
+                    Run Benchmark
+                </button>
             </div>
         </div>
 
-        <!-- Tag Operations Section -->
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">Tag Operations</h5>
+        <div class="grid grid-cols-2 gap-6">
+            <!-- Left Panel: Tag Monitoring -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-bold mb-4">📊 Tag Monitoring</h2>
+                
+                <!-- Tag Discovery -->
+                <div class="mb-4">
+                    <div class="flex space-x-2 mb-4">
+                        <input type="text" id="tagToDiscover" placeholder="Tag to discover" 
+                               class="flex-1 px-4 py-2 border rounded-lg">
+                        <button id="discoverBtn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600" disabled>
+                            Discover Tag
+                        </button>
+                    </div>
+                    
+                    <div class="flex space-x-2">
+                        <input type="text" id="tagName" placeholder="Tag name" 
+                               class="flex-1 px-4 py-2 border rounded-lg">
+                        <select id="dataType" class="px-4 py-2 border rounded-lg">
+                            <option value="BOOL">BOOL</option>
+                            <option value="DINT">DINT</option>
+                            <option value="REAL">REAL</option>
+                            <option value="STRING">STRING</option>
+                        </select>
+                        <input type="text" id="tagValue" placeholder="Value" 
+                               class="flex-1 px-4 py-2 border rounded-lg">
+                        <button id="readBtn" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600" disabled>
+                            Read
+                        </button>
+                        <button id="writeBtn" class="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600" disabled>
+                            Write
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Tags Table -->
+                <div class="overflow-x-auto">
+                    <table class="min-w-full">
+                        <thead>
+                            <tr class="bg-gray-50">
+                                <th class="px-4 py-2 text-left">Tag Name</th>
+                                <th class="px-4 py-2 text-left">Value</th>
+                                <th class="px-4 py-2 text-left">Type</th>
+                                <th class="px-4 py-2 text-left">Updated</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tagsTable">
+                            <!-- Tags will be added here -->
+                        </tbody>
+                    </table>
+                </div>
             </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-4">
-                        <div class="mb-3">
-                            <label for="tagName" class="form-label">Tag Name</label>
-                            <input type="text" class="form-control" id="tagName">
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="mb-3">
-                            <label for="dataType" class="form-label">Data Type</label>
-                            <select class="form-select" id="dataType">
-                                <option value="bool">BOOL</option>
-                                <option value="dint">DINT</option>
-                                <option value="real">REAL</option>
-                                <option value="string">STRING</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="mb-3">
-                            <label for="tagValue" class="form-label">Value</label>
-                            <input type="text" class="form-control" id="tagValue">
-                        </div>
-                    </div>
+
+            <!-- Right Panel: Activity Log -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-bold mb-4">📝 Activity Log</h2>
+                <div id="logContainer" class="bg-gray-900 text-green-400 p-4 rounded-lg h-[500px] overflow-y-auto">
+                    <!-- Log entries will be added here -->
                 </div>
-                <div class="row">
-                    <div class="col-md-6">
-                        <button class="btn btn-success" onclick="readTag()">Read Tag</button>
-                    </div>
-                    <div class="col-md-6">
-                        <button class="btn btn-warning" onclick="writeTag()">Write Tag</button>
-                    </div>
-                </div>
-                <div id="operationResult" class="result-box mt-3"></div>
             </div>
         </div>
     </div>
 
     <script>
-        let currentPlcAddress = null;
+        // State
+        let isConnected = false;
+        let sessionId = null;
+        let tags = new Map();
+        let refreshInterval = null;
+        let retryCount = 0;
+        const MAX_RETRIES = 3;
+        const RETRY_DELAY = 2000; // 2 seconds
 
+        // DOM Elements
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const benchmarkBtn = document.getElementById('benchmarkBtn');
+        const discoverBtn = document.getElementById('discoverBtn');
+        const readBtn = document.getElementById('readBtn');
+        const writeBtn = document.getElementById('writeBtn');
+        const plcAddress = document.getElementById('plcAddress');
+        const tagToDiscover = document.getElementById('tagToDiscover');
+        const tagName = document.getElementById('tagName');
+        const dataType = document.getElementById('dataType');
+        const tagValue = document.getElementById('tagValue');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const sessionIdElement = document.getElementById('sessionId');
+        const readRate = document.getElementById('readRate');
+        const writeRate = document.getElementById('writeRate');
+        const tagsTable = document.getElementById('tagsTable');
+        const logContainer = document.getElementById('logContainer');
+
+        // Event Listeners
+        connectBtn.addEventListener('click', connect);
+        disconnectBtn.addEventListener('click', disconnect);
+        benchmarkBtn.addEventListener('click', runBenchmark);
+        discoverBtn.addEventListener('click', discoverTag);
+        readBtn.addEventListener('click', readTag);
+        writeBtn.addEventListener('click', writeTag);
+
+        // Functions
         async function connect() {
-            const plcAddress = document.getElementById('plcAddress').value;
-            const statusDiv = document.getElementById('connectionStatus');
-            
             try {
+                if (!plcAddress.value.trim()) {
+                    log('❌ Please enter a PLC address');
+                    return;
+                }
+
+                log('🔌 Connecting to PLC...');
+                connectBtn.disabled = true;
+                
                 const response = await fetch('/api/plc/connect', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ plcAddress })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ Address: plcAddress.value.trim() })
                 });
-
-                const result = await response.json();
                 
-                if (result.success) {
-                    currentPlcAddress = plcAddress;
-                    statusDiv.innerHTML = `<div class="alert alert-success">Connected to PLC at ${plcAddress}</div>`;
+                const data = await response.json();
+                console.log('Connection response:', data);
+                
+                if (data.success) {
+                    isConnected = true;
+                    sessionId = data.sessionId;
+                    updateConnectionStatus();
+                    
+                    // Start refresh first
+                    startRefresh();
+                    log(`✅ Connected! Session ID: ${sessionId}`);
+                    
+                    // Then try to initialize tags
+                    await initializeTags();
                 } else {
-                    statusDiv.innerHTML = `<div class="alert alert-danger">Failed to connect: ${result.error || 'Unknown error'}</div>`;
+                    log(`❌ Connection failed: ${data.message || 'Unknown error'}`);
+                    isConnected = false;
+                    updateConnectionStatus();
                 }
             } catch (error) {
-                statusDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+                console.error('Connection error:', error);
+                log(`❌ Connection error: ${error.message}`);
+                isConnected = false;
+                updateConnectionStatus();
+            } finally {
+                connectBtn.disabled = false;
+            }
+        }
+
+        async function initializeTags() {
+            const testTags = [
+                { name: 'TestTag', type: 'BOOL', value: false },
+                { name: 'TestDint', type: 'DINT', value: 0 },
+                { name: 'TestReal', type: 'REAL', value: 0.0 }
+            ];
+
+            for (const tag of testTags) {
+                try {
+                    // First try to read the tag to see if it exists
+                    const readResponse = await fetch(`/api/plc/tag/${tag.name}`);
+                    if (readResponse.ok) {
+                        log(`✅ Tag ${tag.name} already exists`);
+                        continue;
+                    }
+
+                    // If tag doesn't exist, try to create it
+                    log(`📝 Creating tag ${tag.name}...`);
+                    const response = await fetch(`/api/plc/tag/${tag.name}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            Type: tag.type,
+                            Value: tag.value
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const data = await response.json();
+                        log(`⚠️ Could not create ${tag.name}: ${data.message || 'Unknown error'}`);
+                    } else {
+                        log(`✅ Created ${tag.name}`);
+                    }
+                } catch (error) {
+                    log(`⚠️ Error handling ${tag.name}: ${error.message}`);
+                }
+            }
+        }
+
+        async function disconnect() {
+            try {
+                const response = await fetch('/api/plc/disconnect', {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    isConnected = false;
+                    sessionId = null;
+                    updateConnectionStatus();
+                    stopRefresh();
+                    log('📤 Disconnected from PLC');
+                }
+            } catch (error) {
+                log(`⚠️ Disconnect error: ${error.message}`);
+            }
+        }
+
+        async function runBenchmark() {
+            try {
+                log('📊 Running benchmark...');
+                benchmarkBtn.disabled = true;
+                
+                const response = await fetch('/api/plc/benchmark', {
+                    method: 'POST'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    readRate.textContent = `${data.readRate} ops/sec`;
+                    writeRate.textContent = `${data.writeRate} ops/sec`;
+                    log(`✅ Benchmark complete: ${data.readRate} reads/sec, ${data.writeRate} writes/sec`);
+                } else {
+                    throw new Error(data.message || 'Benchmark failed');
+                }
+            } catch (error) {
+                console.error('Benchmark error:', error);
+                log(`❌ Benchmark error: ${error.message}`);
+            } finally {
+                benchmarkBtn.disabled = false;
             }
         }
 
         async function discoverTag() {
-            if (!currentPlcAddress) {
-                showError('Please connect to a PLC first');
-                return;
-            }
-
-            const tagName = document.getElementById('discoverTag').value;
-            if (!tagName) {
-                showError('Please enter a tag name');
-                return;
-            }
-
-            const resultDiv = document.getElementById('discoveryResult');
-            resultDiv.innerHTML = '<div class="alert alert-info">Discovering tag...</div>';
+            if (!isConnected) return;
             
             try {
-                const response = await fetch(`/api/plc/discover?plcAddress=${encodeURIComponent(currentPlcAddress)}&tagName=${encodeURIComponent(tagName)}`);
-                const result = await response.json();
+                log(`🔍 Discovering tag: ${tagToDiscover.value}`);
                 
-                if (result.success) {
-                    // Update the tag operations section with the discovered type
-                    const dataTypeSelect = document.getElementById('dataType');
-                    dataTypeSelect.value = result.metadata.type.toLowerCase();
-                    document.getElementById('tagName').value = tagName;
-                    
-                    resultDiv.innerHTML = `
-                        <div class="alert alert-success">
-                            <h6>Tag Information:</h6>
-                            <p>Name: ${tagName}</p>
-                            <p>Type: ${result.metadata.type}</p>
-                            <p>Current Value: ${result.metadata.value}</p>
-                        </div>`;
+                const response = await fetch(`/api/plc/tag/${tagToDiscover.value}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    tagName.value = tagToDiscover.value;
+                    dataType.value = data.type;
+                    tagValue.value = data.value;
+                    log(`✅ Discovered ${data.type} tag: ${tagToDiscover.value} = ${data.value}`);
                 } else {
-                    resultDiv.innerHTML = `<div class="alert alert-danger">Failed to discover tag: ${result.error || 'Unknown error'}</div>`;
+                    log(`❌ Could not determine type for tag: ${tagToDiscover.value}`);
                 }
             } catch (error) {
-                resultDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+                log(`❌ Discovery error: ${error.message}`);
             }
         }
 
         async function readTag() {
-            if (!currentPlcAddress) {
-                showError('Please connect to a PLC first');
-                return;
-            }
-
-            const tagName = document.getElementById('tagName').value;
-            const dataType = document.getElementById('dataType').value;
-            const resultDiv = document.getElementById('operationResult');
-
-            // Input validation
-            if (!tagName) {
-                showError('Please enter a tag name');
-                return;
-            }
-
+            if (!isConnected) return;
+            
             try {
-                const response = await fetch(`/api/plc/read/${dataType}?plcAddress=${encodeURIComponent(currentPlcAddress)}&tagName=${encodeURIComponent(tagName)}`);
-                const result = await response.json();
-
-                if (response.ok) {
-                    resultDiv.innerHTML = `
-                        <div class="alert alert-success">
-                            <h6>Read Result:</h6>
-                            <p>Tag: ${tagName}</p>
-                            <p>Type: ${dataType.toUpperCase()}</p>
-                            <p>Value: ${result.value}</p>
-                        </div>`;
-                } else {
-                    // Enhanced error handling based on status code
-                    if (response.status === 404) {
-                        resultDiv.innerHTML = `<div class="alert alert-danger">Tag not found: <b>${tagName}</b>. Please check the tag name and try again.</div>`;
-                    } else if (response.status === 400) {
-                        resultDiv.innerHTML = `<div class="alert alert-warning">Type mismatch for tag <b>${tagName}</b>. Try a different data type.</div>`;
-                    } else {
-                        resultDiv.innerHTML = `<div class="alert alert-danger">Failed to read tag: ${result.error || 'Unknown error'}</div>`;
-                    }
+                log(`📖 Reading tag: ${tagName.value}`);
+                
+                const response = await fetch(`/api/plc/tag/${tagName.value}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    tagValue.value = data.value;
+                    log(`✅ Read ${data.type} tag: ${tagName.value} = ${data.value}`);
                 }
             } catch (error) {
-                resultDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+                log(`❌ Read error: ${error.message}`);
             }
         }
 
         async function writeTag() {
-            if (!currentPlcAddress) {
-                showError('Please connect to a PLC first');
-                return;
-            }
-
-            const tagName = document.getElementById('tagName').value;
-            const dataType = document.getElementById('dataType').value;
-            const value = document.getElementById('tagValue').value;
-            const resultDiv = document.getElementById('operationResult');
-
-            // Input validation
-            if (!tagName) {
-                showError('Please enter a tag name');
-                return;
-            }
-            if (!value) {
-                showError('Please enter a value');
-                return;
-            }
-
-            let parsedValue;
+            if (!isConnected) return;
+            
             try {
-                parsedValue = parseValue(value, dataType);
-            } catch (error) {
-                showError(`Invalid value for type ${dataType.toUpperCase()}: ${error.message}`);
-                return;
-            }
-
-            const requestBody = {
-                plcAddress: currentPlcAddress,
-                tagName,
-                value: parsedValue
-            };
-
-            resultDiv.innerHTML = '<div class="alert alert-info">Writing tag...</div>';
-
-            try {
-                const response = await fetch(`/api/plc/write/${dataType}`, {
+                log(`✏️ Writing tag: ${tagName.value}`);
+                
+                const response = await fetch(`/api/plc/tag/${tagName.value}`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(requestBody)
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        Type: dataType.value,
+                        Value: tagValue.value
+                    })
                 });
-                const result = await response.json();
-
-                if (response.ok && result.success) {
-                    resultDiv.innerHTML = `
-                        <div class="alert alert-success">
-                            <h6>Write Result:</h6>
-                            <p>Tag: ${tagName}</p>
-                            <p>Type: ${dataType.toUpperCase()}</p>
-                            <p>Value: ${value}</p>
-                            <p>Status: ${result.message || 'Success'}</p>
-                        </div>`;
-                    document.getElementById('tagValue').value = '';
-                } else {
-                    // Enhanced error handling based on status code
-                    if (response.status === 404) {
-                        resultDiv.innerHTML = `<div class="alert alert-danger">Tag not found: <b>${tagName}</b>. Please check the tag name and try again.</div>`;
-                    } else if (response.status === 400) {
-                        resultDiv.innerHTML = `<div class="alert alert-warning">Type mismatch for tag <b>${tagName}</b>. Try a different data type.</div>`;
-                    } else {
-                        resultDiv.innerHTML = `<div class="alert alert-danger">Failed to write tag: ${result.error || 'Unknown error'}</div>`;
-                    }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    log(`✅ ${data.message}`);
                 }
             } catch (error) {
-                resultDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+                log(`❌ Write error: ${error.message}`);
             }
         }
 
-        function parseValue(value, dataType) {
-            console.log('Parsing value:', value, 'as type:', dataType);
-            switch (dataType) {
-                case 'bool':
-                    const boolValue = value.toLowerCase();
-                    if (boolValue !== 'true' && boolValue !== 'false') {
-                        throw new Error('Boolean value must be "true" or "false"');
-                    }
-                    return boolValue === 'true';
-                case 'dint':
-                    const intValue = parseInt(value);
-                    if (isNaN(intValue)) {
-                        throw new Error('Invalid integer value');
-                    }
-                    return intValue;
-                case 'real':
-                    const floatValue = parseFloat(value);
-                    if (isNaN(floatValue)) {
-                        throw new Error('Invalid floating-point value');
-                    }
-                    return floatValue;
-                case 'string':
-                    if (value === '') {
-                        throw new Error('String value cannot be empty');
-                    }
-                    return value;
-                default:
-                    throw new Error(`Unsupported data type: ${dataType}`);
+        function updateConnectionStatus() {
+            if (isConnected) {
+                connectionStatus.textContent = 'Connected';
+                connectionStatus.className = 'text-xl font-bold connected';
+                sessionIdElement.textContent = `Session: ${sessionId}`;
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+                benchmarkBtn.disabled = false;
+                discoverBtn.disabled = false;
+                readBtn.disabled = false;
+                writeBtn.disabled = false;
+                
+                // Start monitoring connection status
+                startConnectionMonitor();
+            } else {
+                connectionStatus.textContent = 'Disconnected';
+                connectionStatus.className = 'text-xl font-bold disconnected';
+                sessionIdElement.textContent = 'Session: None';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                benchmarkBtn.disabled = true;
+                discoverBtn.disabled = true;
+                readBtn.disabled = true;
+                writeBtn.disabled = true;
+                
+                // Stop monitoring connection status
+                stopConnectionMonitor();
             }
         }
 
-        function showError(message) {
-            const resultDiv = document.getElementById('operationResult');
-            resultDiv.innerHTML = `<div class="alert alert-danger">${message}</div>`;
+        let connectionMonitorInterval = null;
+
+        function startConnectionMonitor() {
+            if (connectionMonitorInterval) {
+                clearInterval(connectionMonitorInterval);
+            }
+            
+            connectionMonitorInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/plc/status');
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    
+                    if (!data.success || !data.status.isConnected) {
+                        log('⚠️ Connection lost');
+                        isConnected = false;
+                        updateConnectionStatus();
+                        await attemptReconnect();
+                    }
+                } catch (error) {
+                    console.error('Connection monitor error:', error);
+                    log('⚠️ Connection monitor error');
+                    isConnected = false;
+                    updateConnectionStatus();
+                    await attemptReconnect();
+                }
+            }, 10000); // Changed from 5 seconds to 10 seconds
         }
+
+        function stopConnectionMonitor() {
+            if (connectionMonitorInterval) {
+                clearInterval(connectionMonitorInterval);
+                connectionMonitorInterval = null;
+            }
+        }
+
+        async function attemptReconnect() {
+            try {
+                // First try to disconnect
+                await fetch('/api/plc/disconnect', { method: 'POST' });
+            } catch (error) {
+                console.error('Error during disconnect:', error);
+            }
+
+            // Wait a bit before reconnecting
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+
+            try {
+                const response = await fetch('/api/plc/connect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ Address: plcAddress.value.trim() })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    isConnected = true;
+                    sessionId = data.sessionId;
+                    updateConnectionStatus();
+                    log('✅ Reconnected successfully');
+                    retryCount = 0;
+                } else {
+                    throw new Error(data.message || 'Reconnection failed');
+                }
+            } catch (error) {
+                console.error('Reconnection error:', error);
+                log(`❌ Reconnection failed: ${error.message}`);
+                isConnected = false;
+                updateConnectionStatus();
+            }
+        }
+
+        function startRefresh() {
+            // Add test tags
+            tags.set('TestTag', { name: 'TestTag', type: 'BOOL', value: null, updated: null });
+            tags.set('TestDint', { name: 'TestDint', type: 'DINT', value: null, updated: null });
+            tags.set('TestReal', { name: 'TestReal', type: 'REAL', value: null, updated: null });
+            updateTagsTable();
+            
+            // Start refresh interval with a longer delay
+            refreshInterval = setInterval(refreshTags, 2000); // Changed to 2 seconds
+        }
+
+        function stopRefresh() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+                refreshInterval = null;
+            }
+            tags.clear();
+            updateTagsTable();
+        }
+
+        async function refreshTags() {
+            if (!isConnected) return;
+            
+            for (const [name, tag] of tags) {
+                try {
+                    const response = await fetch(`/api/plc/tag/${name}`);
+                    if (!response.ok) {
+                        if (response.status === 404) {
+                            log(`⚠️ Tag ${name} not found. Will retry initialization later.`);
+                            continue;
+                        }
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        tag.value = data.value;
+                        tag.type = data.type;
+                        tag.updated = new Date();
+                        updateTagsTable();
+                        retryCount = 0; // Reset retry count on success
+                    }
+                } catch (error) {
+                    console.error(`Error refreshing tag ${name}:`, error);
+                    if (error.message.includes('Failed to fetch') || error.message.includes('Connection refused')) {
+                        retryCount++;
+                        if (retryCount >= MAX_RETRIES) {
+                            log('⚠️ Lost connection to server. Attempting to reconnect...');
+                            await attemptReconnect();
+                        }
+                    }
+                }
+            }
+        }
+
+        function updateTagsTable() {
+            tagsTable.innerHTML = '';
+            
+            for (const tag of tags.values()) {
+                const row = document.createElement('tr');
+                row.className = 'border-t';
+                
+                row.innerHTML = `
+                    <td class="px-4 py-2">${tag.name}</td>
+                    <td class="px-4 py-2 tag-value">${tag.value ?? 'N/A'}</td>
+                    <td class="px-4 py-2">${tag.type}</td>
+                    <td class="px-4 py-2">${tag.updated ? tag.updated.toLocaleTimeString() : 'N/A'}</td>
+                `;
+                
+                tagsTable.appendChild(row);
+            }
+        }
+
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.textContent = `[${timestamp}] ${message}`;
+            
+            logContainer.insertBefore(entry, logContainer.firstChild);
+            
+            // Keep only last 100 messages
+            while (logContainer.children.length > 100) {
+                logContainer.removeChild(logContainer.lastChild);
+            }
+        }
+
+        // Initialize
+        updateConnectionStatus();
     </script>
 </body>
 </html> 
