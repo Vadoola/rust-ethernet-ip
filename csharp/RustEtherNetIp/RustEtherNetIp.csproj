@@ -1,16 +1,35 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net6.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
 
-  <ItemGroup>
-    <None Include="../../target/release/rust_ethernet_ip.dll">
+  <PropertyGroup Condition="'$(OS)' == 'OSX'">
+    <NativeLibraryFileName>librust_ethernet_ip.dylib</NativeLibraryFileName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(OS)' == 'Windows_NT'">
+    <NativeLibraryFileName>rust_ethernet_ip.dll</NativeLibraryFileName>
+  </PropertyGroup>
+
+  <ItemGroup Condition=" '$(OS)' == 'OSX' ">
+    <None Include="../../target/release/librust_ethernet_ip.dylib">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>librust_ethernet_ip.dylib</Link>
     </None>
   </ItemGroup>
+  <ItemGroup Condition=" '$(OS)' == 'Windows_NT' ">
+    <None Include="../../target/release/rust_ethernet_ip.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>rust_ethernet_ip.dll</Link>
+    </None>
+  </ItemGroup>
+
+  <Target Name="CopyNativeLibrary" AfterTargets="Build">
+    <Copy SourceFiles="../../target/release/librust_ethernet_ip.dylib" DestinationFolder="$(OutputPath)" Condition="'$(OS)' == 'OSX'" />
+    <Copy SourceFiles="../../target/release/rust_ethernet_ip.dll" DestinationFolder="$(OutputPath)" Condition="'$(OS)' == 'Windows_NT'" />
+    <Message Text="Copying native library to $(OutputPath)" Importance="high" />
+  </Target>
 </Project>

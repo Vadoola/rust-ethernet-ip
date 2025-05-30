@@ -235,6 +235,78 @@ if (client.Connect("192.168.1.100:44818"))
 }
 ```
 
+## 🧪 Testing
+
+### Test Coverage
+
+The library includes comprehensive test coverage across multiple test types:
+
+#### Unit Tests
+- Basic data type encoding/decoding
+- UDT parsing and member offset calculations
+- PLC configuration validation
+- Tag cache expiration
+- Connection pool management
+
+#### Comprehensive Tests
+- Tag discovery and metadata handling
+- Basic tag operations (read/write)
+- Session management
+- UDT operations
+- Multiple PLC operations
+- Array operations
+- Error handling
+- Connection pooling
+- Large data operations
+
+#### Integration Tests
+The following integration tests are available but require a real PLC connection:
+- Tag discovery
+- UDT operations
+- Multiple PLC connections
+- Connection pooling
+- Health monitoring
+- Large packet support
+
+### Running Tests
+
+#### Rust Tests
+```bash
+# Run all tests
+cargo test
+
+# Run specific test
+cargo test test_name
+
+# Run tests with output
+cargo test -- --nocapture
+```
+
+#### C# Tests
+```bash
+# Run all tests
+dotnet test
+
+# Run specific test project
+dotnet test csharp/RustEtherNetIp.Tests
+
+# Run tests with output
+dotnet test --logger "console;verbosity=detailed"
+```
+
+### Test Environment Setup
+
+For integration tests that require a PLC:
+1. Ensure you have a compatible Allen-Bradley PLC (CompactLogix L33ER or similar)
+2. Configure the PLC's IP address in the test configuration
+3. Enable the required tags and UDTs on the PLC
+4. Run the integration tests with a real PLC connection
+
+For unit tests and comprehensive tests:
+- No PLC connection required
+- Tests use mocked responses
+- All tests run automatically in CI/CD
+
 ## 🏷️ Tag Naming Conventions
 
 ### Currently Supported
@@ -384,3 +456,154 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 > **💡 Interested in using this for production?**  
 > ⭐ **Star this repository** to stay updated on our progress toward v1.0.0!  
 > 📬 **Watch releases** to be notified when production-ready versions are available!
+
+## 🔧 **Troubleshooting Guide**
+
+### Common Issues
+
+#### Connection Problems
+- **Timeout Errors**: Check network connectivity and firewall settings
+- **Session Registration Failed**: Verify PLC is in RUN mode and not in program mode
+- **Connection Refused**: Confirm correct IP address and port (default: 44818)
+
+#### Data Access Issues
+- **Tag Not Found**: Verify tag exists and is accessible
+- **Type Mismatch**: Ensure correct data type is used for read/write operations
+- **Permission Denied**: Check PLC security settings and tag permissions
+
+#### Performance Issues
+- **Slow Response**: Check network latency and packet size settings
+- **High CPU Usage**: Monitor connection pool size and adjust if needed
+- **Memory Growth**: Ensure proper cleanup of unused connections
+
+### Debug Tips
+1. Enable detailed logging for troubleshooting
+2. Use network analyzer tools to capture EtherNet/IP traffic
+3. Monitor PLC diagnostics for connection status
+4. Check system resources (CPU, memory, network)
+
+## 📥 **Installation Guide**
+
+### Rust Installation
+```bash
+# Add to Cargo.toml
+[dependencies]
+rust_ethernet_ip = "0.2"
+tokio = { version = "1.0", features = ["full"] }
+
+# Build from source
+git clone https://github.com/sergiogallegos/rust-ethernet-ip.git
+cd rust-ethernet-ip
+cargo build --release
+```
+
+### C# Installation
+```bash
+# NuGet Package
+dotnet add package RustEtherNetIp
+
+# Build from source
+git clone https://github.com/sergiogallegos/rust-ethernet-ip.git
+cd rust-ethernet-ip/csharp
+dotnet build
+```
+
+### System Requirements
+- **Operating System**: Windows 10+, Linux, macOS
+- **Network**: 100Mbps Ethernet minimum
+- **Memory**: 100MB minimum
+- **CPU**: 1GHz minimum
+
+## ⚡ **Performance Tuning**
+
+### Connection Pooling
+```rust
+// Configure connection pool
+let config = PlcConfig {
+    max_connections: 10,  // Adjust based on load
+    connection_timeout: Duration::from_secs(5),
+    health_check_interval: Duration::from_secs(30),
+    max_packet_size: 4000,  // Increase for better throughput
+};
+```
+
+### Batch Operations
+```rust
+// Use batch operations for multiple tags
+let tags = vec!["Tag1", "Tag2", "Tag3"];
+let results = client.read_multiple_tags(&tags).await?;
+```
+
+### Tag Caching
+```rust
+// Enable tag caching for better performance
+client.discover_tags().await?;  // Cache tag metadata
+```
+
+### Network Optimization
+- Use dedicated network interface
+- Enable jumbo frames if supported
+- Configure QoS for EtherNet/IP traffic
+- Monitor network latency
+
+## 🏭 **Common Industrial Patterns**
+
+### HMI Data Collection
+```rust
+// Periodic data collection
+async fn collect_plc_data(client: &mut EipClient) {
+    loop {
+        let values = client.read_multiple_tags(&[
+            "ProductionCount",
+            "MachineStatus",
+            "Temperature",
+            "Pressure"
+        ]).await?;
+        
+        // Process and display data
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+```
+
+### SCADA Integration
+```rust
+// Tag change monitoring
+async fn monitor_tag_changes(client: &mut EipClient) {
+    let mut last_value = None;
+    loop {
+        let current = client.read_tag("CriticalTag").await?;
+        if last_value != Some(current.clone()) {
+            // Handle value change
+            notify_scada_system(&current);
+        }
+        last_value = Some(current);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+```
+
+### OEE Calculation
+```rust
+// Calculate Overall Equipment Effectiveness
+async fn calculate_oee(client: &mut EipClient) -> f32 {
+    let availability = client.read_real("Availability").await?;
+    let performance = client.read_real("Performance").await?;
+    let quality = client.read_real("Quality").await?;
+    
+    availability * performance * quality
+}
+```
+
+### Production Tracking
+```rust
+// Track production metrics
+async fn track_production(client: &mut EipClient) {
+    let count = client.read_dint("ProductionCount").await?;
+    let status = client.read_string("MachineStatus").await?;
+    let cycle_time = client.read_real("CycleTime").await?;
+    
+    // Store in database or analytics system
+    store_production_data(count, status, cycle_time);
+}
+```

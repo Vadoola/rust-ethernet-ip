@@ -1,7 +1,9 @@
+use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
-use std::error::Error;
+use std::time::{Duration, Instant};
 use std::net::SocketAddr;
-use tokio::time::{Duration, Instant};
+use tokio::time::sleep;
+use crate::error::{EtherNetIpError, Result};
 use crate::EipClient;
 
 /// Configuration for a PLC connection
@@ -71,6 +73,7 @@ impl PlcConnection {
     }
 
     /// Updates the health status of the connection
+    #[allow(dead_code)]
     pub fn update_health(&mut self, is_active: bool, latency: Duration) {
         self.health.is_active = is_active;
         if is_active {
@@ -91,6 +94,7 @@ pub struct PlcManager {
     /// Active connections for each PLC
     connections: HashMap<SocketAddr, Vec<PlcConnection>>,
     /// Health check interval
+    #[allow(dead_code)]
     health_check_interval: Duration,
 }
 
@@ -110,9 +114,9 @@ impl PlcManager {
     }
 
     /// Gets a connection to a PLC
-    pub async fn get_connection(&mut self, address: SocketAddr) -> Result<&mut EipClient, Box<dyn Error>> {
+    pub async fn get_connection(&mut self, address: SocketAddr) -> Result<&mut EipClient> {
         let config = self.configs.get(&address)
-            .ok_or_else(|| "PLC not configured".to_string())?;
+            .ok_or_else(|| EtherNetIpError::Configuration("PLC not configured".to_string()))?;
 
         // First check if we have any connections for this address
         if !self.connections.contains_key(&address) {
@@ -199,9 +203,9 @@ impl PlcManager {
         }
     }
 
-    pub async fn get_client(&mut self, address: &str) -> Result<&mut EipClient, Box<dyn Error>> {
+    pub async fn get_client(&mut self, address: &str) -> Result<&mut EipClient> {
         let addr = address.parse::<SocketAddr>()
-            .map_err(|_| "Invalid address format")?;
+            .map_err(|_| EtherNetIpError::Configuration("Invalid address format".to_string()))?;
         self.get_connection(addr).await
     }
 }
@@ -225,7 +229,7 @@ mod tests {
             max_connections: 2,
             ..Default::default()
         };
-        manager.add_plc(config);
+        manager.add_plc(config.clone());
 
         // This will fail in tests since there's no actual PLC
         // but it demonstrates the connection pool logic

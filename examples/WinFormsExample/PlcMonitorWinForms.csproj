@@ -10,7 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="../../target/release/rust_ethernet_ip.dll">
+    <None Include="../../target/release/librust_ethernet_ip">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

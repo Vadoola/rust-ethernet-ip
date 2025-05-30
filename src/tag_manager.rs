@@ -1,7 +1,7 @@
 use std::collections::HashMap;
-use std::error::Error;
 use std::sync::RwLock;
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
+use crate::error::{EtherNetIpError, Result};
 use crate::EipClient;
 
 /// Represents the scope of a tag in the PLC
@@ -43,15 +43,17 @@ pub struct TagPermissions {
 
 /// Cache for PLC tags with automatic expiration
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct TagCache {
     /// Map of tag names to their metadata
-    tags: HashMap<String, TagMetadata>,
+    tags: HashMap<String, (TagMetadata, Instant)>,
     /// Cache expiration time
     expiration: Duration,
 }
 
 impl TagCache {
     /// Creates a new tag cache with the specified expiration time
+    #[allow(dead_code)]
     pub fn new(expiration: Duration) -> Self {
         Self {
             tags: HashMap::new(),
@@ -59,27 +61,27 @@ impl TagCache {
         }
     }
 
-    /// Adds or updates a tag in the cache
+    /// Updates or adds a tag to the cache
+    #[allow(dead_code)]
     pub fn update_tag(&mut self, name: String, metadata: TagMetadata) {
-        self.tags.insert(name, metadata);
+        self.tags.insert(name, (metadata, Instant::now()));
     }
 
     /// Gets a tag from the cache if it exists and hasn't expired
+    #[allow(dead_code)]
     pub fn get_tag(&self, name: &str) -> Option<&TagMetadata> {
-        self.tags.get(name).and_then(|metadata| {
-            if metadata.last_access.elapsed() < self.expiration {
-                Some(metadata)
-            } else {
-                None
+        if let Some((metadata, timestamp)) = self.tags.get(name) {
+            if timestamp.elapsed() < self.expiration {
+                return Some(metadata);
             }
-        })
+        }
+        None
     }
 
     /// Removes expired tags from the cache
+    #[allow(dead_code)]
     pub fn cleanup(&mut self) {
-        self.tags.retain(|_, metadata| {
-            metadata.last_access.elapsed() < self.expiration
-        });
+        self.tags.retain(|_, (_, timestamp)| timestamp.elapsed() < self.expiration);
     }
 }
 
@@ -100,7 +102,7 @@ impl TagManager {
         self.cache.read().unwrap().get(tag_name).cloned()
     }
 
-    pub async fn discover_tags(&self, client: &mut EipClient) -> Result<(), Box<dyn Error>> {
+    pub async fn discover_tags(&self, client: &mut EipClient) -> Result<()> {
         let response = client.send_cip_request(&client.build_list_tags_request()).await?;
         let tags = self.parse_tag_list(&response)?;
         let mut cache = self.cache.write().unwrap();
@@ -110,7 +112,7 @@ impl TagManager {
         Ok(())
     }
 
-    pub fn parse_tag_list(&self, response: &[u8]) -> Result<Vec<(String, TagMetadata)>, Box<dyn Error>> {
+    pub fn parse_tag_list(&self, response: &[u8]) -> Result<Vec<(String, TagMetadata)>> {
         let mut tags = Vec::new();
         let mut offset = 0;
         while offset < response.len() {

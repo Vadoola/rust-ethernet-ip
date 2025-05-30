@@ -1,6 +1,8 @@
 // EtherNetIpClient.cs - Reusable C# wrapper for Rust EtherNet/IP driver
 using System;
 using System.Runtime.InteropServices;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace RustEtherNetIp
 {
@@ -32,34 +34,59 @@ namespace RustEtherNetIp
     {
         private int _clientId = -1;
         private bool _disposed = false;
+        private Dictionary<string, TagMetadata> _tagCache = new Dictionary<string, TagMetadata>();
 
         #region DLL Imports
         // These are the low-level FFI calls to the Rust library
         // Users should not call these directly - use the public methods instead
 
-        [DllImport("rust_ethernet_ip.dll", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_connect(IntPtr address);
 
-        [DllImport("rust_ethernet_ip.dll", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_disconnect(int client_id);
 
-        [DllImport("rust_ethernet_ip.dll", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_read_bool(int client_id, IntPtr tag_name, out int result);
 
-        [DllImport("rust_ethernet_ip.dll", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_write_bool(int client_id, IntPtr tag_name, int value);
 
-        [DllImport("rust_ethernet_ip.dll", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_read_dint(int client_id, IntPtr tag_name, out int result);
 
-        [DllImport("rust_ethernet_ip.dll", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_write_dint(int client_id, IntPtr tag_name, int value);
 
-        [DllImport("rust_ethernet_ip.dll", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_read_real(int client_id, IntPtr tag_name, out double result);
 
-        [DllImport("rust_ethernet_ip.dll", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_write_real(int client_id, IntPtr tag_name, double value);
+
+        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int eip_read_string(int client_id, IntPtr tag_name, IntPtr result, int max_length);
+
+        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int eip_write_string(int client_id, IntPtr tag_name, IntPtr value);
+
+        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int eip_discover_tags(int client_id);
+
+        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int eip_get_tag_metadata(int client_id, IntPtr tag_name, out TagMetadata metadata);
+
+        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int eip_read_udt(int client_id, IntPtr tag_name, IntPtr result, int max_size);
+
+        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int eip_write_udt(int client_id, IntPtr tag_name, IntPtr value, int size);
+
+        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int eip_set_max_packet_size(int client_id, int size);
+
+        [DllImport("librust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int eip_check_health(int client_id, out int is_healthy);
         #endregion
 
         #region Public Methods
@@ -82,6 +109,11 @@ namespace RustEtherNetIp
             try
             {
                 _clientId = eip_connect(addressPtr);
+                if (_clientId >= 0)
+                {
+                    // Set default max packet size
+                    eip_set_max_packet_size(_clientId, 4000);
+                }
                 return _clientId >= 0;
             }
             finally
@@ -99,6 +131,7 @@ namespace RustEtherNetIp
             {
                 eip_disconnect(_clientId);
                 _clientId = -1;
+                _tagCache.Clear();
             }
         }
 
@@ -243,6 +276,246 @@ namespace RustEtherNetIp
             }
         }
 
+        public string ReadString(string tagName)
+        {
+            CheckConnection();
+            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+            try
+            {
+                const int maxLength = 1024;
+                IntPtr resultPtr = Marshal.AllocHGlobal(maxLength);
+                try
+                {
+                    int result = eip_read_string(_clientId, tagPtr, resultPtr, maxLength);
+                    if (result != 0)
+                        throw new Exception($"Failed to read STRING tag '{tagName}'. Check tag exists and is STRING type.");
+                    return Marshal.PtrToStringAnsi(resultPtr) ?? string.Empty;
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(resultPtr);
+                }
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(tagPtr);
+            }
+        }
+
+        public void WriteString(string tagName, string value)
+        {
+            CheckConnection();
+            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+            IntPtr valuePtr = Marshal.StringToHGlobalAnsi(value);
+            try
+            {
+                int result = eip_write_string(_clientId, tagPtr, valuePtr);
+                if (result != 0)
+                    throw new Exception($"Failed to write STRING tag '{tagName}'. Check tag exists and is writable.");
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(tagPtr);
+                Marshal.FreeHGlobal(valuePtr);
+            }
+        }
+
+        public Dictionary<string, object> ReadUdt(string tagName)
+        {
+            CheckConnection();
+            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+            try
+            {
+                const int maxSize = 4096;
+                IntPtr resultPtr = Marshal.AllocHGlobal(maxSize);
+                try
+                {
+                    int result = eip_read_udt(_clientId, tagPtr, resultPtr, maxSize);
+                    if (result != 0)
+                        throw new Exception($"Failed to read UDT tag '{tagName}'. Check tag exists and is UDT type.");
+                    
+                    // Get the UDT metadata
+                    var metadata = GetTagMetadata(tagName);
+                    
+                    // Read the raw data
+                    byte[] rawData = new byte[metadata.ArraySize];
+                    Marshal.Copy(resultPtr, rawData, 0, metadata.ArraySize);
+                    
+                    // Parse the UDT data
+                    var udtData = new Dictionary<string, object>();
+                    int offset = 0;
+                    
+                    // Parse each member based on its data type
+                    while (offset < rawData.Length)
+                    {
+                        // Read member name length (2 bytes)
+                        int nameLength = BitConverter.ToUInt16(rawData, offset);
+                        offset += 2;
+                        
+                        // Read member name
+                        string memberName = System.Text.Encoding.ASCII.GetString(rawData, offset, nameLength);
+                        offset += nameLength;
+                        
+                        // Read data type (2 bytes)
+                        ushort dataType = BitConverter.ToUInt16(rawData, offset);
+                        offset += 2;
+                        
+                        // Read value based on data type
+                        object value;
+                        switch (dataType)
+                        {
+                            case 0x00C1: // BOOL
+                                value = rawData[offset++] != 0;
+                                break;
+                            case 0x00C4: // DINT
+                                value = BitConverter.ToInt32(rawData, offset);
+                                offset += 4;
+                                break;
+                            case 0x00CA: // REAL
+                                value = BitConverter.ToSingle(rawData, offset);
+                                offset += 4;
+                                break;
+                            case 0x00D0: // STRING
+                                int strLength = BitConverter.ToUInt16(rawData, offset);
+                                offset += 2;
+                                value = System.Text.Encoding.ASCII.GetString(rawData, offset, strLength);
+                                offset += strLength;
+                                break;
+                            default:
+                                throw new Exception($"Unsupported UDT member data type: 0x{dataType:X4}");
+                        }
+                        
+                        udtData[memberName] = value;
+                    }
+                    
+                    return udtData;
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(resultPtr);
+                }
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(tagPtr);
+            }
+        }
+
+        public void WriteUdt(string tagName, Dictionary<string, object> value)
+        {
+            CheckConnection();
+            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+            try
+            {
+                // Get the UDT metadata
+                var metadata = GetTagMetadata(tagName);
+                
+                // Serialize the UDT data
+                using var ms = new System.IO.MemoryStream();
+                using var writer = new System.IO.BinaryWriter(ms);
+                
+                foreach (var kvp in value)
+                {
+                    // Write member name length and name
+                    byte[] nameBytes = System.Text.Encoding.ASCII.GetBytes(kvp.Key);
+                    writer.Write((ushort)nameBytes.Length);
+                    writer.Write(nameBytes);
+                    
+                    // Write value based on its type
+                    switch (kvp.Value)
+                    {
+                        case bool boolValue:
+                            writer.Write((ushort)0x00C1); // BOOL type
+                            writer.Write((byte)(boolValue ? 1 : 0));
+                            break;
+                            
+                        case int intValue:
+                            writer.Write((ushort)0x00C4); // DINT type
+                            writer.Write(intValue);
+                            break;
+                            
+                        case float floatValue:
+                            writer.Write((ushort)0x00CA); // REAL type
+                            writer.Write(floatValue);
+                            break;
+                            
+                        case string stringValue:
+                            writer.Write((ushort)0x00D0); // STRING type
+                            byte[] strBytes = System.Text.Encoding.ASCII.GetBytes(stringValue);
+                            writer.Write((ushort)strBytes.Length);
+                            writer.Write(strBytes);
+                            break;
+                            
+                        default:
+                            throw new Exception($"Unsupported UDT member type: {kvp.Value?.GetType().Name ?? "null"}");
+                    }
+                }
+                
+                // Get the serialized data
+                byte[] serializedData = ms.ToArray();
+                
+                // Write the UDT data
+                IntPtr valuePtr = Marshal.AllocHGlobal(serializedData.Length);
+                try
+                {
+                    Marshal.Copy(serializedData, 0, valuePtr, serializedData.Length);
+                    int result = eip_write_udt(_clientId, tagPtr, valuePtr, serializedData.Length);
+                    if (result != 0)
+                        throw new Exception($"Failed to write UDT tag '{tagName}'. Check tag exists and is writable.");
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(valuePtr);
+                }
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(tagPtr);
+            }
+        }
+
+        public void DiscoverTags()
+        {
+            CheckConnection();
+            int result = eip_discover_tags(_clientId);
+            if (result != 0)
+                throw new Exception("Failed to discover tags.");
+        }
+
+        public TagMetadata GetTagMetadata(string tagName)
+        {
+            CheckConnection();
+            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+            try
+            {
+                int result = eip_get_tag_metadata(_clientId, tagPtr, out TagMetadata metadata);
+                if (result != 0)
+                    throw new Exception($"Failed to get metadata for tag '{tagName}'.");
+                return metadata;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(tagPtr);
+            }
+        }
+
+        public void SetMaxPacketSize(int size)
+        {
+            CheckConnection();
+            int result = eip_set_max_packet_size(_clientId, size);
+            if (result != 0)
+                throw new Exception($"Failed to set max packet size to {size}.");
+        }
+
+        public bool CheckHealth()
+        {
+            CheckConnection();
+            int result = eip_check_health(_clientId, out int is_healthy);
+            if (result != 0)
+                throw new Exception("Failed to check PLC health.");
+            return is_healthy != 0;
+        }
+
         #endregion
 
         #region Properties
@@ -281,7 +554,10 @@ namespace RustEtherNetIp
         {
             if (!_disposed)
             {
-                Disconnect();
+                if (disposing)
+                {
+                    Disconnect();
+                }
                 _disposed = true;
             }
         }
@@ -292,6 +568,15 @@ namespace RustEtherNetIp
         }
 
         #endregion
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct TagMetadata
+    {
+        public int DataType;
+        public int Scope;
+        public int ArrayDimension;
+        public int ArraySize;
     }
 
     /// <summary>
@@ -309,10 +594,7 @@ namespace RustEtherNetIp
         {
             var client = new EtherNetIpClient();
             if (!client.Connect(address))
-            {
-                client.Dispose();
-                throw new Exception($"Failed to connect to PLC at {address}. Check IP address, network connectivity, and PLC status.");
-            }
+                throw new Exception($"Failed to connect to PLC at {address}");
             return client;
         }
 
@@ -325,26 +607,15 @@ namespace RustEtherNetIp
         /// <returns>Connected client or null if all attempts fail.</returns>
         public static EtherNetIpClient? TryConnectToPlc(string address, int maxRetries = 3, int retryDelayMs = 1000)
         {
-            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            for (int i = 0; i < maxRetries; i++)
             {
-                try
-                {
-                    var client = new EtherNetIpClient();
-                    if (client.Connect(address))
-                    {
-                        return client;
-                    }
-                    client.Dispose();
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Connection attempt {attempt} failed: {ex.Message}");
-                }
-
-                if (attempt < maxRetries)
-                {
-                    System.Threading.Thread.Sleep(retryDelayMs);
-                }
+                var client = new EtherNetIpClient();
+                if (client.Connect(address))
+                    return client;
+                
+                client.Dispose();
+                if (i < maxRetries - 1)
+                    Task.Delay(retryDelayMs).Wait();
             }
             return null;
         }

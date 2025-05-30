@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::error::Error;
+use crate::error::{EtherNetIpError, Result};
 use crate::PlcValue;
 
 /// Represents a UDT member definition
@@ -47,7 +47,11 @@ impl UserDefinedType {
     pub fn add_member(&mut self, member: UdtMember) {
         self.member_offsets.insert(member.name.clone(), member.offset);
         self.members.push(member);
-        self.size = self.members.iter().map(|m| m.size).sum();
+        // Calculate total size including padding
+        self.size = self.members.iter()
+            .map(|m| m.offset + m.size)
+            .max()
+            .unwrap_or(0);
     }
 
     /// Gets the offset of a member by name
@@ -56,7 +60,7 @@ impl UserDefinedType {
     }
 
     /// Parses a UDT from CIP data
-    pub fn from_cip_data(_data: &[u8]) -> Result<Self, Box<dyn Error>> {
+    pub fn from_cip_data(_data: &[u8]) -> crate::error::Result<Self> {
         // TODO: Implement CIP data parsing
         Ok(Self {
             name: String::new(),
@@ -67,7 +71,7 @@ impl UserDefinedType {
     }
 
     /// Converts a UDT instance to a HashMap of member values
-    pub fn to_hash_map(&self, data: &[u8]) -> Result<HashMap<String, PlcValue>, Box<dyn Error>> {
+    pub fn to_hash_map(&self, data: &[u8]) -> crate::error::Result<HashMap<String, PlcValue>> {
         let mut result = HashMap::new();
         
         for member in &self.members {
@@ -83,7 +87,7 @@ impl UserDefinedType {
     }
 
     /// Parses a member value from raw data
-    fn parse_member_value(&self, member: &UdtMember, data: &[u8]) -> Result<PlcValue, Box<dyn Error>> {
+    fn parse_member_value(&self, member: &UdtMember, data: &[u8]) -> crate::error::Result<PlcValue> {
         match member.data_type {
             0x00C1 => Ok(PlcValue::Bool(data[0] != 0)),
             0x00C4 => {
@@ -96,110 +100,123 @@ impl UserDefinedType {
                 bytes.copy_from_slice(&data[..4]);
                 Ok(PlcValue::Real(f32::from_le_bytes(bytes)))
             }
-            _ => Err("Unsupported data type".into()),
+            _ => Err(crate::error::EtherNetIpError::InvalidData("Unsupported data type".to_string())),
         }
     }
 }
 
-/// Manager for UDT definitions
+/// Represents a User Defined Type (UDT) definition
+#[derive(Debug, Clone)]
+pub struct UdtDefinition {
+    /// Name of the UDT
+    pub name: String,
+    /// Members of the UDT with their data types
+    pub members: HashMap<String, u16>,
+}
+
+/// Manages User Defined Types (UDTs) for the EtherNet/IP client
 #[derive(Debug)]
 pub struct UdtManager {
-    /// Cache of UDT definitions
-    udts: HashMap<String, UserDefinedType>,
+    definitions: HashMap<String, UdtDefinition>,
 }
 
 impl UdtManager {
     /// Creates a new UDT manager
     pub fn new() -> Self {
         Self {
-            udts: HashMap::new(),
+            definitions: HashMap::new(),
         }
     }
 
-    /// Adds a UDT definition to the manager
-    pub fn add_udt(&mut self, udt: UserDefinedType) {
-        self.udts.insert(udt.name.clone(), udt);
-    }
+    /// Parses a UDT instance from raw data
+    pub fn parse_udt_instance(&self, tag_name: &str, data: &[u8]) -> Result<PlcValue> {
+        let definition = self.definitions.get(tag_name)
+            .ok_or_else(|| EtherNetIpError::Udt(format!("No UDT definition found for {}", tag_name)))?;
 
-    /// Gets a UDT definition by name
-    pub fn get_udt(&self, name: &str) -> Option<&UserDefinedType> {
-        self.udts.get(name)
-    }
-
-    /// Parses a UDT instance from CIP data
-    pub fn parse_udt_instance(&self, tag_name: &str, data: &[u8]) -> Result<PlcValue, Box<dyn Error>> {
-        let udt = self.get_udt(tag_name).ok_or_else(|| format!("UDT not found: {}", tag_name))?;
         let mut members = HashMap::new();
         let mut offset = 0;
-        for member in &udt.members {
-            let value = match member.data_type {
+
+        for (name, data_type) in &definition.members {
+            let value = match data_type {
                 0x00C1 => { // BOOL
-                    let value = data[offset] != 0;
-                    offset += 1;
-                    PlcValue::Bool(value)
+                    if offset + 1 > data.len() {
+                        return Err(EtherNetIpError::InvalidData("Insufficient data for BOOL".into()));
+                    }
+                    PlcValue::Bool(data[offset] != 0)
                 }
                 0x00C4 => { // DINT
+                    if offset + 4 > data.len() {
+                        return Err(EtherNetIpError::InvalidData("Insufficient data for DINT".into()));
+                    }
                     let value = i32::from_le_bytes([
-                        data[offset],
-                        data[offset + 1],
-                        data[offset + 2],
-                        data[offset + 3],
+                        data[offset], data[offset + 1],
+                        data[offset + 2], data[offset + 3]
                     ]);
-                    offset += 4;
                     PlcValue::Dint(value)
                 }
                 0x00CA => { // REAL
+                    if offset + 4 > data.len() {
+                        return Err(EtherNetIpError::InvalidData("Insufficient data for REAL".into()));
+                    }
                     let value = f32::from_le_bytes([
-                        data[offset],
-                        data[offset + 1],
-                        data[offset + 2],
-                        data[offset + 3],
+                        data[offset], data[offset + 1],
+                        data[offset + 2], data[offset + 3]
                     ]);
-                    offset += 4;
                     PlcValue::Real(value)
                 }
-                0x00D0 => { // STRING
-                    let len = u16::from_le_bytes([
-                        data[offset],
-                        data[offset + 1],
-                    ]) as usize;
-                    offset += 2;
-                    let value = String::from_utf8_lossy(&data[offset..offset + len]).to_string();
-                    offset += len;
-                    PlcValue::String(value)
-                }
-                _ => return Err(format!("Unsupported data type: 0x{:04X}", member.data_type).into()),
+                _ => return Err(EtherNetIpError::Udt(format!("Unsupported data type: 0x{:04X}", data_type))),
             };
-            members.insert(member.name.clone(), value);
+            members.insert(name.clone(), value);
+            offset += match data_type {
+                0x00C1 => 1,  // BOOL
+                0x00C4 => 4,  // DINT
+                0x00CA => 4,  // REAL
+                _ => return Err(EtherNetIpError::Udt(format!("Unsupported data type: 0x{:04X}", data_type))),
+            };
         }
+
         Ok(PlcValue::Udt(members))
     }
 
-    pub fn serialize_udt_instance(&self, tag_name: &str, members: &HashMap<String, PlcValue>) -> Result<Vec<u8>, Box<dyn Error>> {
-        let udt = self.get_udt(tag_name).ok_or_else(|| format!("UDT not found: {}", tag_name))?;
+    /// Serializes a UDT instance to raw data
+    pub fn serialize_udt_instance(&self, tag_name: &str, members: &HashMap<String, PlcValue>) -> Result<Vec<u8>> {
+        let definition = self.definitions.get(tag_name)
+            .ok_or_else(|| EtherNetIpError::Udt(format!("No UDT definition found for {}", tag_name)))?;
+
         let mut data = Vec::new();
-        for member in &udt.members {
-            let value = members.get(&member.name)
-                .ok_or_else(|| format!("Missing member: {}", member.name))?;
-            match (member.data_type, value) {
-                (0x00C1, PlcValue::Bool(v)) => {
-                    data.push(*v as u8);
+
+        for (name, data_type) in &definition.members {
+            let value = members.get(name)
+                .ok_or_else(|| EtherNetIpError::Udt(format!("Missing member {} in UDT {}", name, tag_name)))?;
+
+            match (value, data_type) {
+                (PlcValue::Bool(v), 0x00C1) => {
+                    data.push(if *v { 0xFF } else { 0x00 });
                 }
-                (0x00C4, PlcValue::Dint(v)) => {
+                (PlcValue::Dint(v), 0x00C4) => {
                     data.extend_from_slice(&v.to_le_bytes());
                 }
-                (0x00CA, PlcValue::Real(v)) => {
+                (PlcValue::Real(v), 0x00CA) => {
                     data.extend_from_slice(&v.to_le_bytes());
                 }
-                (0x00D0, PlcValue::String(v)) => {
-                    let bytes = v.as_bytes();
-                    data.extend_from_slice(&(bytes.len() as u16).to_le_bytes());
-                    data.extend_from_slice(bytes);
-                }
-                _ => return Err(format!("Type mismatch for member: {}", member.name).into()),
+                _ => return Err(EtherNetIpError::Udt(format!(
+                    "Type mismatch for member {} in UDT {}",
+                    name, tag_name
+                ))),
             }
         }
+
         Ok(data)
+    }
+
+    /// Adds a UDT definition
+    pub fn add_definition(&mut self, definition: UdtDefinition) {
+        self.definitions.insert(definition.name.clone(), definition);
+    }
+
+    /// Gets a UDT definition
+    pub fn get_definition(&self, name: &str) -> Option<&UdtDefinition> {
+        self.definitions.get(name)
     }
 }
 

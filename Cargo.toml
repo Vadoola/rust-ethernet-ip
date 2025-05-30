@@ -15,7 +15,7 @@ rust-version = "1.70"
 
 [lib]
 name = "rust_ethernet_ip"
-crate-type = ["cdylib"]  # This creates a dynamic library (.dll on Windows)
+crate-type = ["rlib", "cdylib"]  # Support both library formats
 
 [[bin]]
 name = "enip-test"
@@ -30,10 +30,15 @@ futures = "0.3"
 log = "0.4"
 env_logger = "0.10"
 lazy_static = "1.4"
+vergen = { version = "8.3", features = ["build", "git", "gitcl"] }
 
 [dev-dependencies]
 tokio-test = "0.4"
+cargo-tarpaulin = "0.18"
 
 [features]
 default = []
 ffi = []  # Enable C FFI exports
+
+[build-dependencies]
+vergen = { version = "8.3", features = ["build", "git", "gitcl"] }
