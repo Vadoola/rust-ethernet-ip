@@ -6,6 +6,7 @@
 > **Production release is planned for Q4 2025.**
 
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/sergiogallegos/rust-ethernet-ip/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Performance](https://img.shields.io/badge/performance-1895%2B%20ops%2Fsec-green.svg)]()
 [![Status](https://img.shields.io/badge/status-beta-yellow.svg)]()
@@ -44,14 +45,14 @@ This library aims to provide **Rust-native performance** and **memory safety** w
 - **ASP.NET Example**: Complete web application example
 - **WPF & WinForms Examples**: Complete desktop application examples
 
-### 🚧 **In Development (v0.2.0 - Q2 2025)**
+### 🚧 **In Development (v0.3.0 - Q2 2025)**
 - **Program Scope Tags** - `Program:MainProgram.TagName` support
 - **Real-time Subscriptions** - Tag change notifications
 - **Connection Pooling** - Advanced connection management
 - **ControlLogix Support** - Full L6x/L7x series compatibility
 - **Advanced Error Recovery** - Automatic reconnection and retry logic
 
-### 🔮 **Planned Features (v0.5.0 - Q3 2025)**
+### 🔮 **Planned Features (v0.4.0+ - Q3 2025)**
 - **Security Features** - Authentication and encryption support
 - **Advanced Diagnostics** - Detailed connection and performance metrics
 - **Cloud Integration** - Industrial IoT connectivity
@@ -270,6 +271,32 @@ if (client.Connect("192.168.1.100:44818"))
 }
 ```
 
+## 📦 **Current Release: v0.2.0**
+
+### **What's New in v0.2.0**
+- Enhanced C# FFI wrapper with improved performance
+- Advanced tag discovery and caching system
+- Multi-PLC connection management
+- Extended Forward Open with 4KB packet support
+- Comprehensive error handling with 30+ CIP error codes
+- Cross-platform support (Windows, macOS, Linux)
+- Complete example applications (WPF, WinForms, ASP.NET)
+
+### **Version Management**
+This project follows [Semantic Versioning](https://semver.org/) and maintains automated version management across all components. See our [Version Management Guide](docs/VERSION_MANAGEMENT.md) for details on:
+- Release process and automation tools
+- Version consistency across Rust and C# components
+- Upgrade paths and compatibility matrix
+
+### **Installation & Updates**
+```bash
+# Check current version
+cargo search rust_ethernet_ip
+
+# Update to latest version
+cargo update rust_ethernet_ip
+```
+
 ## 🧪 Testing
 
 ### Test Coverage
@@ -313,10 +340,16 @@ The library includes comprehensive test coverage across multiple test types:
 - [Error Handling](docs/error-handling.md)
 - [UDT Support](docs/udt-support.md)
 - [C# Integration](docs/csharp-integration.md)
+- [Version Management](docs/VERSION_MANAGEMENT.md)
 
 ## 🤝 Contributing
 
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+### **For Contributors**
+- Follow our [Version Management Guide](docs/VERSION_MANAGEMENT.md) when making releases
+- Use the automated scripts in `scripts/` for version updates and build verification
+- Ensure all tests pass with `.\scripts\verify-build.ps1` before submitting PRs
 
 ## 📄 License
 
