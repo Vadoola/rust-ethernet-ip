@@ -8,6 +8,7 @@ using System.Windows;
 using System.Windows.Threading;
 using WpfExample.Models;
 using RustEtherNetIp;
+using System.Threading;
 
 namespace WpfExample.ViewModels
 {
@@ -17,6 +18,9 @@ namespace WpfExample.ViewModels
         private DispatcherTimer? _refreshTimer;
         private bool _isRefreshing;
         private readonly object _refreshLock = new();
+        private const int MAX_RETRIES = 3;
+        private const int RETRY_DELAY = 1000;
+        private readonly SemaphoreSlim _tagOperationLock = new(1, 1);
 
         [ObservableProperty]
         private string plcAddress = "192.168.0.1:44818";
@@ -178,8 +182,38 @@ namespace WpfExample.ViewModels
             }
         }
 
+        private async Task<T> RetryOperation<T>(Func<Task<T>> operation, string operationName)
+        {
+            for (int attempt = 0; attempt < MAX_RETRIES; attempt++)
+            {
+                try
+                {
+                    await _tagOperationLock.WaitAsync();
+                    try
+                    {
+                        return await operation();
+                    }
+                    finally
+                    {
+                        _tagOperationLock.Release();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (attempt == MAX_RETRIES - 1)
+                    {
+                        LogMessage($"❌ {operationName} failed after {MAX_RETRIES} attempts: {ex.Message}");
+                        throw;
+                    }
+                    LogMessage($"⚠️ {operationName} attempt {attempt + 1} failed: {ex.Message}");
+                    await Task.Delay(RETRY_DELAY * (int)Math.Pow(2, attempt));
+                }
+            }
+            throw new Exception($"{operationName} failed after {MAX_RETRIES} attempts");
+        }
+
         [RelayCommand]
-        private void DiscoverTag()
+        private async Task DiscoverTag()
         {
             if (!IsConnected || _plcClient == null) return;
 
@@ -187,151 +221,45 @@ namespace WpfExample.ViewModels
             {
                 LogMessage($"🔍 Discovering tag: {TagToDiscover}");
                 
-                // Try to read the tag to determine its type - order matters for proper detection
-                try
+                await RetryOperation(async () =>
                 {
-                    var boolValue = _plcClient.ReadBool(TagToDiscover);
-                    SelectedDataType = "BOOL";
-                    TagName = TagToDiscover;
-                    TagValue = boolValue.ToString();
-                    LogMessage($"✅ Discovered BOOL tag: {TagToDiscover} = {boolValue}");
-                    return;
-                }
-                catch { }
+                    // Try to read the tag to determine its type - order matters for proper detection
+                    try
+                    {
+                        var boolValue = _plcClient.ReadBool(TagToDiscover);
+                        SelectedDataType = "BOOL";
+                        TagName = TagToDiscover;
+                        TagValue = boolValue.ToString();
+                        LogMessage($"✅ Discovered BOOL tag: {TagToDiscover} = {boolValue}");
+                        return true;
+                    }
+                    catch { }
 
-                try
-                {
-                    var sintValue = _plcClient.ReadSint(TagToDiscover);
-                    SelectedDataType = "SINT";
-                    TagName = TagToDiscover;
-                    TagValue = sintValue.ToString();
-                    LogMessage($"✅ Discovered SINT tag: {TagToDiscover} = {sintValue}");
-                    return;
-                }
-                catch { }
+                    try
+                    {
+                        var intValue = _plcClient.ReadInt(TagToDiscover);
+                        SelectedDataType = "INT";
+                        TagName = TagToDiscover;
+                        TagValue = intValue.ToString();
+                        LogMessage($"✅ Discovered INT tag: {TagToDiscover} = {intValue}");
+                        return true;
+                    }
+                    catch { }
 
-                try
-                {
-                    var intValue = _plcClient.ReadInt(TagToDiscover);
-                    SelectedDataType = "INT";
-                    TagName = TagToDiscover;
-                    TagValue = intValue.ToString();
-                    LogMessage($"✅ Discovered INT tag: {TagToDiscover} = {intValue}");
-                    return;
-                }
-                catch { }
+                    try
+                    {
+                        var realValue = _plcClient.ReadReal(TagToDiscover);
+                        SelectedDataType = "REAL";
+                        TagName = TagToDiscover;
+                        TagValue = realValue.ToString();
+                        LogMessage($"✅ Discovered REAL tag: {TagToDiscover} = {realValue}");
+                        return true;
+                    }
+                    catch { }
 
-                try
-                {
-                    var dintValue = _plcClient.ReadDint(TagToDiscover);
-                    SelectedDataType = "DINT";
-                    TagName = TagToDiscover;
-                    TagValue = dintValue.ToString();
-                    LogMessage($"✅ Discovered DINT tag: {TagToDiscover} = {dintValue}");
-                    return;
-                }
-                catch { }
-
-                try
-                {
-                    var lintValue = _plcClient.ReadLint(TagToDiscover);
-                    SelectedDataType = "LINT";
-                    TagName = TagToDiscover;
-                    TagValue = lintValue.ToString();
-                    LogMessage($"✅ Discovered LINT tag: {TagToDiscover} = {lintValue}");
-                    return;
-                }
-                catch { }
-
-                try
-                {
-                    var usintValue = _plcClient.ReadUsint(TagToDiscover);
-                    SelectedDataType = "USINT";
-                    TagName = TagToDiscover;
-                    TagValue = usintValue.ToString();
-                    LogMessage($"✅ Discovered USINT tag: {TagToDiscover} = {usintValue}");
-                    return;
-                }
-                catch { }
-
-                try
-                {
-                    var uintValue = _plcClient.ReadUint(TagToDiscover);
-                    SelectedDataType = "UINT";
-                    TagName = TagToDiscover;
-                    TagValue = uintValue.ToString();
-                    LogMessage($"✅ Discovered UINT tag: {TagToDiscover} = {uintValue}");
-                    return;
-                }
-                catch { }
-
-                try
-                {
-                    var udintValue = _plcClient.ReadUdint(TagToDiscover);
-                    SelectedDataType = "UDINT";
-                    TagName = TagToDiscover;
-                    TagValue = udintValue.ToString();
-                    LogMessage($"✅ Discovered UDINT tag: {TagToDiscover} = {udintValue}");
-                    return;
-                }
-                catch { }
-
-                try
-                {
-                    var ulintValue = _plcClient.ReadUlint(TagToDiscover);
-                    SelectedDataType = "ULINT";
-                    TagName = TagToDiscover;
-                    TagValue = ulintValue.ToString();
-                    LogMessage($"✅ Discovered ULINT tag: {TagToDiscover} = {ulintValue}");
-                    return;
-                }
-                catch { }
-
-                try
-                {
-                    var realValue = _plcClient.ReadReal(TagToDiscover);
-                    SelectedDataType = "REAL";
-                    TagName = TagToDiscover;
-                    TagValue = realValue.ToString();
-                    LogMessage($"✅ Discovered REAL tag: {TagToDiscover} = {realValue}");
-                    return;
-                }
-                catch { }
-
-                try
-                {
-                    var lrealValue = _plcClient.ReadLreal(TagToDiscover);
-                    SelectedDataType = "LREAL";
-                    TagName = TagToDiscover;
-                    TagValue = lrealValue.ToString();
-                    LogMessage($"✅ Discovered LREAL tag: {TagToDiscover} = {lrealValue}");
-                    return;
-                }
-                catch { }
-
-                try
-                {
-                    var stringValue = _plcClient.ReadString(TagToDiscover);
-                    SelectedDataType = "STRING";
-                    TagName = TagToDiscover;
-                    TagValue = stringValue;
-                    LogMessage($"✅ Discovered STRING tag: {TagToDiscover} = '{stringValue}'");
-                    return;
-                }
-                catch { }
-
-                try
-                {
-                    var udtValue = _plcClient.ReadUdt(TagToDiscover);
-                    SelectedDataType = "UDT";
-                    TagName = TagToDiscover;
-                    TagValue = $"UDT with {udtValue.Count} members";
-                    LogMessage($"✅ Discovered UDT tag: {TagToDiscover} with {udtValue.Count} members");
-                    return;
-                }
-                catch { }
-
-                LogMessage($"❌ Could not determine type for tag: {TagToDiscover}");
+                    LogMessage($"❌ Could not determine type for tag: {TagToDiscover}");
+                    return false;
+                }, "Tag discovery");
             }
             catch (Exception ex)
             {
@@ -340,7 +268,7 @@ namespace WpfExample.ViewModels
         }
 
         [RelayCommand]
-        private void ReadTag()
+        private async Task ReadTag()
         {
             if (!IsConnected || _plcClient == null) return;
 
@@ -348,26 +276,30 @@ namespace WpfExample.ViewModels
             {
                 LogMessage($"📖 Reading tag: {TagName}");
                 
-                object value = SelectedDataType switch
+                await RetryOperation(async () =>
                 {
-                    "BOOL" => _plcClient.ReadBool(TagName),
-                    "SINT" => _plcClient.ReadSint(TagName),
-                    "INT" => _plcClient.ReadInt(TagName),
-                    "DINT" => _plcClient.ReadDint(TagName),
-                    "LINT" => _plcClient.ReadLint(TagName),
-                    "USINT" => _plcClient.ReadUsint(TagName),
-                    "UINT" => _plcClient.ReadUint(TagName),
-                    "UDINT" => _plcClient.ReadUdint(TagName),
-                    "ULINT" => _plcClient.ReadUlint(TagName),
-                    "REAL" => _plcClient.ReadReal(TagName),
-                    "LREAL" => _plcClient.ReadLreal(TagName),
-                    "STRING" => _plcClient.ReadString(TagName),
-                    "UDT" => _plcClient.ReadUdt(TagName),
-                    _ => throw new Exception($"Unsupported data type: {SelectedDataType}")
-                };
-                
-                TagValue = value.ToString() ?? string.Empty;
-                LogMessage($"✅ Read {SelectedDataType} tag: {TagName} = {value}");
+                    object value = SelectedDataType switch
+                    {
+                        "BOOL" => _plcClient.ReadBool(TagName),
+                        "SINT" => _plcClient.ReadSint(TagName),
+                        "INT" => _plcClient.ReadInt(TagName),
+                        "DINT" => _plcClient.ReadDint(TagName),
+                        "LINT" => _plcClient.ReadLint(TagName),
+                        "USINT" => _plcClient.ReadUsint(TagName),
+                        "UINT" => _plcClient.ReadUint(TagName),
+                        "UDINT" => _plcClient.ReadUdint(TagName),
+                        "ULINT" => _plcClient.ReadUlint(TagName),
+                        "REAL" => _plcClient.ReadReal(TagName),
+                        "LREAL" => _plcClient.ReadLreal(TagName),
+                        "STRING" => _plcClient.ReadString(TagName),
+                        "UDT" => _plcClient.ReadUdt(TagName),
+                        _ => throw new Exception($"Unsupported data type: {SelectedDataType}")
+                    };
+                    
+                    TagValue = value.ToString() ?? string.Empty;
+                    LogMessage($"✅ Read {SelectedDataType} tag: {TagName} = {value}");
+                    return true;
+                }, "Tag read");
             }
             catch (Exception ex)
             {

@@ -114,7 +114,7 @@ impl PlcManager {
     /// Gets a connection to a PLC
     pub async fn get_connection(&mut self, address: SocketAddr) -> Result<&mut EipClient> {
         let config = self.configs.get(&address)
-            .ok_or_else(|| EtherNetIpError::Configuration("PLC not configured".to_string()))?;
+            .ok_or_else(|| EtherNetIpError::Connection("PLC not configured".to_string()))?;
 
         // First check if we have any connections for this address
         if !self.connections.contains_key(&address) {
@@ -203,7 +203,7 @@ impl PlcManager {
 
     pub async fn get_client(&mut self, address: &str) -> Result<&mut EipClient> {
         let addr = address.parse::<SocketAddr>()
-            .map_err(|_| EtherNetIpError::Configuration("Invalid address format".to_string()))?;
+            .map_err(|_| EtherNetIpError::Connection("Invalid address format".to_string()))?;
         self.get_connection(addr).await
     }
 }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
-use crate::error::Result;
+use crate::error::{EtherNetIpError, Result};
 use crate::EipClient;
 
 /// Represents the scope of a tag in the PLC
@@ -11,6 +11,15 @@ pub enum TagScope {
     Controller,
     /// Tag in a program scope
     Program(String),
+    Global,
+    Local,
+}
+
+/// Array information for tags
+#[derive(Debug, Clone)]
+pub struct ArrayInfo {
+    pub dimensions: Vec<u32>,
+    pub element_count: u32,
 }
 
 /// Metadata for a PLC tag
@@ -30,6 +39,8 @@ pub struct TagMetadata {
     pub scope: TagScope,
     /// Last time this tag was accessed
     pub last_access: Instant,
+    pub array_info: Option<ArrayInfo>,
+    pub last_updated: Instant,
 }
 
 /// Access permissions for a tag
@@ -89,17 +100,60 @@ impl TagCache {
 #[derive(Debug)]
 pub struct TagManager {
     pub cache: RwLock<HashMap<String, TagMetadata>>,
+    cache_duration: Duration,
 }
 
 impl TagManager {
     pub fn new() -> Self {
-        TagManager {
+        Self {
             cache: RwLock::new(HashMap::new()),
+            cache_duration: Duration::from_secs(300), // 5 minutes
         }
     }
 
-    pub fn get_tag(&self, tag_name: &str) -> Option<TagMetadata> {
-        self.cache.read().unwrap().get(tag_name).cloned()
+    pub fn get_metadata(&self, tag_name: &str) -> Option<TagMetadata> {
+        let cache = self.cache.read().unwrap();
+        cache.get(tag_name).and_then(|metadata| {
+            if metadata.last_updated.elapsed() < self.cache_duration {
+                Some(metadata.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn update_metadata(&mut self, tag_name: String, metadata: TagMetadata) {
+        self.cache.write().unwrap().insert(tag_name, metadata);
+    }
+
+    pub fn validate_tag(&self, tag_name: &str, required_permissions: &TagPermissions) -> Result<()> {
+        if let Some(metadata) = self.get_metadata(tag_name) {
+            if !metadata.permissions.readable && required_permissions.readable {
+                return Err(EtherNetIpError::Permission(format!(
+                    "Tag '{}' is not readable",
+                    tag_name
+                )));
+            }
+            if !metadata.permissions.writable && required_permissions.writable {
+                return Err(EtherNetIpError::Permission(format!(
+                    "Tag '{}' is not writable",
+                    tag_name
+                )));
+            }
+            Ok(())
+        } else {
+            Err(EtherNetIpError::Tag(format!("Tag '{}' not found", tag_name)))
+        }
+    }
+
+    pub fn clear_cache(&mut self) {
+        self.cache.write().unwrap().clear();
+    }
+
+    pub fn remove_stale_entries(&mut self) {
+        self.cache.write().unwrap().retain(|_, metadata| {
+            metadata.last_updated.elapsed() < self.cache_duration
+        });
     }
 
     pub async fn discover_tags(&self, client: &mut EipClient) -> Result<()> {
@@ -167,6 +221,16 @@ impl TagManager {
                     offset += 4;
                 }
             }
+            
+            let array_info = if is_array && !dimensions.is_empty() {
+                Some(ArrayInfo {
+                    element_count: dimensions.iter().product(),
+                    dimensions: dimensions.clone(),
+                })
+            } else {
+                None
+            };
+            
             let metadata = TagMetadata {
                 data_type,
                 scope: TagScope::Controller,
@@ -175,10 +239,18 @@ impl TagManager {
                 dimensions,
                 last_access: Instant::now(),
                 size: 0,
+                array_info,
+                last_updated: Instant::now(),
             };
             tags.push((name, metadata));
         }
         Ok(tags)
+    }
+}
+
+impl Default for TagManager {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -200,6 +272,8 @@ mod tests {
             },
             scope: TagScope::Controller,
             last_access: Instant::now(),
+            array_info: None,
+            last_updated: Instant::now(),
         };
 
         cache.update_tag("TestTag".to_string(), metadata);

@@ -2,6 +2,8 @@ using System.Collections.Concurrent;
 using RustEtherNetIp;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Threading.Tasks;
+using System.Threading;
 
 namespace AspNetExample.Services;
 
@@ -13,6 +15,9 @@ public class PlcService : IDisposable
     private readonly ConcurrentDictionary<string, DateTime> _lastReadTimes = new();
     private readonly ILogger<PlcService> _logger;
     private readonly IConfiguration _configuration;
+    private const int MAX_RETRIES = 3;
+    private const int RETRY_DELAY = 1000;
+    private readonly SemaphoreSlim _tagOperationLock = new(1, 1);
 
     public PlcService(ILogger<PlcService> logger, IConfiguration configuration)
     {
@@ -356,5 +361,126 @@ public class PlcService : IDisposable
             _logger.LogError(ex, "Error reading string tag {TagName} from PLC at {PlcAddress}", tagName, plcAddress);
             return (false, string.Empty, ex.Message);
         }
+    }
+
+    private async Task<T> RetryOperation<T>(Func<Task<T>> operation, string operationName)
+    {
+        for (int attempt = 0; attempt < MAX_RETRIES; attempt++)
+        {
+            try
+            {
+                await _tagOperationLock.WaitAsync();
+                try
+                {
+                    return await operation();
+                }
+                finally
+                {
+                    _tagOperationLock.Release();
+                }
+            }
+            catch (Exception ex)
+            {
+                if (attempt == MAX_RETRIES - 1)
+                {
+                    _logger.LogError(ex, "{Operation} failed after {MaxRetries} attempts", operationName, MAX_RETRIES);
+                    throw;
+                }
+                _logger.LogWarning(ex, "{Operation} attempt {Attempt} failed", operationName, attempt + 1);
+                await Task.Delay(RETRY_DELAY * (int)Math.Pow(2, attempt));
+            }
+        }
+        throw new Exception($"{operationName} failed after {MAX_RETRIES} attempts");
+    }
+
+    public async Task<(bool success, string type, string value)> ReadTag(string plcAddress, string tagName)
+    {
+        if (!_isConnected || _currentAddress != plcAddress)
+        {
+            throw new PlcNotConnectedException(plcAddress);
+        }
+
+        return await RetryOperation(async () =>
+        {
+            try
+            {
+                // Try to read as different types
+                try
+                {
+                    var value = _plcClient.ReadBool(tagName);
+                    return (true, "BOOL", value.ToString());
+                }
+                catch { }
+
+                try
+                {
+                    var value = _plcClient.ReadInt(tagName);
+                    return (true, "INT", value.ToString());
+                }
+                catch { }
+
+                try
+                {
+                    var value = _plcClient.ReadReal(tagName);
+                    return (true, "REAL", value.ToString());
+                }
+                catch { }
+
+                try
+                {
+                    var value = _plcClient.ReadString(tagName);
+                    return (true, "STRING", value);
+                }
+                catch { }
+
+                return (false, "UNKNOWN", string.Empty);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error reading tag {Tag} from PLC at {Address}", tagName, plcAddress);
+                throw;
+            }
+        }, $"Read tag {tagName}");
+    }
+
+    public async Task WriteTag(string plcAddress, string tagName, string value, string dataType)
+    {
+        if (!_isConnected || _currentAddress != plcAddress)
+        {
+            throw new PlcNotConnectedException(plcAddress);
+        }
+
+        await RetryOperation(async () =>
+        {
+            try
+            {
+                switch (dataType.ToUpper())
+                {
+                    case "BOOL":
+                        _plcClient.WriteBool(tagName, bool.Parse(value));
+                        break;
+                    case "INT":
+                        _plcClient.WriteInt(tagName, short.Parse(value));
+                        break;
+                    case "DINT":
+                        _plcClient.WriteDint(tagName, int.Parse(value));
+                        break;
+                    case "REAL":
+                        _plcClient.WriteReal(tagName, float.Parse(value));
+                        break;
+                    case "STRING":
+                        _plcClient.WriteString(tagName, value);
+                        break;
+                    default:
+                        throw new TagTypeMismatchException(tagName, dataType, "Unsupported type");
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error writing tag {Tag} to PLC at {Address}", tagName, plcAddress);
+                throw;
+            }
+        }, $"Write tag {tagName}");
     }
 } 

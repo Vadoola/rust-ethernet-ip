@@ -3,6 +3,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.Threading;
 
 namespace RustEtherNetIp
 {
@@ -43,11 +44,16 @@ namespace RustEtherNetIp
     /// }
     /// </code>
     /// </example>
-    public class EtherNetIpClient : IEtherNetIpClient
+    public class EtherNetIpClient : IDisposable
     {
         private int _clientId = -1;
-        private bool _disposed = false;
-        private Dictionary<string, TagMetadata> _tagCache = new Dictionary<string, TagMetadata>();
+        private string _currentAddress = string.Empty;
+        private readonly object _lock = new();
+        private bool _isDisposed;
+        private readonly Dictionary<string, TagMetadata> _tagCache = new();
+        private readonly SemaphoreSlim _operationLock = new(1, 1);
+        private CancellationTokenSource _keepAliveCts = new();
+        private Task? _keepAliveTask;
 
         #region DLL Imports
         // These are the low-level FFI calls to the Rust library
@@ -171,23 +177,30 @@ namespace RustEtherNetIp
         /// <exception cref="InvalidOperationException">Thrown if already connected to a PLC.</exception>
         public bool Connect(string address)
         {
-            if (_clientId != -1)
-                throw new InvalidOperationException("Already connected to a PLC. Call Disconnect() first.");
+            if (_isDisposed)
+                throw new ObjectDisposedException(nameof(EtherNetIpClient));
 
-            IntPtr addressPtr = Marshal.StringToHGlobalAnsi(address);
-            try
+            lock (_lock)
             {
-                _clientId = eip_connect(addressPtr);
-                if (_clientId >= 0)
+                if (_clientId != -1)
+                    throw new InvalidOperationException("Already connected to a PLC. Call Disconnect() first.");
+
+                IntPtr addressPtr = Marshal.StringToHGlobalAnsi(address);
+                try
                 {
-                    // Set default max packet size for optimal performance
-                    eip_set_max_packet_size(_clientId, 4000);
+                    _clientId = eip_connect(addressPtr);
+                    if (_clientId >= 0)
+                    {
+                        _currentAddress = address;
+                        eip_set_max_packet_size(_clientId, 4000);
+                        StartKeepAlive();
+                    }
+                    return _clientId >= 0;
                 }
-                return _clientId >= 0;
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(addressPtr);
+                finally
+                {
+                    Marshal.FreeHGlobal(addressPtr);
+                }
             }
         }
 
@@ -196,11 +209,16 @@ namespace RustEtherNetIp
         /// </summary>
         public void Disconnect()
         {
-            if (_clientId >= 0)
+            lock (_lock)
             {
-                eip_disconnect(_clientId);
-                _clientId = -1;
-                _tagCache.Clear();
+                if (_clientId >= 0)
+                {
+                    StopKeepAlive();
+                    eip_disconnect(_clientId);
+                    _clientId = -1;
+                    _currentAddress = string.Empty;
+                    _tagCache.Clear();
+                }
             }
         }
 
@@ -213,6 +231,48 @@ namespace RustEtherNetIp
         /// Gets the internal client ID used for this connection.
         /// </summary>
         public int ClientId => _clientId;
+
+        private void StartKeepAlive()
+        {
+            _keepAliveCts?.Cancel(); // Cancel any existing task
+            _keepAliveCts?.Dispose();
+            _keepAliveCts = new CancellationTokenSource();
+            
+            _keepAliveTask = Task.Run(async () =>
+            {
+                while (!_keepAliveCts.Token.IsCancellationRequested)
+                {
+                    try
+                    {
+                        await Task.Delay(15000, _keepAliveCts.Token); // Every 15 seconds
+                        if (_clientId >= 0)
+                        {
+                            int isHealthy;
+                            if (eip_check_health(_clientId, out isHealthy) != 0 || isHealthy == 0)
+                            {
+                                // Connection lost, try to reconnect
+                                Disconnect();
+                                Connect(_currentAddress);
+                            }
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+                    catch
+                    {
+                        // Ignore other errors in keep-alive task
+                    }
+                }
+            }, _keepAliveCts.Token);
+        }
+
+        private void StopKeepAlive()
+        {
+            _keepAliveCts?.Cancel();
+            _keepAliveTask?.Wait(1000); // Wait up to 1 second for task to complete
+        }
 
         #endregion
 
@@ -234,19 +294,22 @@ namespace RustEtherNetIp
         /// <exception cref="Exception">Thrown if tag doesn't exist or communication fails.</exception>
         public bool ReadBool(string tagName)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            return ExecuteWithLock(() =>
             {
-                int result = eip_read_bool(_clientId, tagPtr, out int value);
-                if (result != 0)
-                    throw new Exception($"Failed to read BOOL tag '{tagName}'. Check tag exists and is BOOL type.");
-                return value != 0;
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_read_bool(_clientId, tagPtr, out int value);
+                    if (result != 0)
+                        throw new Exception($"Failed to read BOOL tag '{tagName}'. Check tag exists and is BOOL type.");
+                    return value != 0;
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         /// <summary>
@@ -258,18 +321,21 @@ namespace RustEtherNetIp
         /// <exception cref="Exception">Thrown if tag doesn't exist, is read-only, or communication fails.</exception>
         public void WriteBool(string tagName, bool value)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            ExecuteWithLock(() =>
             {
-                int result = eip_write_bool(_clientId, tagPtr, value ? 1 : 0);
-                if (result != 0)
-                    throw new Exception($"Failed to write BOOL tag '{tagName}'. Check tag exists and is writable.");
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_write_bool(_clientId, tagPtr, value ? 1 : 0);
+                    if (result != 0)
+                        throw new Exception($"Failed to write BOOL tag '{tagName}'. Check tag exists and is writable.");
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         #endregion
@@ -284,19 +350,22 @@ namespace RustEtherNetIp
         /// <returns>The SINT value of the tag.</returns>
         public sbyte ReadSint(string tagName)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            return ExecuteWithLock(() =>
             {
-                int result = eip_read_sint(_clientId, tagPtr, out sbyte value);
-                if (result != 0)
-                    throw new Exception($"Failed to read SINT tag '{tagName}'. Check tag exists and is SINT type.");
-                return value;
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_read_sint(_clientId, tagPtr, out sbyte value);
+                    if (result != 0)
+                        throw new Exception($"Failed to read SINT tag '{tagName}'. Check tag exists and is SINT type.");
+                    return value;
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         /// <summary>
@@ -306,18 +375,21 @@ namespace RustEtherNetIp
         /// <param name="value">SINT value to write (-128 to 127).</param>
         public void WriteSint(string tagName, sbyte value)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            ExecuteWithLock(() =>
             {
-                int result = eip_write_sint(_clientId, tagPtr, value);
-                if (result != 0)
-                    throw new Exception($"Failed to write SINT tag '{tagName}'. Check tag exists and is writable.");
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_write_sint(_clientId, tagPtr, value);
+                    if (result != 0)
+                        throw new Exception($"Failed to write SINT tag '{tagName}'. Check tag exists and is writable.");
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         /// <summary>
@@ -328,19 +400,22 @@ namespace RustEtherNetIp
         /// <returns>The INT value of the tag.</returns>
         public short ReadInt(string tagName)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            return ExecuteWithLock(() =>
             {
-                int result = eip_read_int(_clientId, tagPtr, out short value);
-                if (result != 0)
-                    throw new Exception($"Failed to read INT tag '{tagName}'. Check tag exists and is INT type.");
-                return value;
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_read_int(_clientId, tagPtr, out short value);
+                    if (result != 0)
+                        throw new Exception($"Failed to read INT tag '{tagName}'. Check tag exists and is INT type.");
+                    return value;
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         /// <summary>
@@ -350,18 +425,21 @@ namespace RustEtherNetIp
         /// <param name="value">INT value to write (-32,768 to 32,767).</param>
         public void WriteInt(string tagName, short value)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            ExecuteWithLock(() =>
             {
-                int result = eip_write_int(_clientId, tagPtr, value);
-                if (result != 0)
-                    throw new Exception($"Failed to write INT tag '{tagName}'. Check tag exists and is writable.");
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_write_int(_clientId, tagPtr, value);
+                    if (result != 0)
+                        throw new Exception($"Failed to write INT tag '{tagName}'. Check tag exists and is writable.");
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         /// <summary>
@@ -372,19 +450,22 @@ namespace RustEtherNetIp
         /// <returns>The DINT value of the tag.</returns>
         public int ReadDint(string tagName)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            return ExecuteWithLock(() =>
             {
-                int result = eip_read_dint(_clientId, tagPtr, out int value);
-                if (result != 0)
-                    throw new Exception($"Failed to read DINT tag '{tagName}'. Check tag exists and is DINT type.");
-                return value;
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_read_dint(_clientId, tagPtr, out int value);
+                    if (result != 0)
+                        throw new Exception($"Failed to read DINT tag '{tagName}'. Check tag exists and is DINT type.");
+                    return value;
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         /// <summary>
@@ -394,18 +475,21 @@ namespace RustEtherNetIp
         /// <param name="value">DINT value to write.</param>
         public void WriteDint(string tagName, int value)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            ExecuteWithLock(() =>
             {
-                int result = eip_write_dint(_clientId, tagPtr, value);
-                if (result != 0)
-                    throw new Exception($"Failed to write DINT tag '{tagName}'. Check tag exists and is writable.");
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_write_dint(_clientId, tagPtr, value);
+                    if (result != 0)
+                        throw new Exception($"Failed to write DINT tag '{tagName}'. Check tag exists and is writable.");
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         /// <summary>
@@ -416,19 +500,22 @@ namespace RustEtherNetIp
         /// <returns>The LINT value of the tag.</returns>
         public long ReadLint(string tagName)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            return ExecuteWithLock(() =>
             {
-                int result = eip_read_lint(_clientId, tagPtr, out long value);
-                if (result != 0)
-                    throw new Exception($"Failed to read LINT tag '{tagName}'. Check tag exists and is LINT type.");
-                return value;
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_read_lint(_clientId, tagPtr, out long value);
+                    if (result != 0)
+                        throw new Exception($"Failed to read LINT tag '{tagName}'. Check tag exists and is LINT type.");
+                    return value;
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         /// <summary>
@@ -438,18 +525,21 @@ namespace RustEtherNetIp
         /// <param name="value">LINT value to write.</param>
         public void WriteLint(string tagName, long value)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            ExecuteWithLock(() =>
             {
-                int result = eip_write_lint(_clientId, tagPtr, value);
-                if (result != 0)
-                    throw new Exception($"Failed to write LINT tag '{tagName}'. Check tag exists and is writable.");
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_write_lint(_clientId, tagPtr, value);
+                    if (result != 0)
+                        throw new Exception($"Failed to write LINT tag '{tagName}'. Check tag exists and is writable.");
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         #endregion
@@ -464,19 +554,22 @@ namespace RustEtherNetIp
         /// <returns>The USINT value of the tag.</returns>
         public byte ReadUsint(string tagName)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            return ExecuteWithLock(() =>
             {
-                int result = eip_read_usint(_clientId, tagPtr, out byte value);
-                if (result != 0)
-                    throw new Exception($"Failed to read USINT tag '{tagName}'. Check tag exists and is USINT type.");
-                return value;
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_read_usint(_clientId, tagPtr, out byte value);
+                    if (result != 0)
+                        throw new Exception($"Failed to read USINT tag '{tagName}'. Check tag exists and is USINT type.");
+                    return value;
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         /// <summary>
@@ -486,18 +579,21 @@ namespace RustEtherNetIp
         /// <param name="value">USINT value to write (0 to 255).</param>
         public void WriteUsint(string tagName, byte value)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            ExecuteWithLock(() =>
             {
-                int result = eip_write_usint(_clientId, tagPtr, value);
-                if (result != 0)
-                    throw new Exception($"Failed to write USINT tag '{tagName}'. Check tag exists and is writable.");
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_write_usint(_clientId, tagPtr, value);
+                    if (result != 0)
+                        throw new Exception($"Failed to write USINT tag '{tagName}'. Check tag exists and is writable.");
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         /// <summary>
@@ -508,19 +604,22 @@ namespace RustEtherNetIp
         /// <returns>The UINT value of the tag.</returns>
         public ushort ReadUint(string tagName)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            return ExecuteWithLock(() =>
             {
-                int result = eip_read_uint(_clientId, tagPtr, out ushort value);
-                if (result != 0)
-                    throw new Exception($"Failed to read UINT tag '{tagName}'. Check tag exists and is UINT type.");
-                return value;
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_read_uint(_clientId, tagPtr, out ushort value);
+                    if (result != 0)
+                        throw new Exception($"Failed to read UINT tag '{tagName}'. Check tag exists and is UINT type.");
+                    return value;
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         /// <summary>
@@ -530,18 +629,21 @@ namespace RustEtherNetIp
         /// <param name="value">UINT value to write (0 to 65,535).</param>
         public void WriteUint(string tagName, ushort value)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            ExecuteWithLock(() =>
             {
-                int result = eip_write_uint(_clientId, tagPtr, value);
-                if (result != 0)
-                    throw new Exception($"Failed to write UINT tag '{tagName}'. Check tag exists and is writable.");
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_write_uint(_clientId, tagPtr, value);
+                    if (result != 0)
+                        throw new Exception($"Failed to write UINT tag '{tagName}'. Check tag exists and is writable.");
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         /// <summary>
@@ -552,19 +654,22 @@ namespace RustEtherNetIp
         /// <returns>The UDINT value of the tag.</returns>
         public uint ReadUdint(string tagName)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            return ExecuteWithLock(() =>
             {
-                int result = eip_read_udint(_clientId, tagPtr, out uint value);
-                if (result != 0)
-                    throw new Exception($"Failed to read UDINT tag '{tagName}'. Check tag exists and is UDINT type.");
-                return value;
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_read_udint(_clientId, tagPtr, out uint value);
+                    if (result != 0)
+                        throw new Exception($"Failed to read UDINT tag '{tagName}'. Check tag exists and is UDINT type.");
+                    return value;
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         /// <summary>
@@ -574,18 +679,21 @@ namespace RustEtherNetIp
         /// <param name="value">UDINT value to write.</param>
         public void WriteUdint(string tagName, uint value)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            ExecuteWithLock(() =>
             {
-                int result = eip_write_udint(_clientId, tagPtr, value);
-                if (result != 0)
-                    throw new Exception($"Failed to write UDINT tag '{tagName}'. Check tag exists and is writable.");
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_write_udint(_clientId, tagPtr, value);
+                    if (result != 0)
+                        throw new Exception($"Failed to write UDINT tag '{tagName}'. Check tag exists and is writable.");
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         /// <summary>
@@ -596,19 +704,22 @@ namespace RustEtherNetIp
         /// <returns>The ULINT value of the tag.</returns>
         public ulong ReadUlint(string tagName)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            return ExecuteWithLock(() =>
             {
-                int result = eip_read_ulint(_clientId, tagPtr, out ulong value);
-                if (result != 0)
-                    throw new Exception($"Failed to read ULINT tag '{tagName}'. Check tag exists and is ULINT type.");
-                return value;
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_read_ulint(_clientId, tagPtr, out ulong value);
+                    if (result != 0)
+                        throw new Exception($"Failed to read ULINT tag '{tagName}'. Check tag exists and is ULINT type.");
+                    return value;
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         /// <summary>
@@ -618,18 +729,21 @@ namespace RustEtherNetIp
         /// <param name="value">ULINT value to write.</param>
         public void WriteUlint(string tagName, ulong value)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            ExecuteWithLock(() =>
             {
-                int result = eip_write_ulint(_clientId, tagPtr, value);
-                if (result != 0)
-                    throw new Exception($"Failed to write ULINT tag '{tagName}'. Check tag exists and is writable.");
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_write_ulint(_clientId, tagPtr, value);
+                    if (result != 0)
+                        throw new Exception($"Failed to write ULINT tag '{tagName}'. Check tag exists and is writable.");
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         #endregion
@@ -644,19 +758,22 @@ namespace RustEtherNetIp
         /// <returns>The REAL value of the tag.</returns>
         public float ReadReal(string tagName)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            return ExecuteWithLock(() =>
             {
-                int result = eip_read_real(_clientId, tagPtr, out double value);
-                if (result != 0)
-                    throw new Exception($"Failed to read REAL tag '{tagName}'. Check tag exists and is REAL type.");
-                return (float)value;
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_read_real(_clientId, tagPtr, out double value);
+                    if (result != 0)
+                        throw new Exception($"Failed to read REAL tag '{tagName}'. Check tag exists and is REAL type.");
+                    return (float)value;
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         /// <summary>
@@ -666,18 +783,21 @@ namespace RustEtherNetIp
         /// <param name="value">REAL value to write.</param>
         public void WriteReal(string tagName, float value)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            ExecuteWithLock(() =>
             {
-                int result = eip_write_real(_clientId, tagPtr, value);
-                if (result != 0)
-                    throw new Exception($"Failed to write REAL tag '{tagName}'. Check tag exists and is writable.");
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_write_real(_clientId, tagPtr, value);
+                    if (result != 0)
+                        throw new Exception($"Failed to write REAL tag '{tagName}'. Check tag exists and is writable.");
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         /// <summary>
@@ -688,19 +808,22 @@ namespace RustEtherNetIp
         /// <returns>The LREAL value of the tag.</returns>
         public double ReadLreal(string tagName)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            return ExecuteWithLock(() =>
             {
-                int result = eip_read_lreal(_clientId, tagPtr, out double value);
-                if (result != 0)
-                    throw new Exception($"Failed to read LREAL tag '{tagName}'. Check tag exists and is LREAL type.");
-                return value;
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_read_lreal(_clientId, tagPtr, out double value);
+                    if (result != 0)
+                        throw new Exception($"Failed to read LREAL tag '{tagName}'. Check tag exists and is LREAL type.");
+                    return value;
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         /// <summary>
@@ -710,18 +833,21 @@ namespace RustEtherNetIp
         /// <param name="value">LREAL value to write.</param>
         public void WriteLreal(string tagName, double value)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            ExecuteWithLock(() =>
             {
-                int result = eip_write_lreal(_clientId, tagPtr, value);
-                if (result != 0)
-                    throw new Exception($"Failed to write LREAL tag '{tagName}'. Check tag exists and is writable.");
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_write_lreal(_clientId, tagPtr, value);
+                    if (result != 0)
+                        throw new Exception($"Failed to write LREAL tag '{tagName}'. Check tag exists and is writable.");
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         #endregion
@@ -735,21 +861,24 @@ namespace RustEtherNetIp
         /// <returns>The string value of the tag.</returns>
         public string ReadString(string tagName)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            IntPtr resultPtr = Marshal.AllocHGlobal(256); // Allocate buffer for string
-            try
+            return ExecuteWithLock(() =>
             {
-                int result = eip_read_string(_clientId, tagPtr, resultPtr, 256);
-                if (result != 0)
-                    throw new Exception($"Failed to read STRING tag '{tagName}'. Check tag exists and is STRING type.");
-                return Marshal.PtrToStringAnsi(resultPtr) ?? string.Empty;
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-                Marshal.FreeHGlobal(resultPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                IntPtr resultPtr = Marshal.AllocHGlobal(256); // Allocate buffer for string
+                try
+                {
+                    int result = eip_read_string(_clientId, tagPtr, resultPtr, 256);
+                    if (result != 0)
+                        throw new Exception($"Failed to read STRING tag '{tagName}'. Check tag exists and is STRING type.");
+                    return Marshal.PtrToStringAnsi(resultPtr) ?? string.Empty;
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                    Marshal.FreeHGlobal(resultPtr);
+                }
+            });
         }
 
         /// <summary>
@@ -759,20 +888,23 @@ namespace RustEtherNetIp
         /// <param name="value">String value to write.</param>
         public void WriteString(string tagName, string value)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            IntPtr valuePtr = Marshal.StringToHGlobalAnsi(value);
-            try
+            ExecuteWithLock(() =>
             {
-                int result = eip_write_string(_clientId, tagPtr, valuePtr);
-                if (result != 0)
-                    throw new Exception($"Failed to write STRING tag '{tagName}'. Check tag exists and is writable.");
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-                Marshal.FreeHGlobal(valuePtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                IntPtr valuePtr = Marshal.StringToHGlobalAnsi(value);
+                try
+                {
+                    int result = eip_write_string(_clientId, tagPtr, valuePtr);
+                    if (result != 0)
+                        throw new Exception($"Failed to write STRING tag '{tagName}'. Check tag exists and is writable.");
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                    Marshal.FreeHGlobal(valuePtr);
+                }
+            });
         }
 
         #endregion
@@ -786,23 +918,26 @@ namespace RustEtherNetIp
         /// <returns>Dictionary containing UDT member values.</returns>
         public Dictionary<string, object> ReadUdt(string tagName)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            IntPtr resultPtr = Marshal.AllocHGlobal(4096); // Allocate buffer for UDT data
-            try
+            return ExecuteWithLock(() =>
             {
-                int result = eip_read_udt(_clientId, tagPtr, resultPtr, 4096);
-                if (result != 0)
-                    throw new Exception($"Failed to read UDT tag '{tagName}'. Check tag exists and is UDT type.");
-                
-                // For now, return empty dictionary - UDT parsing would need more complex marshaling
-                return new Dictionary<string, object>();
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-                Marshal.FreeHGlobal(resultPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                IntPtr resultPtr = Marshal.AllocHGlobal(4096); // Allocate buffer for UDT data
+                try
+                {
+                    int result = eip_read_udt(_clientId, tagPtr, resultPtr, 4096);
+                    if (result != 0)
+                        throw new Exception($"Failed to read UDT tag '{tagName}'. Check tag exists and is UDT type.");
+                    
+                    // For now, return empty dictionary - UDT parsing would need more complex marshaling
+                    return new Dictionary<string, object>();
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                    Marshal.FreeHGlobal(resultPtr);
+                }
+            });
         }
 
         /// <summary>
@@ -812,21 +947,24 @@ namespace RustEtherNetIp
         /// <param name="value">Dictionary containing UDT member values.</param>
         public void WriteUdt(string tagName, Dictionary<string, object> value)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            IntPtr valuePtr = Marshal.AllocHGlobal(4096); // Allocate buffer for UDT data
-            try
+            ExecuteWithLock(() =>
             {
-                // For now, just call the function - UDT serialization would need more complex marshaling
-                int result = eip_write_udt(_clientId, tagPtr, valuePtr, 0);
-                if (result != 0)
-                    throw new Exception($"Failed to write UDT tag '{tagName}'. Check tag exists and is writable.");
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-                Marshal.FreeHGlobal(valuePtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                IntPtr valuePtr = Marshal.AllocHGlobal(4096); // Allocate buffer for UDT data
+                try
+                {
+                    // For now, just call the function - UDT serialization would need more complex marshaling
+                    int result = eip_write_udt(_clientId, tagPtr, valuePtr, 0);
+                    if (result != 0)
+                        throw new Exception($"Failed to write UDT tag '{tagName}'. Check tag exists and is writable.");
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                    Marshal.FreeHGlobal(valuePtr);
+                }
+            });
         }
 
         #endregion
@@ -838,10 +976,13 @@ namespace RustEtherNetIp
         /// </summary>
         public void DiscoverTags()
         {
-            CheckConnection();
-            int result = eip_discover_tags(_clientId);
-            if (result != 0)
-                throw new Exception("Failed to discover tags from PLC.");
+            ExecuteWithLock(() =>
+            {
+                CheckConnection();
+                int result = eip_discover_tags(_clientId);
+                if (result != 0)
+                    throw new Exception("Failed to discover tags from PLC.");
+            });
         }
 
         /// <summary>
@@ -851,19 +992,22 @@ namespace RustEtherNetIp
         /// <returns>Tag metadata including data type, scope, and array information.</returns>
         public TagMetadata GetTagMetadata(string tagName)
         {
-            CheckConnection();
-            IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-            try
+            return ExecuteWithLock(() =>
             {
-                int result = eip_get_tag_metadata(_clientId, tagPtr, out TagMetadata metadata);
-                if (result != 0)
-                    throw new Exception($"Failed to get metadata for tag '{tagName}'. Check tag exists.");
-                return metadata;
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(tagPtr);
-            }
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    int result = eip_get_tag_metadata(_clientId, tagPtr, out TagMetadata metadata);
+                    if (result != 0)
+                        throw new Exception($"Failed to get metadata for tag '{tagName}'. Check tag exists.");
+                    return metadata;
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
         }
 
         #endregion
@@ -876,8 +1020,11 @@ namespace RustEtherNetIp
         /// <param name="size">Maximum packet size in bytes (recommended: 4000).</param>
         public void SetMaxPacketSize(int size)
         {
-            CheckConnection();
-            eip_set_max_packet_size(_clientId, size);
+            ExecuteWithLock(() =>
+            {
+                CheckConnection();
+                eip_set_max_packet_size(_clientId, size);
+            });
         }
 
         /// <summary>
@@ -902,25 +1049,46 @@ namespace RustEtherNetIp
                 throw new InvalidOperationException("Not connected to PLC. Call Connect() first.");
         }
 
+        private T ExecuteWithLock<T>(Func<T> operation)
+        {
+            _operationLock.Wait();
+            try
+            {
+                if (_isDisposed)
+                    throw new ObjectDisposedException(nameof(EtherNetIpClient));
+                
+                if (_clientId < 0)
+                    throw new InvalidOperationException("Not connected to a PLC");
+
+                return operation();
+            }
+            finally
+            {
+                _operationLock.Release();
+            }
+        }
+
+        private void ExecuteWithLock(Action operation)
+        {
+            ExecuteWithLock(() =>
+            {
+                operation();
+                return true; // Return dummy value
+            });
+        }
+
         #endregion
 
         #region IDisposable Implementation
 
         public void Dispose()
         {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        protected virtual void Dispose(bool disposing)
-        {
-            if (!_disposed)
+            if (!_isDisposed)
             {
-                if (disposing)
-                {
-                    Disconnect();
-                }
-                _disposed = true;
+                Disconnect();
+                _operationLock.Dispose();
+                _keepAliveCts.Dispose();
+                _isDisposed = true;
             }
         }
 

@@ -195,7 +195,7 @@
 
 use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::time::{timeout, Duration};
+use tokio::time::{timeout, Duration, Instant};
 use std::collections::HashMap;
 use std::ffi::{CStr, c_char, c_int, c_double};
 use tokio::runtime::Runtime;
@@ -546,6 +546,8 @@ pub struct EipClient {
     udt_manager: UdtManager,
     /// Maximum packet size for communication
     max_packet_size: u32,
+    last_activity: Instant,
+    session_timeout: Duration,
 }
 
 impl EipClient {
@@ -596,6 +598,8 @@ impl EipClient {
             tag_manager: TagManager::new(),
             udt_manager: UdtManager::new(),
             max_packet_size: 4000,
+            last_activity: Instant::now(),
+            session_timeout: Duration::from_secs(30),
         };
         client.register_session().await?;
         Ok(client)
@@ -731,6 +735,7 @@ impl EipClient {
     /// - `Connection`: Lost connection to PLC
     /// - `Timeout`: Operation timed out
     pub async fn read_tag(&mut self, tag_name: &str) -> crate::error::Result<PlcValue> {
+        self.validate_session().await?;
         // Check if we have metadata for this tag
         if let Some(metadata) = self.get_tag_metadata(tag_name) {
             // Handle UDT tags
@@ -792,23 +797,7 @@ impl EipClient {
     /// - `Connection`: Lost connection to PLC
     /// - `Timeout`: Operation timed out
     pub async fn write_tag(&mut self, tag_name: &str, value: PlcValue) -> crate::error::Result<()> {
-        let tag_bytes = tag_name.as_bytes();
-        let value_bytes = value.to_bytes();
-        let data_type = value.get_data_type();
-        
-        let mut cip_request = vec![0x4D, 0x00]; // Write Tag Service (0x4D)
-        let mut path = vec![0x91, tag_bytes.len() as u8];
-        path.extend_from_slice(tag_bytes);
-        
-        if path.len() % 2 != 0 {
-            path.push(0x00);
-        }
-        
-        cip_request[1] = (path.len() / 2) as u8;
-        cip_request.extend_from_slice(&path);
-        cip_request.extend_from_slice(&data_type.to_le_bytes());
-        cip_request.extend_from_slice(&[0x01, 0x00]);
-        cip_request.extend_from_slice(&value_bytes);
+        self.validate_session().await?;
         
         println!("📝 Writing {} to tag '{}'", 
                  match &value {
@@ -827,7 +816,8 @@ impl EipClient {
                      PlcValue::Udt(v) => format!("UDT: {:?}", v),
                  }, 
                  tag_name);
-        
+
+        let cip_request = self.build_write_request(tag_name, &value)?;
         let response = self.send_cip_request(&cip_request).await?;
         
         if response.len() >= 4 {
@@ -843,459 +833,50 @@ impl EipClient {
             Err(EtherNetIpError::Protocol("Invalid write response".to_string()))
         }
     }
-    
-    /// Reads raw data from a tag
-    async fn read_tag_raw(&mut self, tag_name: &str) -> crate::error::Result<Vec<u8>> {
-        let response = self.send_cip_request(&self.build_read_request(tag_name)).await?;
-        Ok(self.extract_cip_from_response(&response)?)
-    }
-    
-    /// Writes raw data to a tag
-    #[allow(dead_code)]
-    async fn write_tag_raw(&mut self, tag_name: &str, data: &[u8]) -> crate::error::Result<()> {
-        let request = self.build_write_request_raw(tag_name, data)?;
-        self.send_cip_request(&request).await?;
-        Ok(())
-    }
-    
-    /// Sends a CIP request wrapped in EtherNet/IP SendRRData command
-    /// 
-    /// This is an internal function that handles the EtherNet/IP encapsulation
-    /// of CIP messages. It constructs the complete packet including:
-    /// - EtherNet/IP Encapsulation Header
-    /// - CPF (Common Packet Format) items
-    /// - CIP request data
-    /// 
-    /// # Arguments
-    /// 
-    /// * `cip_request` - Raw CIP request bytes
-    /// 
-    /// # Returns
-    /// 
-    /// Raw CIP response bytes extracted from EtherNet/IP response
-    /// 
-    /// # Protocol Details
-    /// 
-    /// The SendRRData command structure:
-    /// ```text
-    /// ┌─────────────────────────────────────┐
-    /// │    EtherNet/IP Header (24 bytes)    │
-    /// ├─────────────────────────────────────┤  
-    /// │    Interface Handle (4 bytes)       │
-    /// │    Timeout (2 bytes)                │
-    /// │    Item Count (2 bytes)             │
-    /// ├─────────────────────────────────────┤
-    /// │    Null Address Item (4 bytes)      │
-    /// │    Unconnected Data Item (variable) │
-    /// │    └─ CIP Request Data              │
-    /// └─────────────────────────────────────┘
-    /// ```
-    async fn send_cip_request(&mut self, cip_request: &[u8]) -> crate::error::Result<Vec<u8>> {
-        let cip_len = cip_request.len();
-        let total_data_len = 4 + 2 + 2 + 8 + cip_len; // CPF data size
-        
-        // Build EtherNet/IP SendRRData packet
-        let mut packet = vec![
-            0x6F, 0x00, // Command: SendRRData (0x006F)
-        ];
-        packet.extend_from_slice(&(total_data_len as u16).to_le_bytes()); // Length
-        packet.extend_from_slice(&self.session_handle.to_le_bytes());     // Session Handle
-        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);             // Status
-        packet.extend_from_slice(&[0x01, 0x02, 0x03, 0x04]);             // Sender Context
-        packet.extend_from_slice(&[0x05, 0x06, 0x07, 0x08]);             // Sender Context
-        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);             // Options
-        
-        // CPF (Common Packet Format) data
-        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // Interface Handle
-        packet.extend_from_slice(&[0x05, 0x00]);             // Timeout (5 seconds)
-        packet.extend_from_slice(&[0x02, 0x00]);             // Item Count: 2
-        
-        // Item 1: Null Address Item (required for unconnected messaging)
-        packet.extend_from_slice(&[0x00, 0x00]); // Type ID: Null Address
-        packet.extend_from_slice(&[0x00, 0x00]); // Length: 0
-        
-        // Item 2: Unconnected Data Item (contains our CIP request)
-        packet.extend_from_slice(&[0xB2, 0x00]); // Type ID: Unconnected Data
-        packet.extend_from_slice(&(cip_len as u16).to_le_bytes()); // Length
-        packet.extend_from_slice(cip_request);   // CIP request data
-        
-        // Send packet
-        self.stream.write_all(&packet).await
-            .map_err(|e| EtherNetIpError::Io(e))?;
-        
-        // Read response
-        let mut buf = [0u8; 1024];
-        let n = match timeout(Duration::from_secs(10), self.stream.read(&mut buf)).await {
-            Ok(Ok(n)) => n,
-            Ok(Err(e)) => return Err(EtherNetIpError::Io(e)),
-            Err(_) => return Err(EtherNetIpError::Timeout(Duration::from_secs(10))),
-        };
-
-        if n < 24 {
-            return Err(EtherNetIpError::Protocol("Response too short".to_string()));
-        }
-
-        // Check command status
-        let cmd_status = u32::from_le_bytes([buf[8], buf[9], buf[10], buf[11]]);
-        if cmd_status != 0 {
-            return Err(EtherNetIpError::Protocol(format!("Command failed with status: 0x{:08X}", cmd_status)));
-        }
-
-        // Extract CIP response from EtherNet/IP packet
-        self.extract_cip_from_response(&buf[..n])
-    }
-
-    /// Extracts CIP data from EtherNet/IP response packet
-    /// 
-    /// This function parses the EtherNet/IP encapsulation header and
-    /// extracts the embedded CIP response data.
-    /// 
-    /// # Arguments
-    /// 
-    /// * `response` - Complete EtherNet/IP response packet
-    /// 
-    /// # Returns
-    /// 
-    /// CIP response data without EtherNet/IP headers
-    /// 
-    /// # Errors
-    /// 
-    /// Returns error if:
-    /// - Response packet is malformed
-    /// - CIP data is missing or invalid
-    fn extract_cip_from_response(&self, response: &[u8]) -> crate::error::Result<Vec<u8>> {
-        // EtherNet/IP header is 24 bytes minimum
-        if response.len() < 24 {
-            return Err(EtherNetIpError::Protocol("Response too short for EtherNet/IP header".to_string()));
-        }
-
-        // Skip to CPF (Common Packet Format) data
-        let mut pos = 24; // Skip EtherNet/IP header
-
-        // Check if we have enough data for CPF header
-        if response.len() < pos + 4 {
-            return Err(EtherNetIpError::Protocol("Response too short for CPF header".to_string()));
-        }
-
-        // Read item count (should be 2 for request/response)
-        let item_count = u16::from_le_bytes([response[pos], response[pos+1]]);
-        pos += 2;
-
-        if item_count != 2 {
-            return Err(EtherNetIpError::Protocol(format!("Expected 2 CPF items, got {}", item_count)));
-        }
-
-        // Skip first item (address item - should be null address)
-        let _item_type = u16::from_le_bytes([response[pos], response[pos+1]]);
-        pos += 2;
-        let item_length = u16::from_le_bytes([response[pos], response[pos+1]]);
-        pos += 2;
-        pos += item_length as usize; // Skip address data
-
-        // Read second item (data item)
-        if response.len() < pos + 4 {
-            return Err(EtherNetIpError::Protocol("Response too short for data item".to_string()));
-        }
-
-        let _data_type = u16::from_le_bytes([response[pos], response[pos+1]]);
-        pos += 2;
-        let data_length = u16::from_le_bytes([response[pos], response[pos+1]]);
-        pos += 2;
-
-        // Extract CIP data
-        if response.len() < pos + data_length as usize {
-            return Err(EtherNetIpError::Protocol("Response too short for CIP data".to_string()));
-        }
-
-        Ok(response[pos..pos + data_length as usize].to_vec())
-    }
-
-    /// Parses CIP response and converts to PlcValue
-    /// 
-    /// This function interprets the CIP response data according to the
-    /// CIP specification and converts it to the appropriate PlcValue type.
-    /// 
-    /// # Arguments
-    /// 
-    /// * `cip_response` - Raw CIP response data
-    /// 
-    /// # Returns
-    /// 
-    /// Parsed PlcValue or error
-    /// 
-    /// # CIP Response Format
-    /// 
-    /// ```text
-    /// Byte 0: Service Reply (0xCC for Read Tag Service reply)
-    /// Byte 1: Reserved (0x00)
-    /// Byte 2: General Status (0x00 = success)
-    /// Byte 3: Additional Status Size (usually 0x00)
-    /// Byte 4+: Data Type (2 bytes, little-endian)
-    /// Byte 6+: Value Data
-    /// ```
-    fn parse_cip_response(&self, cip_response: &[u8]) -> crate::error::Result<PlcValue> {
-        if cip_response.len() < 4 {
-            return Err(EtherNetIpError::Protocol("CIP response too short".to_string()));
-        }
-
-        let _service_reply = cip_response[0];     // Should be 0xCC (0x4C + 0x80)
-        // let reserved = cip_response[1];       // Should be 0x00
-        let general_status = cip_response[2];    // CIP status code
-        let additional_status_size = cip_response[3]; // Size of extended status
-
-        // Check for CIP errors first
-        if general_status != 0x00 {
-            let error_msg = match general_status {
-                0x01 => "Connection failure",
-                0x02 => "Resource unavailable", 
-                0x03 => "Invalid parameter value",
-                0x04 => "Path segment error",
-                0x05 => "Path destination unknown",
-                0x06 => "Partial transfer",
-                0x07 => "Connection lost",
-                0x08 => "Service not supported",
-                0x09 => "Invalid attribute value",
-                0x0A => "Attribute list error",
-                0x0B => "Already in requested mode/state",
-                0x0C => "Object state conflict",
-                0x0D => "Object already exists",
-                0x0E => "Attribute not settable",
-                0x0F => "Privilege violation",
-                0x10 => "Device state conflict",
-                0x11 => "Reply data too large",
-                0x12 => "Fragmentation of a primitive value",
-                0x13 => "Not enough data",
-                0x14 => "Attribute not supported",
-                0x15 => "Too much data",
-                0x16 => "Object does not exist",
-                0x17 => "Service fragmentation sequence not in progress",
-                0x18 => "No stored attribute data",
-                0x19 => "Store operation failure",
-                0x1A => "Routing failure, request packet too large",
-                0x1B => "Routing failure, response packet too large",
-                0x1C => "Missing attribute list entry data",
-                0x1D => "Invalid attribute value list",
-                0x1E => "Embedded service error",
-                0x1F => "Vendor specific error",
-                0x20 => "Invalid parameter",
-                0x21 => "Write-once value or medium already written",
-                0x22 => "Invalid reply received",
-                0x23 => "Buffer overflow",
-                0x24 => "Invalid message format",
-                0x25 => "Key failure in path",
-                0x26 => "Path size invalid",
-                0x27 => "Unexpected attribute in list",
-                0x28 => "Invalid member ID",
-                0x29 => "Member not settable",
-                0x2A => "Group 2 only server general failure",
-                _ => "Unknown CIP error",
-            };
-            return Err(EtherNetIpError::Protocol(format!("CIP Error 0x{:02X}: {}", general_status, error_msg)));
-        }
-
-        // Calculate start of actual data
-        let data_start = 4 + (additional_status_size as usize * 2);
-        
-        if cip_response.len() < data_start + 2 {
-            return Err(EtherNetIpError::Protocol("Response too short for data type".to_string()));
-        }
-
-        // Read data type (2 bytes, little-endian)
-        let data_type = u16::from_le_bytes([
-            cip_response[data_start], 
-            cip_response[data_start + 1]
-        ]);
-
-        let value_data = &cip_response[data_start + 2..];
-
-        // Parse value based on data type
-        match data_type {
-            0x00C1 => { // BOOL
-                if value_data.is_empty() {
-                    return Err(EtherNetIpError::Protocol("No data for BOOL value".to_string()));
-                }
-                Ok(PlcValue::Bool(value_data[0] != 0))
-            }
-            0x00C2 => { // SINT
-                if value_data.is_empty() {
-                    return Err(EtherNetIpError::Protocol("No data for SINT value".to_string()));
-                }
-                Ok(PlcValue::Sint(value_data[0] as i8))
-            }
-            0x00C3 => { // INT
-                if value_data.len() < 2 {
-                    return Err(EtherNetIpError::Protocol("Insufficient data for INT value".to_string()));
-                }
-                let value = i16::from_le_bytes([value_data[0], value_data[1]]);
-                Ok(PlcValue::Int(value))
-            }
-            0x00C4 => { // DINT
-                if value_data.len() < 4 {
-                    return Err(EtherNetIpError::Protocol("Insufficient data for DINT value".to_string()));
-                }
-                let value = i32::from_le_bytes([
-                    value_data[0], value_data[1], 
-                    value_data[2], value_data[3]
-                ]);
-                Ok(PlcValue::Dint(value))
-            }
-            0x00C5 => { // LINT
-                if value_data.len() < 8 {
-                    return Err(EtherNetIpError::Protocol("Insufficient data for LINT value".to_string()));
-                }
-                let value = i64::from_le_bytes([
-                    value_data[0], value_data[1], value_data[2], value_data[3],
-                    value_data[4], value_data[5], value_data[6], value_data[7]
-                ]);
-                Ok(PlcValue::Lint(value))
-            }
-            0x00C6 => { // USINT
-                if value_data.is_empty() {
-                    return Err(EtherNetIpError::Protocol("No data for USINT value".to_string()));
-                }
-                Ok(PlcValue::Usint(value_data[0]))
-            }
-            0x00C7 => { // UINT
-                if value_data.len() < 2 {
-                    return Err(EtherNetIpError::Protocol("Insufficient data for UINT value".to_string()));
-                }
-                let value = u16::from_le_bytes([value_data[0], value_data[1]]);
-                Ok(PlcValue::Uint(value))
-            }
-            0x00C8 => { // UDINT
-                if value_data.len() < 4 {
-                    return Err(EtherNetIpError::Protocol("Insufficient data for UDINT value".to_string()));
-                }
-                let value = u32::from_le_bytes([
-                    value_data[0], value_data[1], 
-                    value_data[2], value_data[3]
-                ]);
-                Ok(PlcValue::Udint(value))
-            }
-            0x00C9 => { // ULINT
-                if value_data.len() < 8 {
-                    return Err(EtherNetIpError::Protocol("Insufficient data for ULINT value".to_string()));
-                }
-                let value = u64::from_le_bytes([
-                    value_data[0], value_data[1], value_data[2], value_data[3],
-                    value_data[4], value_data[5], value_data[6], value_data[7]
-                ]);
-                Ok(PlcValue::Ulint(value))
-            }
-            0x00CA => { // REAL
-                if value_data.len() < 4 {
-                    return Err(EtherNetIpError::Protocol("Insufficient data for REAL value".to_string()));
-                }
-                let value = f32::from_le_bytes([
-                    value_data[0], value_data[1],
-                    value_data[2], value_data[3]
-                ]);
-                Ok(PlcValue::Real(value))
-            }
-            0x00CB => { // LREAL
-                if value_data.len() < 8 {
-                    return Err(EtherNetIpError::Protocol("Insufficient data for LREAL value".to_string()));
-                }
-                let value = f64::from_le_bytes([
-                    value_data[0], value_data[1], value_data[2], value_data[3],
-                    value_data[4], value_data[5], value_data[6], value_data[7]
-                ]);
-                Ok(PlcValue::Lreal(value))
-            }
-            0x00DA => { // STRING
-                if value_data.is_empty() {
-                    return Ok(PlcValue::String(String::new()));
-                }
-                let length = value_data[0] as usize;
-                if value_data.len() < 1 + length {
-                    return Err(EtherNetIpError::Protocol("Insufficient data for STRING value".to_string()));
-                }
-                let string_data = &value_data[1..1 + length];
-                let value = String::from_utf8_lossy(string_data).to_string();
-                Ok(PlcValue::String(value))
-            }
-            _ => {
-                // Try to parse as UDT
-                if let Ok(PlcValue::Udt(udt_value)) = self.udt_manager.parse_udt_instance("", value_data) {
-                    Ok(PlcValue::Udt(udt_value))
-                } else {
-                    Err(EtherNetIpError::Protocol(format!("Unsupported data type: 0x{:04X}", data_type)))
-                }
-            }
-        }
-    }
-
-    /// Unregisters the EtherNet/IP session with the PLC
-    /// 
-    /// This should be called before closing the connection to properly
-    /// clean up resources on the PLC side.
-    /// 
-    /// # Returns
-    /// 
-    /// Result indicating success or failure
-    /// 
-    /// # Errors
-    /// 
-    /// Returns error if:
-    /// - Network communication fails
-    /// - PLC rejects the unregistration
-    pub async fn unregister_session(&mut self) -> crate::error::Result<()> {
-        let session_bytes = self.session_handle.to_le_bytes();
-        let packet: [u8; 24] = [
-            0x66, 0x00,             // Command: Unregister Session (0x0066)
-            0x00, 0x00,             // Length: 0 bytes
-            session_bytes[0], session_bytes[1], session_bytes[2], session_bytes[3], // Session Handle
-            0x00, 0x00, 0x00, 0x00, // Status: 0
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Sender Context (8 bytes)
-            0x00, 0x00, 0x00, 0x00, // Options: 0
-        ];
-
-        self.stream.write_all(&packet).await
-            .map_err(EtherNetIpError::Io)?;
-
-        Ok(())
-    }
-
-    /// Builds a CIP Read Tag Service request
-    /// 
-    /// This creates the CIP packet for reading a single tag value.
-    /// The request includes the service code and the tag path.
-    fn build_read_request(&self, tag_name: &str) -> Vec<u8> {
-        let mut cip_request = vec![0x4C, 0x00]; // Read Tag Service
-        let tag_bytes = tag_name.as_bytes();
-        let mut path = vec![0x91, tag_bytes.len() as u8];
-        path.extend_from_slice(tag_bytes);
-        
-        // Pad to even length
-        if path.len() % 2 != 0 {
-            path.push(0x00);
-        }
-        
-        cip_request.extend(path);
-        cip_request
-    }
 
     /// Builds a CIP Write Tag Service request
     /// 
     /// This creates the CIP packet for writing a value to a tag.
     /// The request includes the service code, tag path, data type, and value.
-    #[allow(dead_code)]
     fn build_write_request(&self, tag_name: &str, value: &PlcValue) -> crate::error::Result<Vec<u8>> {
-        let mut request = Vec::new();
+        println!("🔧 [DEBUG] Building write request for tag: '{}'", tag_name);
         
-        // Write Tag Service
-        request.push(0x4D);
-        request.push(0x00);
+        // Use Connected Explicit Messaging for consistency
+        let mut cip_request = Vec::new();
         
-        // Build tag path
-        let tag_path = self.build_tag_path(tag_name);
-        request.extend(tag_path);
+        // Service: Write Tag Service (0x4D)
+        cip_request.push(0x4D);
         
-        // Add data type and value
-        let value_data = self.serialize_value(value)?;
-        request.extend(value_data);
+        // Request Path Size (in words)
+        let tag_bytes = tag_name.as_bytes();
+        let path_len = if tag_bytes.len() % 2 == 0 { 
+            tag_bytes.len() + 2 
+        } else { 
+            tag_bytes.len() + 3 
+        };
+        cip_request.push((path_len / 2) as u8);
         
-        Ok(request)
+        // Request Path: ANSI Extended Symbol Segment for tag name
+        cip_request.push(0x91); // ANSI Extended Symbol Segment
+        cip_request.push(tag_bytes.len() as u8); // Tag name length
+        cip_request.extend_from_slice(tag_bytes); // Tag name
+        
+        // Pad to even length if necessary
+        if tag_bytes.len() % 2 != 0 {
+            cip_request.push(0x00);
+        }
+        
+        // Add data type and element count
+        let data_type = value.get_data_type();
+        let value_bytes = value.to_bytes();
+        
+        cip_request.extend_from_slice(&data_type.to_le_bytes()); // Data type
+        cip_request.extend_from_slice(&[0x01, 0x00]); // Element count: 1
+        cip_request.extend_from_slice(&value_bytes); // Value data
+        
+        println!("🔧 [DEBUG] Built CIP write request ({} bytes): {:02X?}", 
+                 cip_request.len(), cip_request);
+        Ok(cip_request)
     }
 
     /// Builds a raw write request with pre-serialized data
@@ -1323,13 +904,6 @@ impl EipClient {
     /// segments that describe how to navigate to the tag in the PLC's
     /// tag database.
     /// 
-    /// Now supports advanced tag addressing:
-    /// - Program-scoped tags: "Program:MainProgram.Tag1"
-    /// - Array elements: "MyArray[5]", "MyArray[1,2,3]"
-    /// - Bit access: "MyDINT.15" (access individual bits)
-    /// - UDT members: "MyUDT.Member1.SubMember"
-    /// - String operations: "MyString.LEN", "MyString.DATA[5]"
-    /// 
     /// # Arguments
     /// 
     /// * `tag_name` - The tag name to convert to a path
@@ -1337,28 +911,9 @@ impl EipClient {
     /// # Returns
     /// 
     /// A vector of bytes representing the CIP path
-    /// 
-    /// # Note
-    /// 
-    /// This is an internal method used by read_tag and write_tag operations.
-    /// For tag path parsing in user code, use `TagPath::parse()` instead.
     fn build_tag_path(&self, tag_name: &str) -> Vec<u8> {
-        // Use the new TagPath parser for advanced tag addressing
-        match TagPath::parse(tag_name) {
-            Ok(tag_path) => {
-                match tag_path.to_cip_path() {
-                    Ok(cip_path) => cip_path,
-                    Err(_) => {
-                        // Fallback to simple path if CIP generation fails
-                        self.build_simple_tag_path(tag_name)
-                    }
-                }
-            }
-            Err(_) => {
-                // Fallback to simple path if parsing fails
-                self.build_simple_tag_path(tag_name)
-            }
-        }
+        // Use simple tag path for now
+        self.build_simple_tag_path(tag_name)
     }
     
     /// Builds a simple tag path for basic tag names (fallback method)
@@ -1450,26 +1005,29 @@ impl EipClient {
     }
 
     pub fn build_list_tags_request(&self) -> Vec<u8> {
-        // Service: Get_Attribute_List (0x03)
-        // Class: 0x6B (Symbol Object)
-        // Instance: 1 (first instance)
-        // Attributes: 1 (Name), 2 (Type), 3 (Array Info)
-        let service = 0x03;
-        let class = 0x6B;
-        let instance = 1; // Start with instance 1
-        let attribute_count = 3u16; // Name, Type, Array Info
-
-        let mut req = vec![service];
-        // Path: Class, Instance
-        req.push(0x20); req.push(class);      // Class segment
-        req.push(0x24); req.push(instance);   // Instance segment
-
-        // Attribute count
-        req.extend_from_slice(&attribute_count.to_le_bytes());
-        // Attribute list: 1, 2, 3
-        req.push(1); req.push(2); req.push(3);
-
-        req
+        println!("🔧 [DEBUG] Building list tags request");
+        
+        // Use Connected Explicit Messaging for consistency
+        let mut cip_request = Vec::new();
+        
+        // Service: List All Tags Service (0x55)
+        cip_request.push(0x55);
+        
+        // Request Path Size (in words) - 3 words = 6 bytes  
+        cip_request.push(0x03);
+        
+        // Request Path: Class 0x6B (Symbol Object), Instance 1
+        cip_request.push(0x20); // Class segment identifier
+        cip_request.push(0x6B); // Symbol Object Class
+        cip_request.push(0x24); // Instance segment identifier
+        cip_request.push(0x01); // Instance 1
+        cip_request.push(0x01); // Attribute segment identifier  
+        cip_request.push(0x00); // Attribute 0 (tag list)
+        
+        println!("🔧 [DEBUG] Built CIP list tags request ({} bytes): {:02X?}", 
+                 cip_request.len(), cip_request);
+        
+        cip_request
     }
 
     /// Gets a human-readable error message for a CIP status code
@@ -1530,6 +1088,360 @@ impl EipClient {
             0x2C => "Attribute not gettable".to_string(),
             _ => format!("Unknown CIP error code: 0x{:02X}", status)
         }
+    }
+
+    async fn validate_session(&mut self) -> crate::error::Result<()> {
+        if self.last_activity.elapsed() > self.session_timeout {
+            // Session expired, try to re-register
+            self.register_session().await?;
+        }
+        Ok(())
+    }
+
+    async fn send_keep_alive(&mut self) -> crate::error::Result<()> {
+        let packet: [u8; 24] = [
+            0x6F, 0x00,             // Command: SendRRData
+            0x00, 0x00,             // Length: 0
+            self.session_handle.to_le_bytes()[0], self.session_handle.to_le_bytes()[1],
+            self.session_handle.to_le_bytes()[2], self.session_handle.to_le_bytes()[3],
+            0x00, 0x00, 0x00, 0x00, // Status: 0
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Sender Context
+            0x00, 0x00, 0x00, 0x00, // Options: 0
+        ];
+
+        self.stream.write_all(&packet).await?;
+        self.last_activity = Instant::now();
+        Ok(())
+    }
+
+    /// Checks the health of the connection
+    pub fn check_health(&self) -> bool {
+        // Simple health check - in a real implementation, this could
+        // send a lightweight message to the PLC to verify connectivity
+        self.session_handle != 0
+    }
+
+    /// Reads raw data from a tag
+    async fn read_tag_raw(&mut self, tag_name: &str) -> crate::error::Result<Vec<u8>> {
+        let response = self.send_cip_request(&self.build_read_request(tag_name)).await?;
+        Ok(self.extract_cip_from_response(&response)?)
+    }
+
+    /// Writes raw data to a tag
+    #[allow(dead_code)]
+    async fn write_tag_raw(&mut self, tag_name: &str, data: &[u8]) -> crate::error::Result<()> {
+        let request = self.build_write_request_raw(tag_name, data)?;
+        self.send_cip_request(&request).await?;
+        Ok(())
+    }
+
+    /// Sends a CIP request wrapped in EtherNet/IP SendRRData command
+    pub async fn send_cip_request(&mut self, cip_request: &[u8]) -> crate::error::Result<Vec<u8>> {
+        println!("🔧 [DEBUG] Sending CIP request: {:02X?}", cip_request);
+        
+        let cip_len = cip_request.len();
+        // CPF data includes: Interface Handle(4) + Timeout(2) + ItemCount(2) + NullItem(4) + DataItem(4+cip_len)
+        let cpf_data_len = 4 + 2 + 2 + 4 + 4 + cip_len;
+        
+        // Build EtherNet/IP SendRRData packet
+        let mut packet = vec![
+            0x6F, 0x00, // Command: SendRRData (0x006F)
+        ];
+        packet.extend_from_slice(&(cpf_data_len as u16).to_le_bytes()); // Length
+        packet.extend_from_slice(&self.session_handle.to_le_bytes());     // Session Handle
+        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);             // Status
+        packet.extend_from_slice(&[0x01, 0x02, 0x03, 0x04]);             // Sender Context
+        packet.extend_from_slice(&[0x05, 0x06, 0x07, 0x08]);             // Sender Context
+        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);             // Options
+        
+        // CPF (Common Packet Format) data
+        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // Interface Handle
+        packet.extend_from_slice(&[0x05, 0x00]);             // Timeout (5 seconds)
+        packet.extend_from_slice(&[0x02, 0x00]);             // Item Count: 2
+        
+        // Item 1: Null Address Item (required for unconnected messaging)
+        packet.extend_from_slice(&[0x00, 0x00]); // Type ID: Null Address
+        packet.extend_from_slice(&[0x00, 0x00]); // Length: 0
+        
+        // Item 2: Unconnected Data Item (contains our CIP request)
+        packet.extend_from_slice(&[0xB2, 0x00]); // Type ID: Unconnected Data
+        packet.extend_from_slice(&(cip_len as u16).to_le_bytes()); // Length
+        packet.extend_from_slice(cip_request);   // CIP request data
+        
+        println!("🔧 [DEBUG] Complete EtherNet/IP packet ({} bytes): {:02X?}", packet.len(), packet);
+        
+        // Send packet
+        self.stream.write_all(&packet).await
+            .map_err(|e| EtherNetIpError::Io(e))?;
+        
+        println!("🔧 [DEBUG] Packet sent, waiting for response...");
+        
+        // Read response
+        let mut buf = [0u8; 1024];
+        let n = match timeout(Duration::from_secs(10), self.stream.read(&mut buf)).await {
+            Ok(Ok(n)) => n,
+            Ok(Err(e)) => return Err(EtherNetIpError::Io(e)),
+            Err(_) => return Err(EtherNetIpError::Timeout(Duration::from_secs(10))),
+        };
+
+        println!("🔧 [DEBUG] Received {} bytes: {:02X?}", n, &buf[..n]);
+
+        if n < 24 {
+            return Err(EtherNetIpError::Protocol("Response too short".to_string()));
+        }
+
+        // Check command status
+        let cmd_status = u32::from_le_bytes([buf[8], buf[9], buf[10], buf[11]]);
+        if cmd_status != 0 {
+            return Err(EtherNetIpError::Protocol(format!("Command failed with status: 0x{:08X}", cmd_status)));
+        }
+
+        // Extract CIP response from EtherNet/IP packet
+        self.extract_cip_from_response(&buf[..n])
+    }
+
+    /// Extracts CIP data from EtherNet/IP response packet
+    fn extract_cip_from_response(&self, response: &[u8]) -> crate::error::Result<Vec<u8>> {
+        println!("🔧 [DEBUG] Extracting CIP from response ({} bytes)", response.len());
+        
+        // EtherNet/IP header is 24 bytes minimum
+        if response.len() < 24 {
+            return Err(EtherNetIpError::Protocol("Response too short for EtherNet/IP header".to_string()));
+        }
+
+        // Skip to CPF (Common Packet Format) data
+        let mut pos = 24; // Skip EtherNet/IP header
+        println!("🔧 [DEBUG] Starting CPF parsing at position {}", pos);
+
+        // Check if we have enough data for CPF header
+        if response.len() < pos + 4 {
+            return Err(EtherNetIpError::Protocol("Response too short for CPF header".to_string()));
+        }
+
+        // Read item count
+        let item_count = u16::from_le_bytes([response[pos], response[pos+1]]);
+        pos += 2;
+        println!("🔧 [DEBUG] CPF item count: {}", item_count);
+
+        // Skip additional padding/header bytes that appear in some responses
+        // Look for the Connected Data Item marker (0x00B2) in the next few bytes
+        let search_limit = std::cmp::min(response.len(), pos + 20); // Search up to 20 bytes ahead
+        
+        for search_pos in pos..search_limit-3 {
+            if search_pos + 3 < response.len() {
+                let potential_type = u16::from_le_bytes([response[search_pos], response[search_pos+1]]);
+                if potential_type == 0x00B2 { // Connected Data Item
+                    let item_length = u16::from_le_bytes([response[search_pos+2], response[search_pos+3]]);
+                    let data_start = search_pos + 4;
+                    
+                    if response.len() >= data_start + item_length as usize {
+                        let cip_data = response[data_start..data_start + item_length as usize].to_vec();
+                        println!("🔧 [DEBUG] Found Connected Data Item at position {}, extracted CIP data ({} bytes): {:02X?}", 
+                                 search_pos, cip_data.len(), cip_data);
+                        return Ok(cip_data);
+                    }
+                }
+            }
+        }
+
+        // Fallback: Traditional CPF parsing if no Connected Data Item found
+        if item_count == 2 {
+            // Traditional CPF structure with address and data items
+            // Skip first item (address item - should be null address)
+            let item_type = u16::from_le_bytes([response[pos], response[pos+1]]);
+            pos += 2;
+            let item_length = u16::from_le_bytes([response[pos], response[pos+1]]);
+            pos += 2;
+            println!("🔧 [DEBUG] First item: type=0x{:04X}, length={}", item_type, item_length);
+            pos += item_length as usize; // Skip address data
+
+            // Read second item (data item)
+            if response.len() < pos + 4 {
+                return Err(EtherNetIpError::Protocol("Response too short for data item".to_string()));
+            }
+
+            let data_type = u16::from_le_bytes([response[pos], response[pos+1]]);
+            pos += 2;
+            let data_length = u16::from_le_bytes([response[pos], response[pos+1]]);
+            pos += 2;
+            println!("🔧 [DEBUG] Data item: type=0x{:04X}, length={}", data_type, data_length);
+
+            // Extract CIP data
+            if response.len() < pos + data_length as usize {
+                return Err(EtherNetIpError::Protocol("Response too short for CIP data".to_string()));
+            }
+
+            let cip_data = response[pos..pos + data_length as usize].to_vec();
+            println!("🔧 [DEBUG] Extracted CIP data from dual items ({} bytes): {:02X?}", 
+                     cip_data.len(), cip_data);
+            return Ok(cip_data);
+        }
+
+        Err(EtherNetIpError::Protocol("Could not find CIP data in response".to_string()))
+    }
+
+    /// Parses CIP response and converts to PlcValue
+    fn parse_cip_response(&self, cip_response: &[u8]) -> crate::error::Result<PlcValue> {
+        println!("🔧 [DEBUG] Parsing CIP response ({} bytes): {:02X?}", cip_response.len(), cip_response);
+        
+        if cip_response.len() < 2 {
+            return Err(EtherNetIpError::Protocol("CIP response too short".to_string()));
+        }
+
+        let service_reply = cip_response[0];    // Should be 0xCC (0x4C + 0x80) for Read Tag reply
+        let general_status = cip_response[2];   // CIP status code
+        
+        println!("🔧 [DEBUG] Service reply: 0x{:02X}, Status: 0x{:02X}", 
+                 service_reply, general_status);
+
+        // Check for CIP errors  
+        if general_status != 0x00 {
+            let error_msg = self.get_cip_error_message(general_status);
+            println!("🔧 [DEBUG] CIP Error - Status: 0x{:02X}, Message: {}", general_status, error_msg);
+            return Err(EtherNetIpError::Protocol(format!("CIP Error {}: {}", general_status, error_msg)));
+        }
+
+        // For read operations, parse the returned data
+        if service_reply == 0xCC { // Read Tag reply
+            if cip_response.len() < 6 {
+                return Err(EtherNetIpError::Protocol("Read response too short for data".to_string()));
+            }
+            
+            let data_type = u16::from_le_bytes([cip_response[4], cip_response[5]]);
+            let value_data = &cip_response[6..];
+            
+            println!("🔧 [DEBUG] Data type: 0x{:04X}, Value data ({} bytes): {:02X?}", 
+                     data_type, value_data.len(), value_data);
+            
+            // Parse based on data type
+            match data_type {
+                0x00C1 => { // BOOL
+                    if value_data.is_empty() {
+                        return Err(EtherNetIpError::Protocol("No data for BOOL value".to_string()));
+                    }
+                    let value = value_data[0] != 0;
+                    println!("🔧 [DEBUG] Parsed BOOL: {}", value);
+                    Ok(PlcValue::Bool(value))
+                }
+                0x00C2 => { // SINT
+                    if value_data.is_empty() {
+                        return Err(EtherNetIpError::Protocol("No data for SINT value".to_string()));
+                    }
+                    let value = value_data[0] as i8;
+                    println!("🔧 [DEBUG] Parsed SINT: {}", value);
+                    Ok(PlcValue::Sint(value))
+                }
+                0x00C3 => { // INT
+                    if value_data.len() < 2 {
+                        return Err(EtherNetIpError::Protocol("Insufficient data for INT value".to_string()));
+                    }
+                    let value = i16::from_le_bytes([value_data[0], value_data[1]]);
+                    println!("🔧 [DEBUG] Parsed INT: {}", value);
+                    Ok(PlcValue::Int(value))
+                }
+                0x00C4 => { // DINT
+                    if value_data.len() < 4 {
+                        return Err(EtherNetIpError::Protocol("Insufficient data for DINT value".to_string()));
+                    }
+                    let value = i32::from_le_bytes([
+                        value_data[0], value_data[1], 
+                        value_data[2], value_data[3]
+                    ]);
+                    println!("🔧 [DEBUG] Parsed DINT: {}", value);
+                    Ok(PlcValue::Dint(value))
+                }
+                0x00CA => { // REAL
+                    if value_data.len() < 4 {
+                        return Err(EtherNetIpError::Protocol("Insufficient data for REAL value".to_string()));
+                    }
+                    let value = f32::from_le_bytes([
+                        value_data[0], value_data[1],
+                        value_data[2], value_data[3]
+                    ]);
+                    println!("🔧 [DEBUG] Parsed REAL: {}", value);
+                    Ok(PlcValue::Real(value))
+                }
+                0x00DA => { // STRING
+                    if value_data.is_empty() {
+                        return Ok(PlcValue::String(String::new()));
+                    }
+                    let length = value_data[0] as usize;
+                    if value_data.len() < 1 + length {
+                        return Err(EtherNetIpError::Protocol("Insufficient data for STRING value".to_string()));
+                    }
+                    let string_data = &value_data[1..1 + length];
+                    let value = String::from_utf8_lossy(string_data).to_string();
+                    println!("🔧 [DEBUG] Parsed STRING: '{}'", value);
+                    Ok(PlcValue::String(value))
+                }
+                _ => {
+                    println!("🔧 [DEBUG] Unknown data type: 0x{:04X}", data_type);
+                    Err(EtherNetIpError::Protocol(format!("Unsupported data type: 0x{:04X}", data_type)))
+                }
+            }
+        } else if service_reply == 0xCD { // Write Tag reply - no data to parse
+            println!("🔧 [DEBUG] Write operation successful");
+            Ok(PlcValue::Bool(true)) // Indicate success
+        } else {
+            Err(EtherNetIpError::Protocol(format!("Unknown service reply: 0x{:02X}", service_reply)))
+        }
+    }
+
+    /// Unregisters the EtherNet/IP session with the PLC
+    pub async fn unregister_session(&mut self) -> crate::error::Result<()> {
+        let session_bytes = self.session_handle.to_le_bytes();
+        let packet: [u8; 24] = [
+            0x66, 0x00,             // Command: Unregister Session (0x0066)
+            0x00, 0x00,             // Length: 0 bytes
+            session_bytes[0], session_bytes[1], session_bytes[2], session_bytes[3], // Session Handle
+            0x00, 0x00, 0x00, 0x00, // Status: 0
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Sender Context (8 bytes)
+            0x00, 0x00, 0x00, 0x00, // Options: 0
+        ];
+
+        self.stream.write_all(&packet).await
+            .map_err(EtherNetIpError::Io)?;
+
+        Ok(())
+    }
+
+    /// Builds a CIP Read Tag Service request
+    fn build_read_request(&self, tag_name: &str) -> Vec<u8> {
+        println!("🔧 [DEBUG] Building read request for tag: '{}'", tag_name);
+        
+        // Use Connected Explicit Messaging for better compatibility
+        // This is simpler and more widely supported across different PLC types
+        let mut cip_request = Vec::new();
+        
+        // Service: Read Tag Service (0x4C)
+        cip_request.push(0x4C);
+        
+        // Request Path Size (in words)
+        let tag_bytes = tag_name.as_bytes();
+        let path_len = if tag_bytes.len() % 2 == 0 { 
+            tag_bytes.len() + 2 
+        } else { 
+            tag_bytes.len() + 3 
+        };
+        cip_request.push((path_len / 2) as u8);
+        
+        // Request Path: ANSI Extended Symbol Segment for tag name
+        cip_request.push(0x91); // ANSI Extended Symbol Segment
+        cip_request.push(tag_bytes.len() as u8); // Tag name length
+        cip_request.extend_from_slice(tag_bytes); // Tag name
+        
+        // Pad to even length if necessary
+        if tag_bytes.len() % 2 != 0 {
+            cip_request.push(0x00);
+        }
+        
+        // Element count (little-endian)
+        cip_request.extend_from_slice(&[0x01, 0x00]); // Read 1 element
+        
+        println!("🔧 [DEBUG] Built CIP read request ({} bytes): {:02X?}", 
+                 cip_request.len(), cip_request);
+        
+        cip_request
     }
 }
 
@@ -2558,6 +2470,36 @@ pub unsafe extern "C" fn eip_write_lreal(client_id: c_int, tag_name: *const c_ch
         Ok(_) => 0,
         Err(_) => -1,
     }
+}
+
+/// Checks the health of the connection to the PLC
+/// 
+/// # C Function Signature
+/// 
+/// ```c
+/// int eip_check_health(int client_id, int* is_healthy);
+/// ```
+/// 
+/// # Parameters (C)
+/// 
+/// - `client_id`: Client ID from eip_connect()
+/// - `is_healthy`: Pointer to integer where health status will be stored (1 = healthy, 0 = unhealthy)
+/// 
+/// # Returns (C)
+/// 
+/// - 0: Success
+/// - -1: Invalid client ID
+#[no_mangle]
+pub unsafe extern "C" fn eip_check_health(client_id: c_int, is_healthy: *mut c_int) -> c_int {
+    let clients = CLIENTS.lock().unwrap();
+    let client = match clients.get(&client_id) {
+        Some(c) => c,
+        None => return -1,
+    };
+
+    let healthy = client.check_health();
+    unsafe { *is_healthy = if healthy { 1 } else { 0 } };
+    0
 }
 
 // =========================================================================

@@ -14,7 +14,9 @@ namespace WinFormsExample
         private System.Windows.Forms.Timer? _connectionMonitorTimer;
         private Dictionary<string, TagInfo> _tags = new();
         private const int MAX_RETRIES = 3;
-        private const int RETRY_DELAY = 2000;
+        private const int RETRY_DELAY = 5000; // 5 seconds
+        private int _retryCount = 0;
+        private bool _isReconnecting = false;
 
         public MainForm()
         {
@@ -479,12 +481,15 @@ namespace WinFormsExample
 
         private void ConnectionMonitorTimer_Tick(object? sender, EventArgs e)
         {
-            if (!_isConnected || _plcClient == null) return;
+            if (!_isConnected || _plcClient == null || _isReconnecting) return;
 
             try
             {
-                // Try to read a tag to check connection
-                _plcClient.ReadBool("TestTag");
+                // Use a more lightweight health check instead of reading a tag
+                if (!_plcClient.CheckHealth())
+                {
+                    throw new Exception("Health check failed");
+                }
             }
             catch
             {
@@ -497,31 +502,37 @@ namespace WinFormsExample
 
         private async void AttemptReconnect()
         {
+            if (_isReconnecting) return;
+            _isReconnecting = true;
+
             try
             {
-                // First try to disconnect
+                // First try to disconnect cleanly
                 if (_plcClient != null)
                 {
-                    _plcClient.Dispose();
+                    try
+                    {
+                        _plcClient.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"Warning during disconnect: {ex.Message}");
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                Log($"Error during disconnect: {ex.Message}");
-            }
 
-            // Wait a bit before reconnecting
-            await Task.Delay(RETRY_DELAY);
+                // Exponential backoff for retries
+                int delay = RETRY_DELAY * (int)Math.Pow(2, _retryCount);
+                await Task.Delay(delay);
 
-            try
-            {
                 _plcClient = new EtherNetIpClient();
                 _isConnected = _plcClient.Connect(_currentAddress);
 
                 if (_isConnected)
                 {
                     Log("✅ Reconnected successfully");
+                    _retryCount = 0;
                     UpdateConnectionStatus();
+                    await InitializeTags();
                 }
                 else
                 {
@@ -533,6 +544,17 @@ namespace WinFormsExample
                 Log($"❌ Reconnection failed: {ex.Message}");
                 _isConnected = false;
                 UpdateConnectionStatus();
+                
+                _retryCount++;
+                if (_retryCount >= MAX_RETRIES)
+                {
+                    Log("❌ Max retry attempts reached. Please try connecting manually.");
+                    _retryCount = 0;
+                }
+            }
+            finally
+            {
+                _isReconnecting = false;
             }
         }
 
