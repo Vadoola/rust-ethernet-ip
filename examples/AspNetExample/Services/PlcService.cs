@@ -18,6 +18,11 @@ public class PlcService : IDisposable
     private const int MAX_RETRIES = 3;
     private const int RETRY_DELAY = 1000;
     private readonly SemaphoreSlim _tagOperationLock = new(1, 1);
+    
+    // Connection health monitoring
+    private Timer? _healthCheckTimer;
+    private DateTime _lastHealthCheck = DateTime.UtcNow;
+    private bool _isHealthy = true;
 
     public PlcService(ILogger<PlcService> logger, IConfiguration configuration)
     {
@@ -39,22 +44,39 @@ public class PlcService : IDisposable
         _plcClient = new EtherNetIpClient();
         _isConnected = _plcClient.Connect(address);
         _currentAddress = address;
+        
+        if (_isConnected)
+        {
+            _logger.LogInformation("Connected to PLC at {Address}. Starting health monitoring.", address);
+            StartHealthMonitoring();
+        }
+        else
+        {
+            _logger.LogWarning("Failed to connect to PLC at {Address}", address);
+        }
+        
         return _isConnected;
     }
 
     public void Disconnect()
     {
+        _logger.LogInformation("Disconnecting from PLC. Stopping health monitoring.");
+        StopHealthMonitoring();
+        
         if (_plcClient != null)
             _plcClient.Dispose();
         _plcClient = new EtherNetIpClient();
         _isConnected = false;
         _currentAddress = string.Empty;
         _lastReadTimes.Clear();
+        _isHealthy = true;
     }
 
     public bool IsConnected => _isConnected;
     public string CurrentAddress => _currentAddress;
     public EtherNetIpClient Client => _plcClient;
+    public bool IsHealthy => _isHealthy;
+    public DateTime LastHealthCheck => _lastHealthCheck;
 
     public bool ReadBool(string tagName)
     {
@@ -253,17 +275,22 @@ public class PlcService : IDisposable
 
     public void Dispose()
     {
+        StopHealthMonitoring();
+        
         if (_plcClient != null)
         {
             try
             {
-                _plcClient.Disconnect();
+                _plcClient.Dispose();
             }
-            catch
+            catch (Exception ex)
             {
-                // Ignore errors during cleanup
+                _logger.LogError(ex, "Error disposing PLC client");
             }
         }
+        
+        _tagOperationLock?.Dispose();
+        GC.SuppressFinalize(this);
     }
 
     public class TagNotFoundException : Exception { public TagNotFoundException(string tag) : base($"Tag not found: {tag}") { } }
@@ -482,5 +509,76 @@ public class PlcService : IDisposable
                 throw;
             }
         }, $"Write tag {tagName}");
+    }
+
+    private void StartHealthMonitoring()
+    {
+        _healthCheckTimer?.Dispose();
+        _lastHealthCheck = DateTime.UtcNow;
+        _isHealthy = true;
+        
+        // Run health checks every 30 seconds
+        _healthCheckTimer = new Timer(async _ => await CheckConnectionHealth(), null, 
+            TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+        
+        _logger.LogInformation("Health monitoring started - checks every 30 seconds");
+    }
+    
+    private void StopHealthMonitoring()
+    {
+        _healthCheckTimer?.Dispose();
+        _healthCheckTimer = null;
+        _logger.LogInformation("Health monitoring stopped");
+    }
+    
+    private async Task CheckConnectionHealth()
+    {
+        try
+        {
+            _logger.LogDebug("Performing connection health check...");
+            
+            // Use the detailed health check from the Rust library
+            var isHealthy = _plcClient.CheckHealthDetailed();
+            
+            _lastHealthCheck = DateTime.UtcNow;
+            var wasHealthy = _isHealthy;
+            _isHealthy = isHealthy;
+            
+            if (!wasHealthy && isHealthy)
+            {
+                _logger.LogInformation("Connection health restored");
+            }
+            else if (wasHealthy && !isHealthy)
+            {
+                _logger.LogWarning("Connection health degraded - session may have timed out");
+                
+                // Try to reconnect automatically
+                _logger.LogInformation("Attempting automatic reconnection...");
+                var reconnected = _plcClient.Connect(_currentAddress);
+                if (reconnected)
+                {
+                    _logger.LogInformation("Automatic reconnection successful");
+                    _isHealthy = true;
+                }
+                else
+                {
+                    _logger.LogError("Automatic reconnection failed");
+                    _isConnected = false;
+                }
+            }
+            else if (isHealthy)
+            {
+                _logger.LogDebug("Connection health check passed");
+            }
+            else
+            {
+                _logger.LogDebug("Connection health check failed");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during connection health check");
+            _isHealthy = false;
+        }
     }
 } 

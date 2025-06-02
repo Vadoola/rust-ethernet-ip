@@ -27,6 +27,7 @@ function App() {
   const [plcAddress, setPlcAddress] = useState('192.168.0.1:44818');
   const [connectionStatus, setConnectionStatus] = useState<PlcStatus | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [connectionIssues, setConnectionIssues] = useState(false);
 
   // Add debug logging for connection state changes
   useEffect(() => {
@@ -172,11 +173,51 @@ function App() {
     try {
       const result = await plcApi.getStatus();
       if (result.success && result.status) {
+        const wasConnected = isConnected;
+        const nowConnected = result.status.isConnected;
+        
         setConnectionStatus(result.status);
-        setIsConnected(result.status.isConnected);
+        setIsConnected(nowConnected);
+        setConnectionIssues(false); // Clear connection issues when successful
+        
+        // Detect disconnection
+        if (wasConnected && !nowConnected) {
+          addLog('warning', '⚠️ Connection lost! PLC session has expired or disconnected.');
+          addLog('info', '💡 The backend or PLC connection has timed out. You may need to reconnect.');
+          setMonitoredTags([]);
+          setIsMonitoring(false);
+          setConnectionIssues(true);
+        }
+        
+        // Detect reconnection
+        if (!wasConnected && nowConnected) {
+          addLog('success', '✅ Connection restored!');
+          setConnectionIssues(false);
+        }
+      } else {
+        // Status check failed - might indicate backend/session issues
+        if (isConnected) {
+          addLog('warning', '⚠️ Status check failed - connection may be unstable');
+          addLog('info', 'Checking if backend is still running...');
+          setConnectionIssues(true);
+        }
       }
     } catch (error) {
       console.error('Failed to update status:', error);
+      
+      // Network error - backend might be down
+      if (isConnected) {
+        addLog('error', '❌ Lost connection to backend API');
+        addLog('info', '🔧 The ASP.NET Core backend may have stopped or is unreachable');
+        addLog('info', '💡 Try restarting the backend: cd examples/AspNetExample && dotnet run');
+        
+        // Mark as disconnected
+        setIsConnected(false);
+        setConnectionStatus(null);
+        setMonitoredTags([]);
+        setIsMonitoring(false);
+        setConnectionIssues(true);
+      }
     }
   };
 
@@ -263,6 +304,12 @@ function App() {
         addLog('error', `❌ ${errorMsg}`);
         setTagValue('');
         
+        // Check if this might be a session timeout
+        if (errorMsg.includes('timeout') || errorMsg.includes('connection') || errorMsg.includes('session')) {
+          addLog('info', '🔄 This might be a session timeout. Checking connection status...');
+          updateStatus(); // Force status check
+        }
+        
         // Add error to monitoring
         const errorTag: PlcTag = {
           ...selectedTag,
@@ -287,6 +334,13 @@ function App() {
     } catch (error) {
       const errorMsg = `Network error: ${error}`;
       addLog('error', `❌ ${errorMsg}`);
+      
+      // Network errors might indicate backend disconnection
+      if (errorMsg.includes('Network Error') || errorMsg.includes('timeout')) {
+        addLog('info', '🔍 Network error detected. Checking backend connectivity...');
+        updateStatus(); // Force status check
+      }
+      
       setTagValue('');
     } finally {
       setIsReading(false);
@@ -425,9 +479,21 @@ function App() {
       try {
         const tagNames = monitoredTags.map(tag => tag.name);
         const updatedTags = await plcApi.readMultipleTags(tagNames);
-        setMonitoredTags(updatedTags);
+        
+        // Check if all tags are failing - might indicate session timeout
+        const failedTags = updatedTags.filter(tag => tag.hasError);
+        if (failedTags.length === updatedTags.length && updatedTags.length > 0) {
+          addLog('warning', '⚠️ All tag reads failing - session may have timed out');
+          addLog('info', '🔄 Checking connection status...');
+          updateStatus(); // Force status check
+        } else {
+          setMonitoredTags(updatedTags);
+        }
       } catch (error) {
         console.error('Monitoring error:', error);
+        addLog('error', `❌ Tag monitoring error: ${error}`);
+        addLog('info', '🔍 Checking if connection is still active...');
+        updateStatus(); // Force status check on error
       }
     }, 1000); // Update every second
 
@@ -438,8 +504,26 @@ function App() {
   useEffect(() => {
     if (!isConnected) return;
 
-    const interval = setInterval(updateStatus, 5000); // Update every 5 seconds
+    const interval = setInterval(updateStatus, 2000); // Update every 2 seconds for better responsiveness
     return () => clearInterval(interval);
+  }, [isConnected]);
+
+  // Connection health monitoring - separate from status updates
+  useEffect(() => {
+    if (!isConnected) return;
+
+    const healthCheckInterval = setInterval(async () => {
+      try {
+        // Try a simple status check to see if backend is responsive
+        await plcApi.getStatus();
+      } catch (error) {
+        // If status check fails repeatedly, suggest reconnection
+        addLog('warning', '⚠️ Backend connectivity issues detected');
+        addLog('info', '💡 If problems persist, try disconnecting and reconnecting');
+      }
+    }, 10000); // Every 10 seconds
+
+    return () => clearInterval(healthCheckInterval);
   }, [isConnected]);
 
   // Complete state reset function
@@ -498,6 +582,9 @@ function App() {
                 <CheckCircle size={20} />
                 <span>Connected</span>
                 <span className="session-info">Session: {connectionStatus?.address || 'undefined'}</span>
+                {connectionIssues && (
+                  <span className="connection-warning">⚠️ Issues detected</span>
+                )}
               </div>
             ) : (
               <div className="status-disconnected">

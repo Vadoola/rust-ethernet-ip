@@ -355,6 +355,8 @@ public class PlcController : ControllerBase
             {
                 IsConnected = _plcService.IsConnected,
                 Address = _plcService.CurrentAddress,
+                IsHealthy = _plcService.IsHealthy,
+                LastHealthCheck = _plcService.LastHealthCheck.ToString("HH:mm:ss.fff"),
                 LastReadTimes = _plcService.LastReadTimes.ToDictionary(
                     kvp => kvp.Key,
                     kvp => kvp.Value.ToString("HH:mm:ss.fff")

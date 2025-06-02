@@ -80,6 +80,17 @@ body {
   font-weight: 400;
 }
 
+.connection-warning {
+  font-size: 0.75rem;
+  margin-left: 0.5rem;
+  color: #ed8936;
+  font-weight: 500;
+  background: rgba(237, 137, 54, 0.1);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid rgba(237, 137, 54, 0.3);
+}
+
 /* Main content */
 .app-main {
   flex: 1;
