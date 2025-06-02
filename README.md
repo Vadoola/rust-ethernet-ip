@@ -287,6 +287,7 @@ cargo run --example data_types_showcase
 
 This project draws inspiration from excellent libraries in the industrial automation space:
 - **[pylogix](https://github.com/dmroeder/pylogix)** - Python library for Allen-Bradley PLCs
+- **[pycomm3](https://github.com/ottowayi/pycomm3)** - Python library for Allen-Bradley PLCs
 - **[gologix](https://github.com/danomagnum/gologix)** - Go library for Allen-Bradley PLCs
 - **[libplctag](https://github.com/libplctag/libplctag)** - Cross-platform PLC communication library
 
