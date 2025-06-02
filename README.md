@@ -269,6 +269,142 @@ cargo run --example advanced_tag_addressing
 cargo run --example data_types_showcase
 ```
 
+## 🎯 **Examples**
+
+Explore comprehensive examples demonstrating all library capabilities across different platforms:
+
+### **🌐 TypeScript + React Dashboard** *(Recommended)*
+Modern web-based PLC dashboard with real-time monitoring and advanced features.
+
+```bash
+# Start backend API
+cd examples/AspNetExample
+dotnet run
+
+# Start frontend (new terminal)
+cd examples/TypeScriptExample/frontend
+npm install && npm run dev
+```
+
+**Features:**
+- ✅ **Modern UI/UX** with glassmorphism design and responsive layout
+- ✅ **Real-time monitoring** with live tag updates and performance metrics
+- ✅ **Complete data type support** for all 13 Allen-Bradley types
+- ✅ **Advanced tag addressing** with interactive examples
+- ✅ **Type-safe API** with comprehensive TypeScript interfaces
+- ✅ **Professional features** including benchmarking and activity logging
+
+**Perfect for:** Web applications, dashboards, remote monitoring, modern industrial HMIs
+
+### **🖥️ WPF Desktop Application**
+Rich desktop application with MVVM architecture and modern UI.
+
+```bash
+cd examples/WpfExample
+dotnet run
+```
+
+**Features:**
+- ✅ **MVVM architecture** with CommunityToolkit.Mvvm
+- ✅ **Real-time tag monitoring** with automatic refresh
+- ✅ **Advanced tag discovery** with type detection
+- ✅ **Performance benchmarking** with visual metrics
+- ✅ **Comprehensive logging** with timestamped activity
+
+**Perfect for:** Desktop HMIs, engineering tools, maintenance applications
+
+### **🪟 WinForms Application**
+Traditional Windows Forms application with familiar UI patterns.
+
+```bash
+cd examples/WinFormsExample
+dotnet run
+```
+
+**Features:**
+- ✅ **Classic Windows UI** with familiar controls
+- ✅ **Connection monitoring** with automatic reconnection
+- ✅ **Tag operations** with validation and error handling
+- ✅ **Performance testing** with real-time metrics
+- ✅ **Industrial styling** with professional appearance
+
+**Perfect for:** Legacy system integration, simple HMIs, maintenance tools
+
+### **🌐 ASP.NET Core Web API**
+RESTful API backend providing HTTP access to PLC functionality.
+
+```bash
+cd examples/AspNetExample
+dotnet run
+```
+
+**Features:**
+- ✅ **RESTful endpoints** for all PLC operations
+- ✅ **Swagger documentation** with interactive API explorer
+- ✅ **Type-safe operations** with comprehensive validation
+- ✅ **Performance monitoring** with built-in benchmarking
+- ✅ **Production-ready** with proper error handling and logging
+
+**Perfect for:** Web services, microservices, system integration, mobile backends
+
+### **🦀 Rust Examples**
+Native Rust examples demonstrating core library functionality.
+
+```bash
+# Advanced tag addressing showcase
+cargo run --example advanced_tag_addressing
+
+# Complete data types demonstration
+cargo run --example data_types_showcase
+```
+
+**Features:**
+- ✅ **Advanced tag parsing** with complex path examples
+- ✅ **All data types** with encoding demonstrations
+- ✅ **Performance examples** with async/await patterns
+- ✅ **Error handling** with comprehensive error types
+
+**Perfect for:** Rust applications, embedded systems, high-performance scenarios
+
+### **🚀 Quick Start Guide**
+
+1. **Choose your platform:**
+   - **Web/Modern UI** → TypeScript + React Dashboard
+   - **Desktop/Windows** → WPF or WinForms Application  
+   - **Web API/Services** → ASP.NET Core Web API
+   - **Native/Performance** → Rust Examples
+
+2. **Start the backend** (for web examples):
+   ```bash
+   cd examples/AspNetExample
+   dotnet run
+   ```
+
+3. **Run your chosen example** and connect to your PLC at `192.168.0.1:44818`
+
+4. **Explore features:**
+   - Tag discovery with advanced addressing
+   - Real-time monitoring and benchmarking
+   - All 13 Allen-Bradley data types
+   - Professional error handling and logging
+
+### **📁 Example Structure**
+```
+examples/
+├── TypeScriptExample/          # React + TypeScript dashboard
+│   ├── frontend/              # Modern web UI
+│   ├── start-backend.bat      # Backend startup script
+│   └── start-frontend.bat     # Frontend startup script
+├── WpfExample/                # WPF desktop application
+├── WinFormsExample/           # WinForms desktop application
+├── AspNetExample/             # ASP.NET Core Web API
+└── rust-examples/             # Native Rust examples
+    ├── advanced_tag_addressing.rs
+    └── data_types_showcase.rs
+```
+
+Each example includes comprehensive documentation, setup instructions, and demonstrates different aspects of the library's capabilities.
+
 ## 📚 **Documentation**
 
 - **[API Documentation](https://docs.rs/rust-ethernet-ip)** - Complete API reference

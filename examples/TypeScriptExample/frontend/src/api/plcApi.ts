@@ -1,0 +1,359 @@
+import axios, { type AxiosResponse } from 'axios';
+
+// Base URL for the ASP.NET Core API
+const API_BASE_URL = 'http://localhost:5000/api';
+
+// Create axios instance with default config
+const apiClient = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Data type definitions
+export type PlcDataType = 
+  | 'BOOL' | 'SINT' | 'INT' | 'DINT' | 'LINT'
+  | 'USINT' | 'UINT' | 'UDINT' | 'ULINT'
+  | 'REAL' | 'LREAL' | 'STRING' | 'UDT';
+
+export type PlcValue = string | number | boolean | Record<string, unknown> | null;
+
+export interface PlcTag {
+  name: string;
+  type: PlcDataType;
+  value: PlcValue;
+  lastUpdated?: string;
+  hasError?: boolean;
+  errorMessage?: string;
+}
+
+export interface ConnectionRequest {
+  address: string;
+}
+
+export interface WriteTagRequest {
+  type: PlcDataType;
+  value: PlcValue;
+}
+
+export interface ApiResponse<T = unknown> {
+  success: boolean;
+  message?: string;
+  data?: T;
+}
+
+export interface TagReadResponse {
+  success: boolean;
+  value: PlcValue;
+  type: PlcDataType;
+  message?: string;
+}
+
+export interface BenchmarkResponse {
+  success: boolean;
+  readRate: number;
+  writeRate: number;
+  message: string;
+}
+
+export interface PlcStatus {
+  isConnected: boolean;
+  address: string;
+  lastReadTimes: Record<string, string>;
+}
+
+export interface StatusResponse {
+  success: boolean;
+  status: PlcStatus;
+}
+
+/**
+ * PLC API Client - TypeScript interface to Rust EtherNet/IP library
+ * Communicates with ASP.NET Core backend via REST API
+ */
+export class PlcApiClient {
+  
+  /**
+   * Connect to a PLC
+   */
+  async connect(address: string): Promise<ApiResponse> {
+    try {
+      const response: AxiosResponse<ApiResponse> = await apiClient.post('/plc/connect', {
+        address
+      } as ConnectionRequest);
+      return response.data;
+    } catch (error) {
+      return this.handleError(error, 'Failed to connect to PLC');
+    }
+  }
+
+  /**
+   * Disconnect from PLC
+   */
+  async disconnect(): Promise<ApiResponse> {
+    try {
+      const response: AxiosResponse<ApiResponse> = await apiClient.post('/plc/disconnect');
+      return response.data;
+    } catch (error) {
+      return this.handleError(error, 'Failed to disconnect from PLC');
+    }
+  }
+
+  /**
+   * Read a tag from the PLC (auto-detects type)
+   */
+  async readTag(tagName: string): Promise<TagReadResponse> {
+    try {
+      const response: AxiosResponse<TagReadResponse> = await apiClient.get(`/plc/tag/${encodeURIComponent(tagName)}`);
+      return response.data;
+    } catch (error) {
+      return this.handleError(error, `Failed to read tag: ${tagName}`) as TagReadResponse;
+    }
+  }
+
+  /**
+   * Write a tag to the PLC
+   */
+  async writeTag(tagName: string, type: PlcDataType, value: PlcValue): Promise<ApiResponse> {
+    try {
+      const response: AxiosResponse<ApiResponse> = await apiClient.post(`/plc/tag/${encodeURIComponent(tagName)}`, {
+        type,
+        value
+      } as WriteTagRequest);
+      return response.data;
+    } catch (error) {
+      return this.handleError(error, `Failed to write tag: ${tagName}`);
+    }
+  }
+
+  /**
+   * Run performance benchmark
+   */
+  async runBenchmark(): Promise<BenchmarkResponse> {
+    try {
+      const response: AxiosResponse<BenchmarkResponse> = await apiClient.post('/plc/benchmark');
+      return response.data;
+    } catch (error) {
+      return this.handleError(error, 'Failed to run benchmark') as BenchmarkResponse;
+    }
+  }
+
+  /**
+   * Get PLC connection status
+   */
+  async getStatus(): Promise<StatusResponse> {
+    try {
+      const response: AxiosResponse<StatusResponse> = await apiClient.get('/plc/status');
+      return response.data;
+    } catch (error) {
+      return this.handleError(error, 'Failed to get PLC status') as StatusResponse;
+    }
+  }
+
+  /**
+   * Read multiple tags in parallel
+   */
+  async readMultipleTags(tagNames: string[]): Promise<PlcTag[]> {
+    try {
+      const promises = tagNames.map(async (tagName) => {
+        const result = await this.readTag(tagName);
+        return {
+          name: tagName,
+          type: result.type || 'BOOL',
+          value: result.value,
+          lastUpdated: new Date().toISOString(),
+          hasError: !result.success,
+          errorMessage: result.message
+        } as PlcTag;
+      });
+
+      return await Promise.all(promises);
+    } catch (error) {
+      console.error('Failed to read multiple tags:', error);
+      return tagNames.map(name => ({
+        name,
+        type: 'BOOL' as PlcDataType,
+        value: null,
+        hasError: true,
+        errorMessage: 'Failed to read tag'
+      }));
+    }
+  }
+
+  /**
+   * Write multiple tags in parallel
+   */
+  async writeMultipleTags(tags: Array<{ name: string; type: PlcDataType; value: PlcValue }>): Promise<ApiResponse[]> {
+    try {
+      const promises = tags.map(tag => this.writeTag(tag.name, tag.type, tag.value));
+      return await Promise.all(promises);
+    } catch (error) {
+      console.error('Failed to write multiple tags:', error);
+      return tags.map(() => ({
+        success: false,
+        message: 'Failed to write tag'
+      }));
+    }
+  }
+
+  /**
+   * Discover tag type by attempting to read it
+   */
+  async discoverTag(tagName: string): Promise<PlcTag | null> {
+    try {
+      const result = await this.readTag(tagName);
+      if (result.success) {
+        return {
+          name: tagName,
+          type: result.type,
+          value: result.value,
+          lastUpdated: new Date().toISOString(),
+          hasError: false
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error(`Failed to discover tag ${tagName}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Handle API errors consistently
+   */
+  private handleError(error: unknown, defaultMessage: string): ApiResponse {
+    console.error(defaultMessage, error);
+    
+    if (axios.isAxiosError(error)) {
+      if (error.response?.data?.message) {
+        return {
+          success: false,
+          message: error.response.data.message
+        };
+      }
+      if (error.code === 'ECONNREFUSED') {
+        return {
+          success: false,
+          message: 'Cannot connect to PLC API server. Make sure the ASP.NET Core backend is running.'
+        };
+      }
+      if (error.code === 'ETIMEDOUT') {
+        return {
+          success: false,
+          message: 'Request timed out. Check PLC connection.'
+        };
+      }
+    }
+
+    return {
+      success: false,
+      message: defaultMessage
+    };
+  }
+}
+
+// Export singleton instance
+export const plcApi = new PlcApiClient();
+
+// Export data type information
+export const DATA_TYPE_INFO: Record<PlcDataType, { 
+  description: string; 
+  range?: string; 
+  example: PlcValue;
+  category: string;
+}> = {
+  BOOL: { 
+    description: 'Boolean values', 
+    range: 'true/false', 
+    example: true,
+    category: 'Boolean'
+  },
+  SINT: { 
+    description: '8-bit signed integer', 
+    range: '-128 to 127', 
+    example: -100,
+    category: 'Signed Integer'
+  },
+  INT: { 
+    description: '16-bit signed integer', 
+    range: '-32,768 to 32,767', 
+    example: -1000,
+    category: 'Signed Integer'
+  },
+  DINT: { 
+    description: '32-bit signed integer', 
+    range: '-2.1B to 2.1B', 
+    example: -1000000,
+    category: 'Signed Integer'
+  },
+  LINT: { 
+    description: '64-bit signed integer', 
+    range: 'Very large range', 
+    example: -1000000000,
+    category: 'Signed Integer'
+  },
+  USINT: { 
+    description: '8-bit unsigned integer', 
+    range: '0 to 255', 
+    example: 200,
+    category: 'Unsigned Integer'
+  },
+  UINT: { 
+    description: '16-bit unsigned integer', 
+    range: '0 to 65,535', 
+    example: 50000,
+    category: 'Unsigned Integer'
+  },
+  UDINT: { 
+    description: '32-bit unsigned integer', 
+    range: '0 to 4.3B', 
+    example: 3000000,
+    category: 'Unsigned Integer'
+  },
+  ULINT: { 
+    description: '64-bit unsigned integer', 
+    range: 'Very large range', 
+    example: 5000000000,
+    category: 'Unsigned Integer'
+  },
+  REAL: { 
+    description: '32-bit IEEE 754 float', 
+    range: '±3.4E±38', 
+    example: 123.45,
+    category: 'Floating Point'
+  },
+  LREAL: { 
+    description: '64-bit IEEE 754 double', 
+    range: '±1.7E±308', 
+    example: 123.456789,
+    category: 'Floating Point'
+  },
+  STRING: { 
+    description: 'Variable-length strings', 
+    range: 'Text data', 
+    example: 'Hello PLC',
+    category: 'Text'
+  },
+  UDT: { 
+    description: 'User Defined Types', 
+    range: 'Complex structures', 
+    example: { motor: { speed: 1750 } },
+    category: 'Complex'
+  }
+};
+
+// Export advanced tag examples
+export const ADVANCED_TAG_EXAMPLES = [
+  'Program:MainProgram.Motor.Status',
+  'DataArray[5]',
+  'StatusWord.15',
+  'MotorData.Speed',
+  'ProductName.LEN',
+  'Program:Production.Lines[2].Stations[5].Motor.Status.15',
+  'Recipe.Step1.Temperature.Setpoint',
+  'Program:Safety.EmergencyStop',
+  'SensorReadings[10]',
+  'Program:Vision.ImageData[10,20,3]'
+]; 
