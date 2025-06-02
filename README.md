@@ -427,10 +427,6 @@ This project draws inspiration from excellent libraries in the industrial automa
 - **[gologix](https://github.com/danomagnum/gologix)** - Go library for Allen-Bradley PLCs
 - **[libplctag](https://github.com/libplctag/libplctag)** - Cross-platform PLC communication library
 
-## 📄 **License**
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
 ## 🚀 **Contributing**
 
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on:
@@ -438,6 +434,52 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 - Testing requirements
 - Pull request process
 - Development setup
+
+## ⚠️ **Disclaimer and Liability**
+
+### **Use at Your Own Risk**
+This library is provided "AS IS" without warranty of any kind. Users assume full responsibility for its use in their applications and systems.
+
+### **No Warranties**
+The developers and contributors make **NO WARRANTIES, EXPRESS OR IMPLIED**, including but not limited to:
+- **Merchantability** or fitness for a particular purpose
+- **Reliability** or availability of the software
+- **Accuracy** of data transmission or processing
+- **Safety** for use in critical or production systems
+
+### **Industrial Safety Responsibility**
+- **🏭 Industrial Use:** Users are solely responsible for ensuring this library meets their industrial safety requirements
+- **🔒 Safety Systems:** This library should NOT be used for safety-critical applications without proper validation
+- **⚙️ Production Systems:** Thoroughly test in non-production environments before deploying to production systems
+- **📋 Compliance:** Users must ensure compliance with all applicable industrial standards and regulations
+
+### **Limitation of Liability**
+Under no circumstances shall the developers, contributors, or associated parties be liable for:
+- **Equipment damage** or malfunction
+- **Production downtime** or operational disruptions  
+- **Data loss** or corruption
+- **Personal injury** or property damage
+- **Financial losses** of any kind
+- **Consequential or indirect damages**
+
+### **User Responsibilities**
+By using this library, you acknowledge and agree that:
+- You have the technical expertise to properly implement and test the library
+- You will perform adequate testing before production deployment
+- You will implement appropriate safety measures and fail-safes
+- You understand the risks associated with industrial automation systems
+- You accept full responsibility for any consequences of using this library
+
+### **Indemnification**
+Users agree to indemnify and hold harmless the developers and contributors from any claims, damages, or liabilities arising from the use of this library.
+
+---
+
+**⚠️ IMPORTANT: This disclaimer is an integral part of the license terms. Use of this library constitutes acceptance of these terms.**
+
+## 📄 **License**
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
