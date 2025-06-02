@@ -599,7 +599,7 @@ impl EipClient {
             udt_manager: UdtManager::new(),
             max_packet_size: 4000,
             last_activity: Instant::now(),
-            session_timeout: Duration::from_secs(30),
+            session_timeout: Duration::from_secs(120), // Increased to 2 minutes
         };
         client.register_session().await?;
         Ok(client)
@@ -1091,10 +1091,23 @@ impl EipClient {
     }
 
     async fn validate_session(&mut self) -> crate::error::Result<()> {
-        if self.last_activity.elapsed() > self.session_timeout {
-            // Session expired, try to re-register
+        let time_since_activity = self.last_activity.elapsed();
+        
+        // Send keep-alive if it's been more than 30 seconds since last activity
+        if time_since_activity > Duration::from_secs(30) {
+            println!("🔄 [DEBUG] Sending keep-alive ({}s since last activity)", time_since_activity.as_secs());
+            if let Err(e) = self.send_keep_alive().await {
+                println!("⚠️ [DEBUG] Keep-alive failed: {}, re-registering session", e);
+                self.register_session().await?;
+            }
+        }
+        
+        // Re-register session if it's been too long since any activity
+        if time_since_activity > self.session_timeout {
+            println!("🔄 [DEBUG] Session timeout ({}s), re-registering", time_since_activity.as_secs());
             self.register_session().await?;
         }
+        
         Ok(())
     }
 
@@ -1116,9 +1129,27 @@ impl EipClient {
 
     /// Checks the health of the connection
     pub fn check_health(&self) -> bool {
-        // Simple health check - in a real implementation, this could
-        // send a lightweight message to the PLC to verify connectivity
-        self.session_handle != 0
+        // Check if we have a valid session handle and recent activity
+        self.session_handle != 0 && self.last_activity.elapsed() < Duration::from_secs(150)
+    }
+    
+    /// Performs a more thorough health check by actually communicating with the PLC
+    pub async fn check_health_detailed(&mut self) -> crate::error::Result<bool> {
+        if self.session_handle == 0 {
+            return Ok(false);
+        }
+        
+        // Try sending a lightweight keep-alive command
+        match self.send_keep_alive().await {
+            Ok(()) => Ok(true),
+            Err(_) => {
+                // If keep-alive fails, try re-registering the session
+                match self.register_session().await {
+                    Ok(()) => Ok(true),
+                    Err(_) => Ok(false),
+                }
+            }
+        }
     }
 
     /// Reads raw data from a tag
@@ -1138,6 +1169,9 @@ impl EipClient {
     /// Sends a CIP request wrapped in EtherNet/IP SendRRData command
     pub async fn send_cip_request(&mut self, cip_request: &[u8]) -> crate::error::Result<Vec<u8>> {
         println!("🔧 [DEBUG] Sending CIP request: {:02X?}", cip_request);
+        
+        // Update activity timestamp for successful communication
+        self.last_activity = Instant::now();
         
         let cip_len = cip_request.len();
         // CPF data includes: Interface Handle(4) + Timeout(2) + ItemCount(2) + NullItem(4) + DataItem(4+cip_len)
@@ -2500,6 +2534,28 @@ pub unsafe extern "C" fn eip_check_health(client_id: c_int, is_healthy: *mut c_i
     let healthy = client.check_health();
     unsafe { *is_healthy = if healthy { 1 } else { 0 } };
     0
+}
+
+#[no_mangle]
+pub extern "C" fn eip_check_health_detailed(client_id: c_int, is_healthy: *mut c_int) -> c_int {
+    let mut clients = CLIENTS.lock().unwrap();
+    let client = match clients.get_mut(&client_id) {
+        Some(c) => c,
+        None => return -1,
+    };
+
+    match RUNTIME.block_on(async {
+        client.check_health_detailed().await
+    }) {
+        Ok(healthy) => {
+            unsafe { *is_healthy = if healthy { 1 } else { 0 }; }
+            0
+        }
+        Err(_) => {
+            unsafe { *is_healthy = 0; }
+            -1
+        }
+    }
 }
 
 // =========================================================================

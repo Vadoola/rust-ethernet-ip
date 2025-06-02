@@ -162,6 +162,9 @@ namespace RustEtherNetIp
 
         [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_check_health(int client_id, out int is_healthy);
+
+        [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int eip_check_health_detailed(int client_id, out int is_healthy);
         #endregion
 
         #region Connection Management
@@ -244,15 +247,20 @@ namespace RustEtherNetIp
                 {
                     try
                     {
-                        await Task.Delay(15000, _keepAliveCts.Token); // Every 15 seconds
+                        await Task.Delay(30000, _keepAliveCts.Token); // Every 30 seconds
                         if (_clientId >= 0)
                         {
+                            // Use detailed health check for better accuracy
                             int isHealthy;
-                            if (eip_check_health(_clientId, out isHealthy) != 0 || isHealthy == 0)
+                            if (eip_check_health_detailed(_clientId, out isHealthy) != 0 || isHealthy == 0)
                             {
                                 // Connection lost, try to reconnect
+                                Console.WriteLine("Connection health check failed, attempting reconnect...");
                                 Disconnect();
-                                Connect(_currentAddress);
+                                if (!string.IsNullOrEmpty(_currentAddress))
+                                {
+                                    Connect(_currentAddress);
+                                }
                             }
                         }
                     }
@@ -260,9 +268,10 @@ namespace RustEtherNetIp
                     {
                         break;
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // Ignore other errors in keep-alive task
+                        // Log error but don't break the keep-alive loop
+                        Console.WriteLine($"Keep-alive error: {ex.Message}");
                     }
                 }
             }, _keepAliveCts.Token);
@@ -1036,6 +1045,19 @@ namespace RustEtherNetIp
             if (_clientId < 0) return false;
             
             int result = eip_check_health(_clientId, out int isHealthy);
+            return result == 0 && isHealthy != 0;
+        }
+
+        /// <summary>
+        /// Performs a detailed health check by actually communicating with the PLC.
+        /// This method sends a keep-alive message to verify connectivity.
+        /// </summary>
+        /// <returns>True if connection is healthy, false otherwise.</returns>
+        public bool CheckHealthDetailed()
+        {
+            if (_clientId < 0) return false;
+            
+            int result = eip_check_health_detailed(_clientId, out int isHealthy);
             return result == 0 && isHealthy != 0;
         }
 
