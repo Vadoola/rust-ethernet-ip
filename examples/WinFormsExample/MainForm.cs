@@ -229,7 +229,21 @@ namespace WinFormsExample
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 Dock = DockStyle.Fill
             };
-            dataTypeComboBox.Items.AddRange(new string[] { "BOOL", "DINT", "REAL", "STRING" });
+            dataTypeComboBox.Items.AddRange(new string[] { 
+                "BOOL",    // Boolean values
+                "SINT",    // 8-bit signed integer (-128 to 127)
+                "INT",     // 16-bit signed integer (-32,768 to 32,767)
+                "DINT",    // 32-bit signed integer (-2.1B to 2.1B)
+                "LINT",    // 64-bit signed integer
+                "USINT",   // 8-bit unsigned integer (0 to 255)
+                "UINT",    // 16-bit unsigned integer (0 to 65,535)
+                "UDINT",   // 32-bit unsigned integer (0 to 4.3B)
+                "ULINT",   // 64-bit unsigned integer
+                "REAL",    // 32-bit IEEE 754 float
+                "LREAL",   // 64-bit IEEE 754 double
+                "STRING",  // Variable-length strings
+                "UDT"      // User Defined Types
+            });
             dataTypeComboBox.SelectedIndex = 0;
             layout.Controls.Add(dataTypeComboBox, 1, 1);
 
@@ -573,12 +587,30 @@ namespace WinFormsExample
             {
                 Log($"🔍 Discovering tag: {tagName}");
 
-                // Try to read the tag as different types
+                // Try to read the tag as different types - order matters for proper detection
                 try
                 {
                     var boolValue = _plcClient.ReadBool(tagName);
                     UpdateTagFields(tagName, "BOOL", boolValue.ToString());
                     Log($"✅ Discovered BOOL tag: {tagName} = {boolValue}");
+                    return;
+                }
+                catch { }
+
+                try
+                {
+                    var sintValue = _plcClient.ReadSint(tagName);
+                    UpdateTagFields(tagName, "SINT", sintValue.ToString());
+                    Log($"✅ Discovered SINT tag: {tagName} = {sintValue}");
+                    return;
+                }
+                catch { }
+
+                try
+                {
+                    var intValue = _plcClient.ReadInt(tagName);
+                    UpdateTagFields(tagName, "INT", intValue.ToString());
+                    Log($"✅ Discovered INT tag: {tagName} = {intValue}");
                     return;
                 }
                 catch { }
@@ -594,6 +626,51 @@ namespace WinFormsExample
 
                 try
                 {
+                    var lintValue = _plcClient.ReadLint(tagName);
+                    UpdateTagFields(tagName, "LINT", lintValue.ToString());
+                    Log($"✅ Discovered LINT tag: {tagName} = {lintValue}");
+                    return;
+                }
+                catch { }
+
+                try
+                {
+                    var usintValue = _plcClient.ReadUsint(tagName);
+                    UpdateTagFields(tagName, "USINT", usintValue.ToString());
+                    Log($"✅ Discovered USINT tag: {tagName} = {usintValue}");
+                    return;
+                }
+                catch { }
+
+                try
+                {
+                    var uintValue = _plcClient.ReadUint(tagName);
+                    UpdateTagFields(tagName, "UINT", uintValue.ToString());
+                    Log($"✅ Discovered UINT tag: {tagName} = {uintValue}");
+                    return;
+                }
+                catch { }
+
+                try
+                {
+                    var udintValue = _plcClient.ReadUdint(tagName);
+                    UpdateTagFields(tagName, "UDINT", udintValue.ToString());
+                    Log($"✅ Discovered UDINT tag: {tagName} = {udintValue}");
+                    return;
+                }
+                catch { }
+
+                try
+                {
+                    var ulintValue = _plcClient.ReadUlint(tagName);
+                    UpdateTagFields(tagName, "ULINT", ulintValue.ToString());
+                    Log($"✅ Discovered ULINT tag: {tagName} = {ulintValue}");
+                    return;
+                }
+                catch { }
+
+                try
+                {
                     var realValue = _plcClient.ReadReal(tagName);
                     UpdateTagFields(tagName, "REAL", realValue.ToString());
                     Log($"✅ Discovered REAL tag: {tagName} = {realValue}");
@@ -603,9 +680,27 @@ namespace WinFormsExample
 
                 try
                 {
+                    var lrealValue = _plcClient.ReadLreal(tagName);
+                    UpdateTagFields(tagName, "LREAL", lrealValue.ToString());
+                    Log($"✅ Discovered LREAL tag: {tagName} = {lrealValue}");
+                    return;
+                }
+                catch { }
+
+                try
+                {
                     var stringValue = _plcClient.ReadString(tagName);
                     UpdateTagFields(tagName, "STRING", stringValue);
-                    Log($"✅ Discovered STRING tag: {tagName} = {stringValue}");
+                    Log($"✅ Discovered STRING tag: {tagName} = '{stringValue}'");
+                    return;
+                }
+                catch { }
+
+                try
+                {
+                    var udtValue = _plcClient.ReadUdt(tagName);
+                    UpdateTagFields(tagName, "UDT", $"UDT with {udtValue.Count} members");
+                    Log($"✅ Discovered UDT tag: {tagName} with {udtValue.Count} members");
                     return;
                 }
                 catch { }
@@ -719,7 +814,7 @@ namespace WinFormsExample
                         if (bool.TryParse(value, out bool boolValue))
                         {
                             _plcClient.WriteBool(tagName, boolValue);
-                            Log($"✅ Wrote {boolValue} to {tagName}");
+                            Log($"✅ Wrote BOOL: {boolValue} to {tagName}");
                         }
                         else
                         {
@@ -727,15 +822,99 @@ namespace WinFormsExample
                         }
                         break;
 
+                    case "SINT":
+                        if (sbyte.TryParse(value, out sbyte sintValue))
+                        {
+                            _plcClient.WriteSint(tagName, sintValue);
+                            Log($"✅ Wrote SINT: {sintValue} to {tagName}");
+                        }
+                        else
+                        {
+                            Log("❌ Invalid SINT value (-128 to 127)");
+                        }
+                        break;
+
+                    case "INT":
+                        if (short.TryParse(value, out short intValue))
+                        {
+                            _plcClient.WriteInt(tagName, intValue);
+                            Log($"✅ Wrote INT: {intValue} to {tagName}");
+                        }
+                        else
+                        {
+                            Log("❌ Invalid INT value (-32,768 to 32,767)");
+                        }
+                        break;
+
                     case "DINT":
                         if (int.TryParse(value, out int dintValue))
                         {
                             _plcClient.WriteDint(tagName, dintValue);
-                            Log($"✅ Wrote {dintValue} to {tagName}");
+                            Log($"✅ Wrote DINT: {dintValue} to {tagName}");
                         }
                         else
                         {
-                            Log("❌ Invalid integer value");
+                            Log("❌ Invalid DINT value");
+                        }
+                        break;
+
+                    case "LINT":
+                        if (long.TryParse(value, out long lintValue))
+                        {
+                            _plcClient.WriteLint(tagName, lintValue);
+                            Log($"✅ Wrote LINT: {lintValue} to {tagName}");
+                        }
+                        else
+                        {
+                            Log("❌ Invalid LINT value");
+                        }
+                        break;
+
+                    case "USINT":
+                        if (byte.TryParse(value, out byte usintValue))
+                        {
+                            _plcClient.WriteUsint(tagName, usintValue);
+                            Log($"✅ Wrote USINT: {usintValue} to {tagName}");
+                        }
+                        else
+                        {
+                            Log("❌ Invalid USINT value (0 to 255)");
+                        }
+                        break;
+
+                    case "UINT":
+                        if (ushort.TryParse(value, out ushort uintValue))
+                        {
+                            _plcClient.WriteUint(tagName, uintValue);
+                            Log($"✅ Wrote UINT: {uintValue} to {tagName}");
+                        }
+                        else
+                        {
+                            Log("❌ Invalid UINT value (0 to 65,535)");
+                        }
+                        break;
+
+                    case "UDINT":
+                        if (uint.TryParse(value, out uint udintValue))
+                        {
+                            _plcClient.WriteUdint(tagName, udintValue);
+                            Log($"✅ Wrote UDINT: {udintValue} to {tagName}");
+                        }
+                        else
+                        {
+                            Log("❌ Invalid UDINT value");
+                        }
+                        break;
+
+                    case "ULINT":
+                        if (ulong.TryParse(value, out ulong ulintValue))
+                        {
+                            _plcClient.WriteUlint(tagName, ulintValue);
+                            Log($"✅ Wrote ULINT: {ulintValue} to {tagName}");
+                        }
+                        else
+                        {
+                            Log("❌ Invalid ULINT value");
                         }
                         break;
 
@@ -743,17 +922,33 @@ namespace WinFormsExample
                         if (float.TryParse(value, out float realValue))
                         {
                             _plcClient.WriteReal(tagName, realValue);
-                            Log($"✅ Wrote {realValue} to {tagName}");
+                            Log($"✅ Wrote REAL: {realValue} to {tagName}");
                         }
                         else
                         {
-                            Log("❌ Invalid float value");
+                            Log("❌ Invalid REAL value");
+                        }
+                        break;
+
+                    case "LREAL":
+                        if (double.TryParse(value, out double lrealValue))
+                        {
+                            _plcClient.WriteLreal(tagName, lrealValue);
+                            Log($"✅ Wrote LREAL: {lrealValue} to {tagName}");
+                        }
+                        else
+                        {
+                            Log("❌ Invalid LREAL value");
                         }
                         break;
 
                     case "STRING":
                         _plcClient.WriteString(tagName, value);
-                        Log($"✅ Wrote '{value}' to {tagName}");
+                        Log($"✅ Wrote STRING: '{value}' to {tagName}");
+                        break;
+
+                    case "UDT":
+                        Log("❌ UDT writing not supported in this example");
                         break;
 
                     default:

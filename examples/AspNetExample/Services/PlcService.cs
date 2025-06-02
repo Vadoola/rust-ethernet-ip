@@ -57,28 +57,104 @@ public class PlcService : IDisposable
         UpdateLastReadTime(tagName);
         return value;
     }
+    
+    public sbyte ReadSint(string tagName)
+    {
+        var value = _plcClient.ReadSint(tagName);
+        UpdateLastReadTime(tagName);
+        return value;
+    }
+    
+    public short ReadInt(string tagName)
+    {
+        var value = _plcClient.ReadInt(tagName);
+        UpdateLastReadTime(tagName);
+        return value;
+    }
+    
     public int ReadDint(string tagName)
     {
         var value = _plcClient.ReadDint(tagName);
         UpdateLastReadTime(tagName);
         return value;
     }
+    
+    public long ReadLint(string tagName)
+    {
+        var value = _plcClient.ReadLint(tagName);
+        UpdateLastReadTime(tagName);
+        return value;
+    }
+    
+    public byte ReadUsint(string tagName)
+    {
+        var value = _plcClient.ReadUsint(tagName);
+        UpdateLastReadTime(tagName);
+        return value;
+    }
+    
+    public ushort ReadUint(string tagName)
+    {
+        var value = _plcClient.ReadUint(tagName);
+        UpdateLastReadTime(tagName);
+        return value;
+    }
+    
+    public uint ReadUdint(string tagName)
+    {
+        var value = _plcClient.ReadUdint(tagName);
+        UpdateLastReadTime(tagName);
+        return value;
+    }
+    
+    public ulong ReadUlint(string tagName)
+    {
+        var value = _plcClient.ReadUlint(tagName);
+        UpdateLastReadTime(tagName);
+        return value;
+    }
+    
     public float ReadReal(string tagName)
     {
         var value = _plcClient.ReadReal(tagName);
         UpdateLastReadTime(tagName);
         return value;
     }
+    
+    public double ReadLreal(string tagName)
+    {
+        var value = _plcClient.ReadLreal(tagName);
+        UpdateLastReadTime(tagName);
+        return value;
+    }
+    
     public string ReadString(string tagName)
     {
         var value = _plcClient.ReadString(tagName);
         UpdateLastReadTime(tagName);
         return value;
     }
+    
+    public Dictionary<string, object> ReadUdt(string tagName)
+    {
+        var value = _plcClient.ReadUdt(tagName);
+        UpdateLastReadTime(tagName);
+        return value;
+    }
+    
     public void WriteBool(string tagName, bool value) => _plcClient.WriteBool(tagName, value);
+    public void WriteSint(string tagName, sbyte value) => _plcClient.WriteSint(tagName, value);
+    public void WriteInt(string tagName, short value) => _plcClient.WriteInt(tagName, value);
     public void WriteDint(string tagName, int value) => _plcClient.WriteDint(tagName, value);
+    public void WriteLint(string tagName, long value) => _plcClient.WriteLint(tagName, value);
+    public void WriteUsint(string tagName, byte value) => _plcClient.WriteUsint(tagName, value);
+    public void WriteUint(string tagName, ushort value) => _plcClient.WriteUint(tagName, value);
+    public void WriteUdint(string tagName, uint value) => _plcClient.WriteUdint(tagName, value);
+    public void WriteUlint(string tagName, ulong value) => _plcClient.WriteUlint(tagName, value);
     public void WriteReal(string tagName, float value) => _plcClient.WriteReal(tagName, value);
+    public void WriteLreal(string tagName, double value) => _plcClient.WriteLreal(tagName, value);
     public void WriteString(string tagName, string value) => _plcClient.WriteString(tagName, value);
+    public void WriteUdt(string tagName, Dictionary<string, object> value) => _plcClient.WriteUdt(tagName, value);
 
     private void UpdateLastReadTime(string tagName)
     {
