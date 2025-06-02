@@ -4,22 +4,13 @@ import {
   type PlcTag, 
   type PlcDataType, 
   type PlcStatus,
-  DATA_TYPE_INFO,
-  ADVANCED_TAG_EXAMPLES 
+  DATA_TYPE_INFO
 } from './api/plcApi';
 import { 
   Activity, 
   Cpu, 
-  Database, 
-  Play, 
-  Square, 
-  Search, 
-  Zap,
   AlertCircle,
-  CheckCircle,
-  Clock,
-  Settings,
-  BarChart3
+  CheckCircle
 } from 'lucide-react';
 import './App.css';
 
@@ -228,27 +219,75 @@ function App() {
     }
   };
 
-  // Read tag
+  // Read tag value
   const handleReadTag = async () => {
-    if (!selectedTag?.name) {
-      addLog('error', 'Please select a tag to read');
+    if (!selectedTag) {
+      addLog('warning', 'No tag selected');
       return;
     }
 
     setIsReading(true);
-    addLog('info', `📖 Reading tag: ${selectedTag.name}`);
+    addLog('info', `📖 Reading tag '${selectedTag.name}' as ${selectedDataType}...`);
 
     try {
-      const result = await plcApi.readTag(selectedTag.name);
-      if (result.success) {
-        setTagValue(String(result.value));
-        setSelectedDataType(result.type);
-        addLog('success', `✅ Read ${result.type} tag: ${selectedTag.name} = ${result.value}`);
+      const response = await plcApi.readTag(selectedTag.name);
+      if (response.success && response.value !== undefined) {
+        setTagValue(String(response.value));
+        addLog('success', `✅ Read ${response.type} tag '${selectedTag.name}' = ${response.value}`);
+        
+        // Update the tag in monitoring list
+        const updatedTag: PlcTag = {
+          ...selectedTag,
+          value: response.value,
+          type: response.type || selectedDataType,
+          lastUpdated: new Date().toLocaleTimeString(),
+          hasError: false,
+          errorMessage: ''
+        };
+        
+        // Add to monitoring if not already there
+        setMonitoredTags(prev => {
+          const existingIndex = prev.findIndex(tag => tag.name === selectedTag.name);
+          if (existingIndex >= 0) {
+            // Update existing tag
+            const newTags = [...prev];
+            newTags[existingIndex] = updatedTag;
+            return newTags;
+          } else {
+            // Add new tag
+            return [...prev, updatedTag];
+          }
+        });
       } else {
-        addLog('error', `❌ Read error: ${result.message}`);
+        const errorMsg = response.message || 'Failed to read tag';
+        addLog('error', `❌ ${errorMsg}`);
+        setTagValue('');
+        
+        // Add error to monitoring
+        const errorTag: PlcTag = {
+          ...selectedTag,
+          value: null,
+          type: selectedDataType,
+          lastUpdated: new Date().toLocaleTimeString(),
+          hasError: true,
+          errorMessage: errorMsg
+        };
+        
+        setMonitoredTags(prev => {
+          const existingIndex = prev.findIndex(tag => tag.name === selectedTag.name);
+          if (existingIndex >= 0) {
+            const newTags = [...prev];
+            newTags[existingIndex] = errorTag;
+            return newTags;
+          } else {
+            return [...prev, errorTag];
+          }
+        });
       }
     } catch (error) {
-      addLog('error', `❌ Read error: ${error}`);
+      const errorMsg = `Network error: ${error}`;
+      addLog('error', `❌ ${errorMsg}`);
+      setTagValue('');
     } finally {
       setIsReading(false);
     }
@@ -446,18 +485,19 @@ function App() {
   };
 
   return (
-    <div className="app">
+    <div className="app" key={componentKey}>
       <header className="app-header">
         <div className="header-content">
           <div className="header-title">
             <Cpu className="header-icon" />
-            <h1>🦀 Rust EtherNet/IP - TypeScript Dashboard</h1>
+            <h1>🦀 Rust EtherNet/IP Driver - React Demo</h1>
           </div>
           <div className="header-status">
             {isConnected ? (
               <div className="status-connected">
                 <CheckCircle size={20} />
                 <span>Connected</span>
+                <span className="session-info">Session: {connectionStatus?.address || 'undefined'}</span>
               </div>
             ) : (
               <div className="status-disconnected">
@@ -470,328 +510,205 @@ function App() {
       </header>
 
       <main className="app-main">
-        {/* Connection Panel */}
-        <section className="panel connection-panel">
-          <h2><Database size={20} /> Connection</h2>
+        {/* Connection Section */}
+        <section className="connection-section">
           <div className="connection-controls">
-            <div className="input-group">
-              <label>
-                PLC Address:
-                {isConnected && <span className="input-disabled-note"> (disconnect to edit)</span>}
-              </label>
-              <div className="input-with-reset">
-                <input
-                  type="text"
-                  value={plcAddress}
-                  onChange={handleAddressChange}
-                  onFocus={() => console.log('🎯 Input focused, state:', { plcAddress, isConnected, isConnecting })}
-                  onBlur={() => console.log('🎯 Input blurred')}
-                  placeholder="192.168.0.1:44818"
-                  disabled={isConnected || isConnecting}
-                  className={isConnected || isConnecting ? 'input-disabled' : ''}
-                  title={isConnected ? "Disconnect first to change address" : "Enter PLC IP address and port"}
-                  key={`plc-address-input-${componentKey}`}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <button
-                  type="button"
-                  onClick={() => setPlcAddress('192.168.0.1:44818')}
-                  disabled={isConnected || isConnecting}
-                  className="btn btn-small btn-outline reset-btn"
-                  title="Reset to default address"
-                >
-                  Reset
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPlcAddress('')}
-                  disabled={isConnected || isConnecting}
-                  className="btn btn-small btn-outline clear-btn"
-                  title="Clear address field"
-                >
-                  Clear
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCompleteReset}
-                  className="btn btn-small btn-danger reset-btn"
-                  title="Force complete application reset"
-                >
-                  Force Reset
-                </button>
-              </div>
+            <div className="address-input">
+              <input
+                type="text"
+                value={plcAddress}
+                onChange={handleAddressChange}
+                placeholder="192.168.0.1:44818"
+                disabled={isConnected || isConnecting}
+                className={`plc-address-input ${isConnected || isConnecting ? 'input-disabled' : ''}`}
+                autoComplete="off"
+                spellCheck={false}
+              />
             </div>
-            <div className="button-group">
+            <div className="connection-buttons">
               <button
                 onClick={handleConnect}
                 disabled={isConnected || isConnecting}
-                className="btn btn-primary"
+                className="btn btn-connect"
               >
-                {isConnecting ? <Activity className="spinning" size={16} /> : <Play size={16} />}
                 {isConnecting ? 'Connecting...' : 'Connect'}
               </button>
               <button
                 onClick={handleDisconnect}
                 disabled={!isConnected}
-                className="btn btn-secondary"
+                className="btn btn-disconnect"
               >
-                <Square size={16} />
                 Disconnect
               </button>
             </div>
           </div>
-          
-          {connectionStatus && (
-            <div className="connection-info">
-              <p><strong>Address:</strong> {connectionStatus.address}</p>
-              <p><strong>Status:</strong> {connectionStatus.isConnected ? 'Connected' : 'Disconnected'}</p>
-            </div>
-          )}
-
-          {/* Debug Information */}
-          <div className="debug-info" style={{ 
-            marginTop: '1rem', 
-            padding: '0.5rem', 
-            background: '#f8f9fa', 
-            borderRadius: '4px',
-            fontSize: '0.75rem',
-            fontFamily: 'monospace'
-          }}>
-            <strong>🐛 Debug Info:</strong><br/>
-            • plcAddress: "{plcAddress}" (length: {plcAddress.length})<br/>
-            • isConnected: {isConnected.toString()}<br/>
-            • isConnecting: {isConnecting.toString()}<br/>
-            • inputDisabled: {(isConnected || isConnecting).toString()}
-          </div>
         </section>
 
-        {/* Tag Operations Panel */}
-        <section className="panel tag-panel">
-          <h2><Settings size={20} /> Tag Operations</h2>
-          
-          {/* Tag Discovery */}
-          <div className="tag-section">
-            <h3>🔍 Tag Discovery</h3>
-            <div className="tag-discovery">
-              <div className="input-group">
+        {/* Performance Metrics Section */}
+        <section className="performance-section">
+          <div className="performance-metrics">
+            <div className="metric">
+              <span className="metric-icon">📊</span>
+              <span className="metric-label">Read Rate:</span>
+              <span className="metric-value">{benchmarkResults?.readRate || 0} ops/sec</span>
+            </div>
+            <div className="metric">
+              <span className="metric-icon">📝</span>
+              <span className="metric-label">Write Rate:</span>
+              <span className="metric-value">{benchmarkResults?.writeRate || 0} ops/sec</span>
+            </div>
+          </div>
+          <button
+            onClick={handleRunBenchmark}
+            disabled={!isConnected || isRunningBenchmark}
+            className="btn btn-benchmark"
+          >
+            {isRunningBenchmark ? <Activity className="spinning" size={16} /> : '⚡'}
+            {isRunningBenchmark ? 'Running...' : 'Run Benchmark'}
+          </button>
+        </section>
+
+        {/* Main Content Grid */}
+        <div className="content-grid">
+          {/* Tag Monitoring Panel */}
+          <section className="panel tag-monitoring-panel">
+            <h2>📊 Tag Monitoring</h2>
+            
+            {/* Tag Discovery */}
+            <div className="tag-discovery-section">
+              <div className="discovery-controls">
                 <input
                   type="text"
                   value={tagToDiscover}
                   onChange={(e) => setTagToDiscover(e.target.value)}
-                  placeholder="Enter tag name to discover"
+                  placeholder="Enter tag name"
                   disabled={!isConnected}
+                  className="tag-input"
                 />
                 <button
                   onClick={handleDiscoverTag}
                   disabled={!isConnected || isDiscovering}
-                  className="btn btn-primary"
+                  className="btn btn-discover"
                 >
-                  {isDiscovering ? <Activity className="spinning" size={16} /> : <Search size={16} />}
-                  Discover
+                  {isDiscovering ? <Activity className="spinning" size={16} /> : 'Discover Tag'}
                 </button>
               </div>
-              
-              <div className="tag-examples">
-                <p><strong>Advanced Tag Examples:</strong></p>
-                <div className="example-tags">
-                  {ADVANCED_TAG_EXAMPLES.slice(0, 5).map((example, index) => (
-                    <button
-                      key={index}
-                      onClick={() => setTagToDiscover(example)}
-                      className="btn btn-outline btn-small"
-                      disabled={!isConnected}
-                    >
-                      {example}
-                    </button>
-                  ))}
-                </div>
-              </div>
             </div>
-          </div>
 
-          {/* Tag Read/Write */}
-          {selectedTag && (
-            <div className="tag-section">
-              <h3>📖 Tag Operations</h3>
-              <div className="tag-operations">
-                <div className="tag-info">
-                  <p><strong>Tag:</strong> {selectedTag.name}</p>
-                  <p><strong>Type:</strong> {selectedTag.type}</p>
-                  <p><strong>Last Updated:</strong> {selectedTag.lastUpdated}</p>
-                </div>
-                
+            {/* Tag Operations */}
+            {selectedTag && (
+              <div className="tag-operations-section">
                 <div className="tag-controls">
-                  <div className="input-group">
-                    <label>Data Type:</label>
+                  <div className="tag-input-row">
+                    <input
+                      type="text"
+                      value={selectedTag.name}
+                      disabled
+                      className="tag-name-input"
+                    />
                     <select
                       value={selectedDataType}
                       onChange={(e) => setSelectedDataType(e.target.value as PlcDataType)}
                       disabled={!isConnected}
+                      className="data-type-select"
                     >
                       {Object.entries(DATA_TYPE_INFO).map(([type, info]) => (
                         <option key={type} value={type}>
-                          {type} - {info.description}
+                          {type}
                         </option>
                       ))}
                     </select>
-                  </div>
-                  
-                  <div className="input-group">
-                    <label>Value:</label>
                     <input
                       type="text"
                       value={tagValue}
                       onChange={(e) => setTagValue(e.target.value)}
-                      placeholder="Enter value"
+                      placeholder="Value"
                       disabled={!isConnected}
+                      className="tag-value-input"
                     />
                   </div>
-                  
-                  <div className="button-group">
+                  <div className="tag-action-buttons">
                     <button
                       onClick={handleReadTag}
                       disabled={!isConnected || isReading}
-                      className="btn btn-success"
+                      className="btn btn-read"
                     >
-                      {isReading ? <Activity className="spinning" size={16} /> : <Database size={16} />}
-                      Read
+                      {isReading ? <Activity className="spinning" size={16} /> : 'Read'}
                     </button>
                     <button
                       onClick={handleWriteTag}
                       disabled={!isConnected || isWriting}
-                      className="btn btn-warning"
+                      className="btn btn-write"
                     >
-                      {isWriting ? <Activity className="spinning" size={16} /> : <Zap size={16} />}
-                      Write
-                    </button>
-                    <button
-                      onClick={addTagToMonitoring}
-                      disabled={!isConnected}
-                      className="btn btn-info"
-                    >
-                      <BarChart3 size={16} />
-                      Monitor
+                      {isWriting ? <Activity className="spinning" size={16} /> : 'Write'}
                     </button>
                   </div>
                 </div>
-              </div>
-            </div>
-          )}
-        </section>
-
-        {/* Performance Panel */}
-        <section className="panel performance-panel">
-          <h2><BarChart3 size={20} /> Performance</h2>
-          <div className="performance-controls">
-            <div className="input-group">
-              <label>Test Tag (optional):</label>
-              <input
-                type="text"
-                value={benchmarkTestTag}
-                onChange={(e) => setBenchmarkTestTag(e.target.value)}
-                placeholder="Leave empty to use selected tag or TestTag"
-                disabled={!isConnected || isRunningBenchmark}
-              />
-              <small style={{ color: '#718096', fontSize: '0.75rem' }}>
-                💡 Use a tag that exists in your PLC for accurate results
-              </small>
-            </div>
-            
-            <div className="input-group">
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <input
-                  type="checkbox"
-                  checked={benchmarkTestWrites}
-                  onChange={(e) => setBenchmarkTestWrites(e.target.checked)}
-                  disabled={!isConnected || isRunningBenchmark}
-                />
-                Test write operations (requires writable tag)
-              </label>
-            </div>
-            
-            <button
-              onClick={handleRunBenchmark}
-              disabled={!isConnected || isRunningBenchmark}
-              className="btn btn-primary"
-            >
-              {isRunningBenchmark ? <Activity className="spinning" size={16} /> : <Zap size={16} />}
-              {isRunningBenchmark ? 'Running Benchmark...' : 'Run Benchmark'}
-            </button>
-            
-            {benchmarkResults && (
-              <div className="benchmark-results">
-                <div className="metric">
-                  <span className="metric-label">📊 Read Rate:</span>
-                  <span className="metric-value">{benchmarkResults.readRate} ops/sec</span>
-                </div>
-                {benchmarkTestWrites && (
-                  <div className="metric">
-                    <span className="metric-label">📝 Write Rate:</span>
-                    <span className="metric-value">{benchmarkResults.writeRate} ops/sec</span>
-                  </div>
-                )}
               </div>
             )}
-          </div>
-        </section>
 
-        {/* Tag Monitoring Panel */}
-        {monitoredTags.length > 0 && (
-          <section className="panel monitoring-panel">
-            <h2><Activity size={20} /> Tag Monitoring</h2>
-            <div className="monitoring-controls">
-              <button
-                onClick={() => setIsMonitoring(!isMonitoring)}
-                disabled={!isConnected}
-                className={`btn ${isMonitoring ? 'btn-warning' : 'btn-success'}`}
-              >
-                {isMonitoring ? 'Stop Monitoring' : 'Start Monitoring'}
-              </button>
-            </div>
-            
-            <div className="monitored-tags">
-              {monitoredTags.map((tag, index) => (
-                <div key={index} className={`tag-monitor ${tag.hasError ? 'error' : ''}`}>
-                  <div className="tag-monitor-header">
-                    <span className="tag-name">{tag.name}</span>
-                    <span className="tag-type">{tag.type}</span>
-                    <button
-                      onClick={() => removeTagFromMonitoring(tag.name)}
-                      className="btn btn-small btn-danger"
-                    >
-                      ×
-                    </button>
-                  </div>
-                  <div className="tag-monitor-value">
-                    {tag.hasError ? (
-                      <span className="error-text">{tag.errorMessage}</span>
-                    ) : (
-                      <span className="value-text">{String(tag.value)}</span>
-                    )}
-                  </div>
-                  <div className="tag-monitor-time">
-                    <Clock size={12} />
-                    {tag.lastUpdated}
-                  </div>
-                </div>
-              ))}
+            {/* Tag Table */}
+            <div className="tag-table-section">
+              <table className="tag-table">
+                <thead>
+                  <tr>
+                    <th>Tag Name</th>
+                    <th>Value</th>
+                    <th>Type</th>
+                    <th>Updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {monitoredTags.map((tag, index) => (
+                    <tr key={index} className={tag.hasError ? 'error-row' : ''}>
+                      <td>{tag.name}</td>
+                      <td>
+                        {tag.hasError ? (
+                          <span className="error-text">{tag.errorMessage}</span>
+                        ) : (
+                          <span className="value-text">{String(tag.value)}</span>
+                        )}
+                      </td>
+                      <td>{tag.type}</td>
+                      <td className="timestamp">{tag.lastUpdated}</td>
+                    </tr>
+                  ))}
+                  {monitoredTags.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="no-tags">
+                        No tags being monitored. Discover and read tags to populate this table.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </section>
-        )}
 
-        {/* Log Panel */}
-        <section className="panel log-panel">
-          <h2><Activity size={20} /> Activity Log</h2>
-          <div className="log-container">
-            {logs.map((log) => (
-              <div key={log.id} className={`log-entry log-${log.level}`}>
-                <span className="log-timestamp">[{log.timestamp}]</span>
-                <span className="log-message">{log.message}</span>
-              </div>
-            ))}
-          </div>
-        </section>
+          {/* Activity Log Panel */}
+          <section className="panel activity-log-panel">
+            <h2>📋 Activity Log</h2>
+            <div className="log-container">
+              {logs.map((log) => (
+                <div key={log.id} className={`log-entry log-${log.level}`}>
+                  <span className="log-timestamp">[{log.timestamp}]</span>
+                  <span className="log-level-icon">
+                    {log.level === 'success' && '✅'}
+                    {log.level === 'info' && '📘'}
+                    {log.level === 'warning' && '⚠️'}
+                    {log.level === 'error' && '❌'}
+                  </span>
+                  <span className="log-message">{log.message}</span>
+                </div>
+              ))}
+              {logs.length === 0 && (
+                <div className="no-logs">
+                  Activity will be logged here when you interact with the PLC.
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
       </main>
     </div>
   );
