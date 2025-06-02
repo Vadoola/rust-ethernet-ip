@@ -279,7 +279,7 @@ cargo run --example data_types_showcase
 
 ## 🤝 **Community & Support**
 
-- **[Discord Server](https://discord.gg/rust-ethernet-ip)** - Community discussions, support, and development updates
+- **[Discord Server](https://discord.gg/uzaM3tua)** - Community discussions, support, and development updates
 - **[GitHub Issues](https://github.com/sergiogallegos/rust-ethernet-ip/issues)** - Bug reports and feature requests
 - **[GitHub Discussions](https://github.com/sergiogallegos/rust-ethernet-ip/discussions)** - General questions and ideas
 
