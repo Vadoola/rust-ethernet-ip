@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   plcApi, 
   type PlcTag, 
@@ -72,17 +72,21 @@ function App() {
 
   // Add a key to force component remount when needed
   const [componentKey, setComponentKey] = useState(0);
+  
+  // Counter for unique log IDs - use useRef to avoid stale closure issues
+  const logCounterRef = useRef(0);
 
   // Add log entry
   const addLog = useCallback((level: LogEntry['level'], message: string) => {
     const logEntry: LogEntry = {
-      id: Date.now().toString(),
+      id: `${Date.now()}-${logCounterRef.current}`, // Use timestamp + counter for guaranteed uniqueness
       timestamp: new Date().toLocaleTimeString(),
       level,
       message
     };
     setLogs(prev => [logEntry, ...prev.slice(0, 99)]); // Keep last 100 logs
-  }, []);
+    logCounterRef.current += 1; // Increment counter for next log
+  }, []); // Empty dependency array since we're using ref
 
   // Connect to PLC
   const handleConnect = async () => {
@@ -746,8 +750,8 @@ function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {monitoredTags.map((tag, index) => (
-                    <tr key={index} className={tag.hasError ? 'error-row' : ''}>
+                  {monitoredTags.map((tag) => (
+                    <tr key={tag.name} className={tag.hasError ? 'error-row' : ''}>
                       <td>{tag.name}</td>
                       <td>
                         {tag.hasError ? (
