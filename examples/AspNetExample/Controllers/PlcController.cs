@@ -267,26 +267,78 @@ public class PlcController : ControllerBase
             var writeCount = 0;
             var readErrors = 0;
             var writeErrors = 0;
-
-            // Test if tag exists first
+            string detectedType = "UNKNOWN";
             bool tagExists = false;
-            try 
-            { 
-                _plcService.ReadBool(testTag); 
-                tagExists = true;
-                _logger.LogInformation("Test tag {TestTag} exists and is readable", testTag);
-            } 
-            catch (Exception ex)
+
+            // First, detect the tag's actual data type
+            var typeAttempts = new List<(string Type, Func<object> ReadFunc, Action<object> WriteFunc)>
             {
-                _logger.LogWarning("Test tag {TestTag} cannot be read as BOOL: {Error}. Benchmark may show 0 ops/sec.", testTag, ex.Message);
+                ("BOOL", () => _plcService.ReadBool(testTag), (val) => _plcService.WriteBool(testTag, (bool)val)),
+                ("DINT", () => _plcService.ReadDint(testTag), (val) => _plcService.WriteDint(testTag, (int)val)),
+                ("REAL", () => _plcService.ReadReal(testTag), (val) => _plcService.WriteReal(testTag, (float)val)),
+                ("INT", () => _plcService.ReadInt(testTag), (val) => _plcService.WriteInt(testTag, (short)val)),
+                ("STRING", () => _plcService.ReadString(testTag), (val) => _plcService.WriteString(testTag, (string)val)),
+                ("LREAL", () => _plcService.ReadLreal(testTag), (val) => _plcService.WriteLreal(testTag, (double)val)),
+                ("SINT", () => _plcService.ReadSint(testTag), (val) => _plcService.WriteSint(testTag, (sbyte)val)),
+                ("USINT", () => _plcService.ReadUsint(testTag), (val) => _plcService.WriteUsint(testTag, (byte)val)),
+                ("UINT", () => _plcService.ReadUint(testTag), (val) => _plcService.WriteUint(testTag, (ushort)val)),
+                ("UDINT", () => _plcService.ReadUdint(testTag), (val) => _plcService.WriteUdint(testTag, (uint)val)),
+                ("LINT", () => _plcService.ReadLint(testTag), (val) => _plcService.WriteLint(testTag, (long)val)),
+                ("ULINT", () => _plcService.ReadUlint(testTag), (val) => _plcService.WriteUlint(testTag, (ulong)val))
+            };
+
+            Func<object> readFunction = null;
+            Action<object> writeFunction = null;
+            object testValue = null;
+
+            // Detect the correct data type
+            foreach (var (type, readFunc, writeFunc) in typeAttempts)
+            {
+                try
+                {
+                    var value = readFunc();
+                    detectedType = type;
+                    readFunction = readFunc;
+                    writeFunction = writeFunc;
+                    testValue = GetTestValue(type, value);
+                    tagExists = true;
+                    _logger.LogInformation("Detected tag {TestTag} as type {Type} with value: {Value}", testTag, type, value);
+                    break;
+                }
+                catch
+                {
+                    // Continue to next type
+                }
             }
 
+            if (!tagExists)
+            {
+                _logger.LogWarning("Tag {TestTag} does not exist or is not readable", testTag);
+                return Ok(new { 
+                    success = false, 
+                    readRate = 0, 
+                    writeRate = 0, 
+                    message = $"Tag '{testTag}' does not exist or is not accessible",
+                    details = new {
+                        testTag,
+                        durationSeconds = 0.0,
+                        readCount = 0,
+                        writeCount = 0,
+                        readErrors = 0,
+                        writeErrors = 0,
+                        tagExists = false,
+                        detectedType = "UNKNOWN"
+                    }
+                });
+            }
+
+            // Run the benchmark with the detected type
             while ((DateTime.Now - startTime).TotalSeconds < durationSeconds)
             {
                 // Test reads
                 try 
                 { 
-                    _plcService.ReadBool(testTag); 
+                    readFunction();
                     readCount++; 
                 } 
                 catch 
@@ -294,13 +346,18 @@ public class PlcController : ControllerBase
                     readErrors++; 
                 }
 
-                // Test writes (only if enabled and tag exists)
-                if (testWrites)
+                // Test writes (only if enabled)
+                if (testWrites && writeFunction != null)
                 {
                     try 
                     { 
-                        _plcService.WriteBool(testTag, readCount % 2 == 0); 
+                        writeFunction(testValue);
                         writeCount++; 
+                        // Alternate test values for some types
+                        if (detectedType == "BOOL")
+                            testValue = !(bool)testValue;
+                        else if (detectedType == "DINT")
+                            testValue = ((int)testValue == 100) ? 200 : 100;
                     } 
                     catch 
                     { 
@@ -313,15 +370,13 @@ public class PlcController : ControllerBase
             var readRate = (int)(readCount / actualDuration);
             var writeRate = (int)(writeCount / actualDuration);
 
-            _logger.LogInformation("Benchmark complete. Reads: {ReadCount} ({ReadRate}/sec), Writes: {WriteCount} ({WriteRate}/sec), Read Errors: {ReadErrors}, Write Errors: {WriteErrors}", 
-                readCount, readRate, writeCount, writeRate, readErrors, writeErrors);
+            _logger.LogInformation("Benchmark complete. Type: {Type}, Reads: {ReadCount} ({ReadRate}/sec), Writes: {WriteCount} ({WriteRate}/sec), Read Errors: {ReadErrors}, Write Errors: {WriteErrors}", 
+                detectedType, readCount, readRate, writeCount, writeRate, readErrors, writeErrors);
 
             var message = $"Benchmark complete: {readRate} reads/sec";
             if (testWrites)
                 message += $", {writeRate} writes/sec";
-            
-            if (!tagExists)
-                message += $" (Warning: Test tag '{testTag}' may not exist - try using a real tag name)";
+            message += $" (Type: {detectedType})";
 
             return Ok(new { 
                 success = true, 
@@ -335,7 +390,8 @@ public class PlcController : ControllerBase
                     writeCount,
                     readErrors,
                     writeErrors,
-                    tagExists
+                    tagExists = true,
+                    detectedType
                 }
             });
         }
@@ -344,6 +400,26 @@ public class PlcController : ControllerBase
             _logger.LogError(ex, "Error running benchmark");
             return StatusCode(500, new { success = false, message = ex.Message });
         }
+    }
+
+    private object GetTestValue(string type, object currentValue)
+    {
+        return type switch
+        {
+            "BOOL" => true,
+            "SINT" => (sbyte)10,
+            "INT" => (short)100,
+            "DINT" => 1000,
+            "LINT" => 10000L,
+            "USINT" => (byte)10,
+            "UINT" => (ushort)100,
+            "UDINT" => 1000U,
+            "ULINT" => 10000UL,
+            "REAL" => 123.45f,
+            "LREAL" => 123.45,
+            "STRING" => "TEST",
+            _ => currentValue
+        };
     }
 
     [HttpGet("status")]

@@ -244,6 +244,13 @@ function App() {
         setSelectedTag(tag);
         setTagValue(String(tag.value));
         setSelectedDataType(tag.type);
+        
+        // Auto-populate benchmark test tag if not already set
+        if (!benchmarkTestTag.trim()) {
+          setBenchmarkTestTag(tag.name);
+          addLog('info', `🎯 Set "${tag.name}" as benchmark test tag`);
+        }
+        
         addLog('success', `✅ Discovered ${tag.type} tag: ${tag.name} = ${tag.value}`);
         addLog('info', `🎯 Data type: ${tag.type}, Value: ${tag.value}`);
       } else {
@@ -417,16 +424,19 @@ function App() {
     const testTag = benchmarkTestTag.trim() || selectedTag?.name || '';
     
     if (!testTag) {
-      addLog('warning', '⚠️ No test tag specified. Using default "TestTag" which may not exist.');
+      addLog('warning', '⚠️ No test tag specified. Please discover a tag first or enter a tag name.');
       addLog('info', '💡 Tip: First discover a tag, then run benchmark for better results');
-    } else {
-      addLog('info', `📊 Running benchmark with tag: ${testTag}`);
+      setIsRunningBenchmark(false);
+      return;
     }
-    
+
+    addLog('info', `📊 Running benchmark with tag: "${testTag}"`);
     addLog('info', `🔧 Test writes: ${benchmarkTestWrites ? 'enabled' : 'disabled'}`);
+    addLog('info', `⏱️ Duration: 5 seconds`);
+    addLog('info', `🔍 Auto-detecting data type for optimal performance...`);
 
     try {
-      const result = await plcApi.runBenchmark(testTag || undefined, benchmarkTestWrites, 5);
+      const result = await plcApi.runBenchmark(testTag, benchmarkTestWrites, 5);
       console.log('📊 Benchmark result:', result);
       
       if (result.success) {
@@ -438,21 +448,46 @@ function App() {
         
         // Log additional details if available
         if (result.details) {
-          addLog('info', `📈 Details: ${result.details.readCount} reads, ${result.details.writeCount} writes in ${result.details.durationSeconds.toFixed(1)}s`);
+          addLog('info', `📈 Performance: ${result.details.readCount} reads, ${result.details.writeCount} writes in ${result.details.durationSeconds.toFixed(1)}s`);
+          addLog('info', `🎯 Data type detected: ${result.details.detectedType}`);
+          
           if (result.details.readErrors > 0 || result.details.writeErrors > 0) {
             addLog('warning', `⚠️ Errors: ${result.details.readErrors} read errors, ${result.details.writeErrors} write errors`);
           }
-          if (!result.details.tagExists) {
-            addLog('warning', `⚠️ Test tag "${result.details.testTag}" may not exist in PLC`);
-            addLog('info', '💡 Try using a tag name that exists in your PLC for accurate results');
+          
+          if (result.details.tagExists) {
+            addLog('success', `✅ Tag "${result.details.testTag}" exists and is accessible as ${result.details.detectedType}`);
+          }
+          
+          // Specific guidance for 0 ops/sec scenarios
+          if (result.readRate === 0) {
+            addLog('warning', '⚠️ 0 reads/sec indicates a problem:');
+            addLog('info', '   • Tag may not exist in PLC');
+            addLog('info', '   • Network/connection issues');
+            addLog('info', '   • Tag access permissions problem');
+            addLog('info', '💡 Try manually reading this tag first to verify it works');
+          }
+          
+          if (benchmarkTestWrites && result.writeRate === 0 && result.readRate > 0) {
+            addLog('warning', '⚠️ 0 writes/sec but reads work - possible causes:');
+            addLog('info', '   • Tag is read-only');
+            addLog('info', '   • Insufficient write permissions');
+            addLog('info', '   • PLC program logic preventing writes');
+            addLog('info', '💡 Try manually writing to this tag to test writability');
           }
         }
       } else {
         addLog('error', `❌ Benchmark error: ${result.message}`);
+        if (result.details && !result.details.tagExists) {
+          addLog('info', `🔍 Tag "${testTag}" was not found in any supported data type`);
+          addLog('info', '💡 Common tag names: Motor.Speed, Program:Main.Status, MyTag');
+          addLog('info', '🔧 Check PLC program for exact tag names and spellings');
+        }
       }
     } catch (error) {
       console.error('📊 Benchmark error:', error);
       addLog('error', `❌ Benchmark error: ${error}`);
+      addLog('info', '🔧 This usually indicates a backend communication problem');
     } finally {
       setIsRunningBenchmark(false);
     }
@@ -649,14 +684,40 @@ function App() {
               <span className="metric-value">{benchmarkResults?.writeRate || 0} ops/sec</span>
             </div>
           </div>
-          <button
-            onClick={handleRunBenchmark}
-            disabled={!isConnected || isRunningBenchmark}
-            className="btn btn-benchmark"
-          >
-            {isRunningBenchmark ? <Activity className="spinning" size={16} /> : '⚡'}
-            {isRunningBenchmark ? 'Running...' : 'Run Benchmark'}
-          </button>
+          
+          {/* Benchmark Configuration */}
+          <div className="benchmark-config">
+            <div className="benchmark-settings">
+              <input
+                type="text"
+                value={benchmarkTestTag}
+                onChange={(e) => setBenchmarkTestTag(e.target.value)}
+                placeholder={selectedTag?.name || "Enter test tag name"}
+                disabled={!isConnected || isRunningBenchmark}
+                className="benchmark-tag-input"
+              />
+              <label className={`benchmark-checkbox ${benchmarkTestWrites ? 'checkbox-enabled' : 'checkbox-disabled'}`}>
+                <input
+                  type="checkbox"
+                  checked={benchmarkTestWrites}
+                  onChange={(e) => setBenchmarkTestWrites(e.target.checked)}
+                  disabled={!isConnected || isRunningBenchmark}
+                />
+                <span className="checkbox-text">
+                  <strong>Include writes</strong> 
+                  <small>{benchmarkTestWrites ? ' (enabled)' : ' (disabled)'}</small>
+                </span>
+              </label>
+            </div>
+            <button
+              onClick={handleRunBenchmark}
+              disabled={!isConnected || isRunningBenchmark}
+              className="btn btn-benchmark"
+            >
+              {isRunningBenchmark ? <Activity className="spinning" size={16} /> : '⚡'}
+              {isRunningBenchmark ? 'Running...' : `Run Benchmark ${benchmarkTestWrites ? '(R+W)' : '(R)'}`}
+            </button>
+          </div>
         </section>
 
         {/* Main Content Grid */}

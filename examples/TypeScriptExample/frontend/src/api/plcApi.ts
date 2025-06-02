@@ -67,6 +67,7 @@ export interface BenchmarkResponse {
     readErrors: number;
     writeErrors: number;
     tagExists: boolean;
+    detectedType: string;
   };
 }
 
