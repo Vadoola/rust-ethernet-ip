@@ -59,6 +59,15 @@ export interface BenchmarkResponse {
   readRate: number;
   writeRate: number;
   message: string;
+  details?: {
+    testTag: string;
+    durationSeconds: number;
+    readCount: number;
+    writeCount: number;
+    readErrors: number;
+    writeErrors: number;
+    tagExists: boolean;
+  };
 }
 
 export interface PlcStatus {
@@ -167,10 +176,15 @@ export class PlcApiClient {
   /**
    * Run performance benchmark
    */
-  async runBenchmark(): Promise<BenchmarkResponse> {
+  async runBenchmark(testTag?: string, testWrites: boolean = false, durationSeconds: number = 5): Promise<BenchmarkResponse> {
     try {
-      const response: AxiosResponse<BenchmarkResponse> = await apiClient.post('/plc/benchmark');
-      return response.data;
+      const requestBody = testTag ? {
+        testTag,
+        testWrites,
+        durationSeconds
+      } : undefined;
+
+      return await this.makeRequest<BenchmarkResponse>('post', '/plc/benchmark', requestBody);
     } catch (error) {
       return this.handleError(error, 'Failed to run benchmark') as BenchmarkResponse;
     }

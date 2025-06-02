@@ -68,6 +68,8 @@ function App() {
   // Performance monitoring
   const [benchmarkResults, setBenchmarkResults] = useState<{ readRate: number; writeRate: number } | null>(null);
   const [isRunningBenchmark, setIsRunningBenchmark] = useState(false);
+  const [benchmarkTestTag, setBenchmarkTestTag] = useState('');
+  const [benchmarkTestWrites, setBenchmarkTestWrites] = useState(false);
 
   // Tag monitoring
   const [monitoredTags, setMonitoredTags] = useState<PlcTag[]>([]);
@@ -313,20 +315,46 @@ function App() {
   // Run benchmark
   const handleRunBenchmark = async () => {
     setIsRunningBenchmark(true);
-    addLog('info', '📊 Running performance benchmark...');
+    
+    // Use selected tag if available, otherwise ask user to specify
+    const testTag = benchmarkTestTag.trim() || selectedTag?.name || '';
+    
+    if (!testTag) {
+      addLog('warning', '⚠️ No test tag specified. Using default "TestTag" which may not exist.');
+      addLog('info', '💡 Tip: First discover a tag, then run benchmark for better results');
+    } else {
+      addLog('info', `📊 Running benchmark with tag: ${testTag}`);
+    }
+    
+    addLog('info', `🔧 Test writes: ${benchmarkTestWrites ? 'enabled' : 'disabled'}`);
 
     try {
-      const result = await plcApi.runBenchmark();
+      const result = await plcApi.runBenchmark(testTag || undefined, benchmarkTestWrites, 5);
+      console.log('📊 Benchmark result:', result);
+      
       if (result.success) {
         setBenchmarkResults({
           readRate: result.readRate,
           writeRate: result.writeRate
         });
-        addLog('success', `✅ Benchmark complete: ${result.readRate} reads/sec, ${result.writeRate} writes/sec`);
+        addLog('success', `✅ ${result.message}`);
+        
+        // Log additional details if available
+        if (result.details) {
+          addLog('info', `📈 Details: ${result.details.readCount} reads, ${result.details.writeCount} writes in ${result.details.durationSeconds.toFixed(1)}s`);
+          if (result.details.readErrors > 0 || result.details.writeErrors > 0) {
+            addLog('warning', `⚠️ Errors: ${result.details.readErrors} read errors, ${result.details.writeErrors} write errors`);
+          }
+          if (!result.details.tagExists) {
+            addLog('warning', `⚠️ Test tag "${result.details.testTag}" may not exist in PLC`);
+            addLog('info', '💡 Try using a tag name that exists in your PLC for accurate results');
+          }
+        }
       } else {
         addLog('error', `❌ Benchmark error: ${result.message}`);
       }
     } catch (error) {
+      console.error('📊 Benchmark error:', error);
       addLog('error', `❌ Benchmark error: ${error}`);
     } finally {
       setIsRunningBenchmark(false);
@@ -656,6 +684,32 @@ function App() {
         <section className="panel performance-panel">
           <h2><BarChart3 size={20} /> Performance</h2>
           <div className="performance-controls">
+            <div className="input-group">
+              <label>Test Tag (optional):</label>
+              <input
+                type="text"
+                value={benchmarkTestTag}
+                onChange={(e) => setBenchmarkTestTag(e.target.value)}
+                placeholder="Leave empty to use selected tag or TestTag"
+                disabled={!isConnected || isRunningBenchmark}
+              />
+              <small style={{ color: '#718096', fontSize: '0.75rem' }}>
+                💡 Use a tag that exists in your PLC for accurate results
+              </small>
+            </div>
+            
+            <div className="input-group">
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <input
+                  type="checkbox"
+                  checked={benchmarkTestWrites}
+                  onChange={(e) => setBenchmarkTestWrites(e.target.checked)}
+                  disabled={!isConnected || isRunningBenchmark}
+                />
+                Test write operations (requires writable tag)
+              </label>
+            </div>
+            
             <button
               onClick={handleRunBenchmark}
               disabled={!isConnected || isRunningBenchmark}
@@ -671,10 +725,12 @@ function App() {
                   <span className="metric-label">📊 Read Rate:</span>
                   <span className="metric-value">{benchmarkResults.readRate} ops/sec</span>
                 </div>
-                <div className="metric">
-                  <span className="metric-label">📝 Write Rate:</span>
-                  <span className="metric-value">{benchmarkResults.writeRate} ops/sec</span>
-                </div>
+                {benchmarkTestWrites && (
+                  <div className="metric">
+                    <span className="metric-label">📝 Write Rate:</span>
+                    <span className="metric-value">{benchmarkResults.writeRate} ops/sec</span>
+                  </div>
+                )}
               </div>
             )}
           </div>

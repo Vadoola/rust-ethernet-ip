@@ -247,24 +247,97 @@ public class PlcController : ControllerBase
     }
 
     [HttpPost("benchmark")]
-    public IActionResult RunBenchmark()
+    public IActionResult RunBenchmark([FromBody] BenchmarkRequest? request = null)
     {
         if (!_plcService.IsConnected)
             return StatusCode(503, new { success = false, message = "Not connected to PLC" });
+
+        // Use provided test tag or default
+        string testTag = request?.TestTag ?? "TestTag";
+        bool testWrites = request?.TestWrites ?? false;
+        int durationSeconds = Math.Max(1, Math.Min(request?.DurationSeconds ?? 5, 30)); // 1-30 seconds
+
+        _logger.LogInformation("Starting benchmark with tag: {TestTag}, Duration: {Duration}s, TestWrites: {TestWrites}", 
+            testTag, durationSeconds, testWrites);
 
         try
         {
             var startTime = DateTime.Now;
             var readCount = 0;
             var writeCount = 0;
-            while ((DateTime.Now - startTime).TotalSeconds < 5)
+            var readErrors = 0;
+            var writeErrors = 0;
+
+            // Test if tag exists first
+            bool tagExists = false;
+            try 
+            { 
+                _plcService.ReadBool(testTag); 
+                tagExists = true;
+                _logger.LogInformation("Test tag {TestTag} exists and is readable", testTag);
+            } 
+            catch (Exception ex)
             {
-                try { _plcService.ReadBool("TestTag"); readCount++; } catch { }
-                try { _plcService.WriteBool("TestTag", true); writeCount++; } catch { }
+                _logger.LogWarning("Test tag {TestTag} cannot be read as BOOL: {Error}. Benchmark may show 0 ops/sec.", testTag, ex.Message);
             }
-            var readRate = (int)(readCount / 5.0);
-            var writeRate = (int)(writeCount / 5.0);
-            return Ok(new { success = true, readRate, writeRate, message = $"Benchmark complete: {readRate} reads/sec, {writeRate} writes/sec" });
+
+            while ((DateTime.Now - startTime).TotalSeconds < durationSeconds)
+            {
+                // Test reads
+                try 
+                { 
+                    _plcService.ReadBool(testTag); 
+                    readCount++; 
+                } 
+                catch 
+                { 
+                    readErrors++; 
+                }
+
+                // Test writes (only if enabled and tag exists)
+                if (testWrites)
+                {
+                    try 
+                    { 
+                        _plcService.WriteBool(testTag, readCount % 2 == 0); 
+                        writeCount++; 
+                    } 
+                    catch 
+                    { 
+                        writeErrors++; 
+                    }
+                }
+            }
+
+            var actualDuration = (DateTime.Now - startTime).TotalSeconds;
+            var readRate = (int)(readCount / actualDuration);
+            var writeRate = (int)(writeCount / actualDuration);
+
+            _logger.LogInformation("Benchmark complete. Reads: {ReadCount} ({ReadRate}/sec), Writes: {WriteCount} ({WriteRate}/sec), Read Errors: {ReadErrors}, Write Errors: {WriteErrors}", 
+                readCount, readRate, writeCount, writeRate, readErrors, writeErrors);
+
+            var message = $"Benchmark complete: {readRate} reads/sec";
+            if (testWrites)
+                message += $", {writeRate} writes/sec";
+            
+            if (!tagExists)
+                message += $" (Warning: Test tag '{testTag}' may not exist - try using a real tag name)";
+
+            return Ok(new { 
+                success = true, 
+                readRate, 
+                writeRate, 
+                message,
+                details = new {
+                    testTag,
+                    durationSeconds = actualDuration,
+                    readCount,
+                    writeCount,
+                    readErrors,
+                    writeErrors,
+                    tagExists
+                }
+            });
         }
         catch (Exception ex)
         {
@@ -306,4 +379,11 @@ public class WriteTagRequest
 {
     public string Type { get; set; } = string.Empty;
     public object Value { get; set; } = null!;
+}
+
+public class BenchmarkRequest
+{
+    public string TestTag { get; set; } = string.Empty;
+    public bool TestWrites { get; set; } = false;
+    public int DurationSeconds { get; set; } = 5;
 } 
