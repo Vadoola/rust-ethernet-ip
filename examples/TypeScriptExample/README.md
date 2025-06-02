@@ -1,25 +1,204 @@
-# 🦀 Rust EtherNet/IP - TypeScript Example
+# 🦀 Rust EtherNet/IP - TypeScript Dashboard
 
-A modern **React + TypeScript** dashboard demonstrating the complete capabilities of the Rust EtherNet/IP library through a web-based interface.
+A modern web dashboard for communicating with Allen-Bradley PLCs using the Rust EtherNet/IP library. This application provides a React TypeScript frontend that communicates with an ASP.NET Core backend, which in turn uses the Rust library for PLC communication.
+
+## 🚀 Quick Start
+
+### Prerequisites
+- .NET 9.0 SDK
+- Node.js 18+ and npm
+- Rust (for building the library)
+- Allen-Bradley CompactLogix or ControlLogix PLC
+
+### 1. Start the Backend
+```bash
+cd examples/AspNetExample
+dotnet run
+```
+The backend will start on `https://localhost:5001` and `http://localhost:5000`
+
+### 2. Start the Frontend
+```bash
+cd examples/TypeScriptExample/frontend
+npm install
+npm run dev
+```
+The frontend will start on `http://localhost:5173`
+
+### 3. Connect to Your PLC
+1. Open your browser to `http://localhost:5173`
+2. Enter your PLC address (e.g., `192.168.1.100:44818`)
+3. Click "Connect"
+
+## 🔧 Troubleshooting
+
+### Issue: Cannot type in PLC Address field
+**Cause**: The input field is disabled when connected or connecting.
+**Solution**: 
+1. Make sure you see "Disconnected" status in the header
+2. If stuck in "Connected" state, refresh the page
+3. Check browser console for React state debugging logs
+
+### Issue: Connection fails or "Backend API not responding"
+**Possible Causes**:
+1. **Backend not running**: Make sure ASP.NET Core backend is running on port 5000/5001
+2. **CORS issues**: Backend should have CORS configured for localhost
+3. **Port conflicts**: Check if ports 5000/5001 are available
+
+**Solutions**:
+1. **Check backend status**:
+   ```bash
+   curl http://localhost:5000/api/plc/status
+   # or
+   curl https://localhost:5001/api/plc/status
+   ```
+
+2. **Restart backend**:
+   ```bash
+   cd examples/AspNetExample
+   dotnet clean
+   dotnet run
+   ```
+
+3. **Check backend logs**: Look for any errors in the ASP.NET Core console
+
+### Issue: PLC connection fails
+**Possible Causes**:
+1. **Incorrect IP address**: Verify PLC network settings
+2. **Port issues**: Default port is 44818 for EtherNet/IP
+3. **Network connectivity**: Check if you can ping the PLC
+4. **Firewall**: Windows/network firewall blocking connection
+
+**Solutions**:
+1. **Test network connectivity**:
+   ```bash
+   ping 192.168.1.100
+   telnet 192.168.1.100 44818
+   ```
+
+2. **Verify PLC settings**: Check PLC's Ethernet configuration
+
+3. **Try different address format**: `192.168.1.100:44818`
+
+## 🐛 Debug Mode
+
+### Enable Debug Logging
+1. Open browser developer tools (F12)
+2. Go to Console tab
+3. Look for debug messages:
+   - `Connection state changed:` - Shows React state updates
+   - `PLC address changed:` - Shows input field changes
+   - `Address input changed:` - Shows typing in input field
+
+### Backend API Testing
+You can test the backend directly:
+
+```bash
+# Check status
+curl http://localhost:5000/api/plc/status
+
+# Connect to PLC
+curl -X POST http://localhost:5000/api/plc/connect \
+  -H "Content-Type: application/json" \
+  -d '{"address": "192.168.1.100:44818"}'
+
+# Read a tag
+curl http://localhost:5000/api/plc/tag/TestBool
+```
+
+## 📊 Features
+
+### Implemented
+- ✅ PLC Connection Management
+- ✅ Tag Discovery and Type Detection
+- ✅ Read/Write operations for all data types
+- ✅ Real-time tag monitoring
+- ✅ Performance benchmarking
+- ✅ Activity logging
+- ✅ Responsive design
+
+### Data Types Supported
+- BOOL, SINT, INT, DINT, LINT
+- USINT, UINT, UDINT, ULINT  
+- REAL, LREAL, STRING, UDT
 
 ## 🏗️ Architecture
 
-This example showcases the **recommended approach** for integrating the Rust EtherNet/IP library with TypeScript applications:
-
 ```
-┌─────────────────────┐    HTTP/REST    ┌─────────────────────┐    FFI    ┌─────────────────────┐
-│   React Frontend    │ ◄──────────────► │  ASP.NET Core API   │ ◄────────► │   Rust Library      │
-│   (TypeScript)      │                  │   (C# Wrapper)      │            │  (rust-ethernet-ip) │
-└─────────────────────┘                  └─────────────────────┘            └─────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                    React Frontend                      │
+│                 (TypeScript + Vite)                    │
+│                  localhost:5173                        │
+└─────────────────────┬───────────────────────────────────┘
+                      │ HTTP REST API
+┌─────────────────────┴───────────────────────────────────┐
+│                ASP.NET Core Backend                    │
+│                  localhost:5000/5001                   │
+└─────────────────────┬───────────────────────────────────┘
+                      │ C# FFI Bindings
+┌─────────────────────┴───────────────────────────────────┐
+│                 Rust EtherNet/IP Library               │
+│              (rust_ethernet_ip.dll)                    │
+└─────────────────────┬───────────────────────────────────┘
+                      │ TCP/IP EtherNet/IP Protocol
+┌─────────────────────┴───────────────────────────────────┐
+│              Allen-Bradley PLC                         │
+│           (CompactLogix/ControlLogix)                   │
+└─────────────────────────────────────────────────────────┘
 ```
 
-### ✅ **Why This Architecture?**
+## 🚦 Common Workflows
 
-1. **🔒 Type Safety**: Full TypeScript support with comprehensive type definitions
-2. **🌐 Web Standards**: Uses standard HTTP/REST communication
-3. **🔄 Reusable Backend**: Leverages existing ASP.NET Core API
-4. **📱 Cross-Platform**: Runs in any modern browser
-5. **🚀 Scalable**: Easy to add authentication, real-time updates, etc.
+### Reading a Tag
+1. Connect to PLC
+2. Enter tag name in "Tag Discovery" section
+3. Click "Discover" to detect type
+4. Click "Read" to get current value
+
+### Writing a Tag  
+1. Follow steps 1-3 above
+2. Change value in the "Value" field
+3. Select correct data type if needed
+4. Click "Write"
+
+### Monitoring Multiple Tags
+1. Discover and read tags as above
+2. Click "Monitor" to add to monitoring panel
+3. Toggle "Start Monitoring" for real-time updates
+4. Remove tags with the "×" button
+
+## 🔧 Development
+
+### Building from Source
+```bash
+# Build Rust library
+cargo build --release
+
+# Build and run backend
+cd examples/AspNetExample
+dotnet build
+dotnet run
+
+# Build and run frontend
+cd examples/TypeScriptExample/frontend
+npm install
+npm run build
+npm run dev
+```
+
+### Project Structure
+```
+examples/TypeScriptExample/
+├── frontend/                 # React TypeScript frontend
+│   ├── src/
+│   │   ├── api/plcApi.ts    # Backend communication
+│   │   ├── App.tsx          # Main application
+│   │   └── App.css          # Styling
+│   └── package.json
+├── start-backend.bat        # Windows batch script
+├── start-frontend.bat       # Windows batch script
+└── README.md               # This file
+```
 
 ## 🎯 Features Demonstrated
 
@@ -49,158 +228,6 @@ This example showcases the **recommended approach** for integrating the Rust Eth
 - ✅ Real-time monitoring dashboard
 - ✅ Export-ready component architecture
 
-## 🚀 Quick Start
-
-### **Prerequisites**
-- Node.js 18+ and npm
-- .NET 8.0 SDK
-- Rust toolchain
-- Running ASP.NET Core backend
-
-### **1. Start the Backend API**
-```bash
-# From the project root
-cd examples/AspNetExample
-dotnet run
-```
-The API will be available at `http://localhost:5000`
-
-### **2. Install Frontend Dependencies**
-```bash
-cd examples/TypeScriptExample/frontend
-npm install
-```
-
-### **3. Start the Development Server**
-```bash
-npm run dev
-```
-The dashboard will be available at `http://localhost:5173`
-
-### **4. Connect to Your PLC**
-1. Enter your PLC address (e.g., `192.168.0.1:44818`)
-2. Click **Connect**
-3. Start exploring tags and monitoring data!
-
-## 📁 Project Structure
-
-```
-examples/TypeScriptExample/
-├── frontend/                    # React + TypeScript application
-│   ├── src/
-│   │   ├── api/
-│   │   │   └── plcApi.ts       # Type-safe API client
-│   │   ├── App.tsx             # Main dashboard component
-│   │   ├── App.css             # Modern styling
-│   │   └── main.tsx            # Application entry point
-│   ├── package.json            # Dependencies and scripts
-│   └── tsconfig.json           # TypeScript configuration
-└── README.md                   # This file
-```
-
-## 🔧 API Client Features
-
-The `plcApi.ts` module provides a comprehensive TypeScript interface:
-
-```typescript
-// Type-safe data type definitions
-export type PlcDataType = 
-  | 'BOOL' | 'SINT' | 'INT' | 'DINT' | 'LINT'
-  | 'USINT' | 'UINT' | 'UDINT' | 'ULINT'
-  | 'REAL' | 'LREAL' | 'STRING' | 'UDT';
-
-// Comprehensive API methods
-const plcApi = new PlcApiClient();
-
-// Connection management
-await plcApi.connect('192.168.0.1:44818');
-await plcApi.disconnect();
-
-// Tag operations with auto-type detection
-const tag = await plcApi.discoverTag('MotorSpeed');
-const result = await plcApi.readTag('MotorSpeed');
-await plcApi.writeTag('MotorSpeed', 'REAL', 1750.0);
-
-// Parallel operations for performance
-const tags = await plcApi.readMultipleTags(['Tag1', 'Tag2', 'Tag3']);
-await plcApi.writeMultipleTags([
-  { name: 'Motor1', type: 'BOOL', value: true },
-  { name: 'Speed1', type: 'REAL', value: 1750.0 }
-]);
-
-// Performance monitoring
-const benchmark = await plcApi.runBenchmark();
-const status = await plcApi.getStatus();
-```
-
-## 🎨 UI Components
-
-### **Connection Panel**
-- PLC address input with validation
-- Connect/disconnect controls
-- Real-time connection status
-- Session information display
-
-### **Tag Discovery**
-- Interactive tag name input
-- One-click advanced tag examples
-- Automatic type detection
-- Comprehensive error feedback
-
-### **Tag Operations**
-- Read/write operations with type validation
-- Data type selector with descriptions
-- Value input with format validation
-- Add to monitoring functionality
-
-### **Performance Monitoring**
-- Real-time benchmark execution
-- Read/write rate metrics
-- Visual performance indicators
-- Historical performance tracking
-
-### **Tag Monitoring Dashboard**
-- Live tag value updates
-- Error state visualization
-- Start/stop monitoring controls
-- Individual tag management
-
-### **Activity Log**
-- Real-time operation logging
-- Color-coded message levels
-- Timestamp tracking
-- Scrollable history (last 100 entries)
-
-## 🔍 Advanced Tag Examples
-
-The dashboard includes interactive examples for advanced tag addressing:
-
-```typescript
-// Program-scoped tags
-'Program:MainProgram.Motor.Status'
-'Program:Safety.EmergencyStop'
-
-// Array operations
-'DataArray[5]'
-'SensorReadings[10]'
-'Program:Vision.ImageData[10,20,3]'
-
-// Bit-level access
-'StatusWord.15'
-'Program:IO.InputBank.7'
-
-// UDT member access
-'MotorData.Speed'
-'Recipe.Step1.Temperature.Setpoint'
-
-// String operations
-'ProductName.LEN'
-'ProductName.DATA[5]'
-
-// Complex nested paths
-'Program:Production.Lines[2].Stations[5].Motor.Status.15'
-```
-
 ## 🎯 Data Type Support
 
 Complete support for all Allen-Bradley data types with TypeScript type safety:
@@ -228,85 +255,6 @@ Complete support for all Allen-Bradley data types with TypeScript type safety:
 - **Benchmark Testing**: Automated performance measurement
 - **Connection Pooling**: Efficient resource management (via backend)
 - **Error Recovery**: Automatic reconnection and error handling
-
-## 🔧 Development
-
-### **Available Scripts**
-```bash
-npm run dev          # Start development server
-npm run build        # Build for production
-npm run preview      # Preview production build
-npm run lint         # Run TypeScript linter
-```
-
-### **Customization**
-The dashboard is built with modularity in mind:
-
-- **API Client**: Extend `plcApi.ts` for additional endpoints
-- **Components**: Add new panels to `App.tsx`
-- **Styling**: Modify `App.css` for custom themes
-- **Types**: Extend interfaces in `plcApi.ts` for new features
-
-## 🌟 Production Considerations
-
-### **Security**
-- Add authentication to the ASP.NET Core backend
-- Implement HTTPS for production deployment
-- Add input validation and sanitization
-- Consider rate limiting for API endpoints
-
-### **Scalability**
-- Implement WebSocket connections for real-time updates
-- Add Redis caching for tag values
-- Use connection pooling for multiple PLCs
-- Add horizontal scaling with load balancers
-
-### **Monitoring**
-- Add application performance monitoring (APM)
-- Implement structured logging
-- Add health checks and metrics
-- Monitor PLC connection status
-
-## 🤝 Integration Examples
-
-### **Adding New Features**
-```typescript
-// Extend the API client
-class ExtendedPlcApiClient extends PlcApiClient {
-  async getTagHistory(tagName: string, hours: number) {
-    // Implementation for historical data
-  }
-  
-  async subscribeToTag(tagName: string, callback: (value: any) => void) {
-    // Implementation for real-time subscriptions
-  }
-}
-
-// Add new React components
-const TagHistoryChart = ({ tagName }: { tagName: string }) => {
-  // Chart component implementation
-};
-```
-
-### **Custom Data Types**
-```typescript
-// Define custom interfaces
-interface MotorStatus {
-  running: boolean;
-  speed: number;
-  current: number;
-  faults: number;
-}
-
-// Type-safe tag operations
-const motorStatus = await plcApi.readTag('Motor1') as MotorStatus;
-```
-
-## 📚 Related Examples
-
-- **[ASP.NET Core Example](../AspNetExample/)** - Backend API implementation
-- **[WPF Example](../WpfExample/)** - Desktop application
-- **[WinForms Example](../WinFormsExample/)** - Windows Forms application
 
 ## 🎯 Next Steps
 

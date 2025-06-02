@@ -1,7 +1,10 @@
 import axios, { type AxiosResponse } from 'axios';
 
-// Base URL for the ASP.NET Core API
-const API_BASE_URL = 'http://localhost:5000/api';
+// Base URL for the ASP.NET Core API - try both HTTP and HTTPS
+const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const API_BASE_URL = isDevelopment 
+  ? 'http://localhost:5000/api'  // Use HTTP since backend only listens on HTTP
+  : 'http://localhost:5000/api';
 
 // Create axios instance with default config
 const apiClient = axios.create({
@@ -75,15 +78,49 @@ export interface StatusResponse {
  */
 export class PlcApiClient {
   
+  private async makeRequest<T>(method: 'get' | 'post', url: string, data?: any): Promise<T> {
+    // Try the configured URL first
+    try {
+      const response = await apiClient.request<T>({
+        method,
+        url,
+        data,
+      });
+      return response.data;
+    } catch (error) {
+      // If using HTTPS fails, try HTTP as fallback
+      if (API_BASE_URL.includes('https://')) {
+        try {
+          const httpUrl = API_BASE_URL.replace('https://', 'http://').replace(':5001', ':5000');
+          const httpClient = axios.create({
+            baseURL: httpUrl,
+            timeout: 10000,
+            headers: { 'Content-Type': 'application/json' },
+          });
+          
+          const response = await httpClient.request<T>({
+            method,
+            url,
+            data,
+          });
+          return response.data;
+        } catch (httpError) {
+          // If both fail, throw the original HTTPS error
+          throw error;
+        }
+      }
+      throw error;
+    }
+  }
+  
   /**
    * Connect to a PLC
    */
   async connect(address: string): Promise<ApiResponse> {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.post('/plc/connect', {
+      return await this.makeRequest<ApiResponse>('post', '/plc/connect', {
         address
       } as ConnectionRequest);
-      return response.data;
     } catch (error) {
       return this.handleError(error, 'Failed to connect to PLC');
     }
@@ -94,8 +131,7 @@ export class PlcApiClient {
    */
   async disconnect(): Promise<ApiResponse> {
     try {
-      const response: AxiosResponse<ApiResponse> = await apiClient.post('/plc/disconnect');
-      return response.data;
+      return await this.makeRequest<ApiResponse>('post', '/plc/disconnect');
     } catch (error) {
       return this.handleError(error, 'Failed to disconnect from PLC');
     }

@@ -154,6 +154,13 @@ body {
   font-size: 0.875rem;
 }
 
+.input-disabled-note {
+  color: #a0aec0;
+  font-weight: 400;
+  font-size: 0.75rem;
+  font-style: italic;
+}
+
 .input-group input,
 .input-group select {
   padding: 0.75rem;
@@ -162,6 +169,7 @@ body {
   font-size: 0.875rem;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
   background: white;
+  color: #2d3748 !important;
 }
 
 .input-group input:focus,
@@ -169,13 +177,65 @@ body {
   outline: none;
   border-color: #667eea;
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  color: #2d3748 !important;
 }
 
 .input-group input:disabled,
 .input-group select:disabled {
   background: #f7fafc;
-  color: #a0aec0;
+  color: #a0aec0 !important;
   cursor: not-allowed;
+  border-color: #e2e8f0;
+}
+
+.input-disabled {
+  background: #f7fafc !important;
+  color: #a0aec0 !important;
+  cursor: not-allowed !important;
+}
+
+/* Ensure all input fields have visible text */
+input[type="text"], 
+textarea, 
+select {
+  color: #2d3748 !important;
+  background: white !important;
+}
+
+input[type="text"]:disabled, 
+textarea:disabled, 
+select:disabled {
+  color: #718096 !important;
+  background: #f7fafc !important;
+}
+
+/* Fix placeholder text visibility */
+input::placeholder,
+textarea::placeholder {
+  color: #a0aec0 !important;
+  opacity: 1 !important;
+}
+
+input:disabled::placeholder,
+textarea:disabled::placeholder {
+  color: #cbd5e0 !important;
+  opacity: 1 !important;
+}
+
+.input-with-reset {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.input-with-reset input {
+  flex: 1;
+}
+
+.reset-btn {
+  flex-shrink: 0;
+  padding: 0.75rem 0.5rem !important;
+  min-width: auto;
 }
 
 /* Button styles */

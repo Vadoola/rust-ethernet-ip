@@ -37,6 +37,25 @@ function App() {
   const [connectionStatus, setConnectionStatus] = useState<PlcStatus | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
 
+  // Add debug logging for connection state changes
+  useEffect(() => {
+    console.log('Connection state changed:', { isConnected, isConnecting });
+  }, [isConnected, isConnecting]);
+
+  // Add debug logging for PLC address changes
+  useEffect(() => {
+    console.log('PLC address changed:', plcAddress);
+  }, [plcAddress]);
+
+  // Initialize app state on startup
+  useEffect(() => {
+    // Ensure we start in a clean disconnected state
+    setIsConnected(false);
+    setIsConnecting(false);
+    setConnectionStatus(null);
+    console.log('🚀 Application initialized - Ready to connect');
+  }, []);
+
   // Tag operations
   const [tagToDiscover, setTagToDiscover] = useState('');
   const [selectedTag, setSelectedTag] = useState<PlcTag | null>(null);
@@ -57,6 +76,9 @@ function App() {
   // Logging
   const [logs, setLogs] = useState<LogEntry[]>([]);
 
+  // Add a key to force component remount when needed
+  const [componentKey, setComponentKey] = useState(0);
+
   // Add log entry
   const addLog = useCallback((level: LogEntry['level'], message: string) => {
     const logEntry: LogEntry = {
@@ -70,25 +92,64 @@ function App() {
 
   // Connect to PLC
   const handleConnect = async () => {
-    if (!plcAddress.trim()) {
+    const trimmedAddress = plcAddress.trim();
+    if (!trimmedAddress) {
       addLog('error', 'Please enter a PLC address');
       return;
     }
 
+    // Validate address format
+    if (!trimmedAddress.includes(':')) {
+      addLog('error', 'Address should include port (e.g., 192.168.1.100:44818)');
+      return;
+    }
+
+    // Check for obviously corrupted addresses
+    if (trimmedAddress.length > 50) {
+      addLog('error', 'Address appears corrupted. Please clear and re-enter.');
+      setPlcAddress('192.168.0.1:44818'); // Reset to default
+      return;
+    }
+
+    // Extra validation for corruption patterns
+    if (trimmedAddress.includes('44818') && trimmedAddress.length > 20) {
+      addLog('error', 'Address appears corrupted - contains repeated digits. Clearing...');
+      setPlcAddress('192.168.0.1:44818'); // Reset to default
+      return;
+    }
+
     setIsConnecting(true);
-    addLog('info', `🔌 Connecting to PLC at ${plcAddress}...`);
+    addLog('info', `🔌 Connecting to PLC at ${trimmedAddress}...`);
+    addLog('info', `📡 Backend API: http://localhost:5000/api`);
+    addLog('info', `📤 Sending request: {"address": "${trimmedAddress}"}`);
 
     try {
-      const result = await plcApi.connect(plcAddress);
+      // Test backend connectivity first
+      addLog('info', '🔍 Testing backend connectivity...');
+      
+      const result = await plcApi.connect(trimmedAddress);
+      console.log('Connect result:', result);
+      
       if (result.success) {
         setIsConnected(true);
         addLog('success', `✅ Connected successfully! ${result.message || ''}`);
         await updateStatus();
       } else {
         addLog('error', `❌ Connection failed: ${result.message}`);
+        if (result.message?.includes('Failed to connect to PLC')) {
+          addLog('info', '💡 This usually means the PLC at the specified address is not reachable');
+          addLog('info', '🔧 Check if:');
+          addLog('info', '   • PLC is powered on and connected to network');
+          addLog('info', '   • IP address and port are correct');
+          addLog('info', '   • Network firewall allows connection');
+          addLog('info', '   • PLC EtherNet/IP service is enabled');
+        }
       }
     } catch (error) {
+      console.error('Connect error:', error);
       addLog('error', `❌ Connection error: ${error}`);
+      addLog('error', '🔧 Make sure the ASP.NET Core backend is running on http://localhost:5000');
+      addLog('info', '💡 Try running: cd examples/AspNetExample && dotnet run');
     } finally {
       setIsConnecting(false);
     }
@@ -102,9 +163,14 @@ function App() {
       setConnectionStatus(null);
       setMonitoredTags([]);
       setIsMonitoring(false);
+      setIsConnecting(false); // Ensure connecting state is reset
       addLog('info', '📤 Disconnected from PLC');
     } catch (error) {
       addLog('error', `⚠️ Disconnect error: ${error}`);
+      // Even if disconnect fails, reset the UI state
+      setIsConnected(false);
+      setConnectionStatus(null);
+      setIsConnecting(false);
     }
   };
 
@@ -130,19 +196,31 @@ function App() {
 
     setIsDiscovering(true);
     addLog('info', `🔍 Discovering tag: ${tagToDiscover}`);
+    addLog('info', `📡 Trying to determine data type for "${tagToDiscover}"`);
 
     try {
       const tag = await plcApi.discoverTag(tagToDiscover);
+      console.log('🔍 Discovery result:', tag);
+      
       if (tag) {
         setSelectedTag(tag);
         setTagValue(String(tag.value));
         setSelectedDataType(tag.type);
         addLog('success', `✅ Discovered ${tag.type} tag: ${tag.name} = ${tag.value}`);
+        addLog('info', `🎯 Data type: ${tag.type}, Value: ${tag.value}`);
       } else {
         addLog('error', `❌ Could not determine type for tag: ${tagToDiscover}`);
+        addLog('info', '💡 Possible reasons:');
+        addLog('info', '   • Tag does not exist in PLC');
+        addLog('info', '   • Tag name is incorrect (check spelling/case)');
+        addLog('info', '   • Tag is an unsupported complex type');
+        addLog('info', '   • Insufficient permissions to read tag');
+        addLog('info', '📝 Common tag examples: Motor.Speed, Program:Main.Status, Tag1');
       }
     } catch (error) {
+      console.error('🔍 Discovery error:', error);
       addLog('error', `❌ Discovery error: ${error}`);
+      addLog('info', '🔧 Check browser console for detailed error information');
     } finally {
       setIsDiscovering(false);
     }
@@ -297,6 +375,48 @@ function App() {
     return () => clearInterval(interval);
   }, [isConnected]);
 
+  // Complete state reset function
+  const handleCompleteReset = () => {
+    console.log('🔄 Complete state reset triggered');
+    setIsConnected(false);
+    setIsConnecting(false);
+    setConnectionStatus(null);
+    setPlcAddress('192.168.0.1:44818');
+    setTagToDiscover('');
+    setSelectedTag(null);
+    setTagValue('');
+    setSelectedDataType('BOOL');
+    setMonitoredTags([]);
+    setIsMonitoring(false);
+    setBenchmarkResults(null);
+    setComponentKey(prev => prev + 1); // Force component remount
+    addLog('info', '🔄 Complete application state reset');
+  };
+
+  // Handle PLC address change with explicit logging
+  const handleAddressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newAddress = e.target.value;
+    console.log('🎯 Address input event:', { 
+      current: plcAddress, 
+      new: newAddress, 
+      isConnected, 
+      isConnecting,
+      inputDisabled: isConnected || isConnecting 
+    });
+    
+    // Prevent corruption by validating the input and debouncing
+    if (newAddress.length <= 100) { // Reasonable length limit
+      // Clear any special characters that might cause issues
+      const cleanAddress = newAddress.replace(/[^\w\d\.\:\-]/g, '');
+      console.log('Cleaned address:', cleanAddress);
+      setPlcAddress(cleanAddress);
+    } else {
+      console.warn('Address input too long, ignoring');
+      // Reset to a clean default if input becomes corrupted
+      setPlcAddress('192.168.0.1:44818');
+    }
+  };
+
   return (
     <div className="app">
       <header className="app-header">
@@ -327,14 +447,52 @@ function App() {
           <h2><Database size={20} /> Connection</h2>
           <div className="connection-controls">
             <div className="input-group">
-              <label>PLC Address:</label>
-              <input
-                type="text"
-                value={plcAddress}
-                onChange={(e) => setPlcAddress(e.target.value)}
-                placeholder="192.168.0.1:44818"
-                disabled={isConnected}
-              />
+              <label>
+                PLC Address:
+                {isConnected && <span className="input-disabled-note"> (disconnect to edit)</span>}
+              </label>
+              <div className="input-with-reset">
+                <input
+                  type="text"
+                  value={plcAddress}
+                  onChange={handleAddressChange}
+                  onFocus={() => console.log('🎯 Input focused, state:', { plcAddress, isConnected, isConnecting })}
+                  onBlur={() => console.log('🎯 Input blurred')}
+                  placeholder="192.168.0.1:44818"
+                  disabled={isConnected || isConnecting}
+                  className={isConnected || isConnecting ? 'input-disabled' : ''}
+                  title={isConnected ? "Disconnect first to change address" : "Enter PLC IP address and port"}
+                  key={`plc-address-input-${componentKey}`}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <button
+                  type="button"
+                  onClick={() => setPlcAddress('192.168.0.1:44818')}
+                  disabled={isConnected || isConnecting}
+                  className="btn btn-small btn-outline reset-btn"
+                  title="Reset to default address"
+                >
+                  Reset
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPlcAddress('')}
+                  disabled={isConnected || isConnecting}
+                  className="btn btn-small btn-outline clear-btn"
+                  title="Clear address field"
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCompleteReset}
+                  className="btn btn-small btn-danger reset-btn"
+                  title="Force complete application reset"
+                >
+                  Force Reset
+                </button>
+              </div>
             </div>
             <div className="button-group">
               <button
@@ -362,6 +520,22 @@ function App() {
               <p><strong>Status:</strong> {connectionStatus.isConnected ? 'Connected' : 'Disconnected'}</p>
             </div>
           )}
+
+          {/* Debug Information */}
+          <div className="debug-info" style={{ 
+            marginTop: '1rem', 
+            padding: '0.5rem', 
+            background: '#f8f9fa', 
+            borderRadius: '4px',
+            fontSize: '0.75rem',
+            fontFamily: 'monospace'
+          }}>
+            <strong>🐛 Debug Info:</strong><br/>
+            • plcAddress: "{plcAddress}" (length: {plcAddress.length})<br/>
+            • isConnected: {isConnected.toString()}<br/>
+            • isConnecting: {isConnecting.toString()}<br/>
+            • inputDisabled: {(isConnected || isConnecting).toString()}
+          </div>
         </section>
 
         {/* Tag Operations Panel */}

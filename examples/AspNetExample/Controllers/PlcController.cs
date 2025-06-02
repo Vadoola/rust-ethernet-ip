@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using AspNetExample.Services;
 using System;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 
 namespace AspNetExample.Controllers;
 
@@ -21,14 +22,32 @@ public class PlcController : ControllerBase
     [HttpPost("connect")]
     public IActionResult Connect([FromBody] ConnectRequest request)
     {
+        _logger.LogInformation("Connect request received. Address: {Address}", request?.Address ?? "null");
+        
+        if (request == null)
+        {
+            _logger.LogWarning("Connect request is null");
+            return BadRequest(new { success = false, message = "Invalid request format" });
+        }
+        
         if (string.IsNullOrEmpty(request.Address))
+        {
+            _logger.LogWarning("Connect request address is null or empty");
             return BadRequest(new { success = false, message = "PLC address is required" });
+        }
 
+        _logger.LogInformation("Attempting to connect to PLC at address: {Address}", request.Address);
         var connected = _plcService.Connect(request.Address);
         if (connected)
+        {
+            _logger.LogInformation("Successfully connected to PLC at {Address}", request.Address);
             return Ok(new { success = true, message = "Connected successfully" });
+        }
         else
-            return BadRequest(new { success = false, message = "Connection failed" });
+        {
+            _logger.LogWarning("Failed to connect to PLC at {Address}", request.Address);
+            return BadRequest(new { success = false, message = "Failed to connect to PLC" });
+        }
     }
 
     [HttpPost("disconnect")]
@@ -44,23 +63,62 @@ public class PlcController : ControllerBase
         if (!_plcService.IsConnected)
             return StatusCode(503, new { success = false, message = "Not connected to PLC" });
 
+        _logger.LogInformation("Attempting to discover type for tag: {TagName}", tagName);
+
         try
         {
-            // Try all types in order for proper detection
-            try { var v = _plcService.ReadBool(tagName); return Ok(new { success = true, value = v, type = "BOOL" }); } catch { }
-            try { var v = _plcService.ReadSint(tagName); return Ok(new { success = true, value = v, type = "SINT" }); } catch { }
-            try { var v = _plcService.ReadInt(tagName); return Ok(new { success = true, value = v, type = "INT" }); } catch { }
-            try { var v = _plcService.ReadDint(tagName); return Ok(new { success = true, value = v, type = "DINT" }); } catch { }
-            try { var v = _plcService.ReadLint(tagName); return Ok(new { success = true, value = v, type = "LINT" }); } catch { }
-            try { var v = _plcService.ReadUsint(tagName); return Ok(new { success = true, value = v, type = "USINT" }); } catch { }
-            try { var v = _plcService.ReadUint(tagName); return Ok(new { success = true, value = v, type = "UINT" }); } catch { }
-            try { var v = _plcService.ReadUdint(tagName); return Ok(new { success = true, value = v, type = "UDINT" }); } catch { }
-            try { var v = _plcService.ReadUlint(tagName); return Ok(new { success = true, value = v, type = "ULINT" }); } catch { }
-            try { var v = _plcService.ReadReal(tagName); return Ok(new { success = true, value = v, type = "REAL" }); } catch { }
-            try { var v = _plcService.ReadLreal(tagName); return Ok(new { success = true, value = v, type = "LREAL" }); } catch { }
-            try { var v = _plcService.ReadString(tagName); return Ok(new { success = true, value = v, type = "STRING" }); } catch { }
-            try { var v = _plcService.ReadUdt(tagName); return Ok(new { success = true, value = v, type = "UDT" }); } catch { }
-            return NotFound(new { success = false, message = $"Could not read tag {tagName}" });
+            // Try to use the PlcService metadata method if available
+            try
+            {
+                var metadata = _plcService.GetTagMetadata(_plcService.CurrentAddress, tagName);
+                if (metadata != null)
+                {
+                    _logger.LogInformation("Tag metadata found for {TagName}: {Metadata}", tagName, metadata);
+                    return Ok(new { success = true, value = metadata.GetType().GetProperty("value")?.GetValue(metadata), type = metadata.GetType().GetProperty("type")?.GetValue(metadata)?.ToString() });
+                }
+            }
+            catch (Exception metaEx)
+            {
+                _logger.LogDebug("Metadata discovery failed for {TagName}: {Error}", tagName, metaEx.Message);
+            }
+
+            // Try types in a smarter order - more specific types first
+            var typeAttempts = new List<(string Type, Func<object> ReadFunc)>
+            {
+                ("STRING", () => _plcService.ReadString(tagName)),
+                ("LREAL", () => _plcService.ReadLreal(tagName)),
+                ("REAL", () => _plcService.ReadReal(tagName)),
+                ("LINT", () => _plcService.ReadLint(tagName)),
+                ("ULINT", () => _plcService.ReadUlint(tagName)),
+                ("DINT", () => _plcService.ReadDint(tagName)),
+                ("UDINT", () => _plcService.ReadUdint(tagName)),
+                ("INT", () => _plcService.ReadInt(tagName)),
+                ("UINT", () => _plcService.ReadUint(tagName)),
+                ("SINT", () => _plcService.ReadSint(tagName)),
+                ("USINT", () => _plcService.ReadUsint(tagName)),
+                ("BOOL", () => _plcService.ReadBool(tagName)),
+                ("UDT", () => _plcService.ReadUdt(tagName))
+            };
+
+            Exception lastException = null;
+            
+            foreach (var (type, readFunc) in typeAttempts)
+            {
+                try
+                {
+                    var value = readFunc();
+                    _logger.LogInformation("Successfully read tag {TagName} as {Type} with value: {Value}", tagName, type, value);
+                    return Ok(new { success = true, value = value, type = type });
+                }
+                catch (Exception ex)
+                {
+                    lastException = ex;
+                    _logger.LogDebug("Failed to read {TagName} as {Type}: {Error}", tagName, type, ex.Message);
+                }
+            }
+            
+            _logger.LogWarning("Could not determine type for tag {TagName}. Last error: {Error}", tagName, lastException?.Message);
+            return NotFound(new { success = false, message = $"Could not determine type for tag {tagName}. Tag may not exist or may be an unsupported type." });
         }
         catch (Exception ex)
         {
