@@ -50,6 +50,8 @@ impl MockEipClient {
             },
             last_access: std::time::Instant::now(),
             size: 1,
+            array_info: None,
+            last_updated: std::time::Instant::now(),
         })
     }
 
