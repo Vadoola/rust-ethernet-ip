@@ -747,6 +747,36 @@ function App() {
               </div>
             </div>
 
+            {/* Real-time Monitoring Toggle */}
+            {monitoredTags.length > 0 && (
+              <div className="monitoring-controls-section">
+                <button
+                  onClick={() => {
+                    setIsMonitoring(!isMonitoring);
+                    addLog('info', `🔄 Real-time monitoring ${!isMonitoring ? 'enabled' : 'disabled'}`);
+                  }}
+                  disabled={!isConnected}
+                  className={`btn ${isMonitoring ? 'btn-monitoring-active' : 'btn-monitoring-inactive'}`}
+                >
+                  {isMonitoring ? (
+                    <>
+                      <Activity className="spinning" size={16} />
+                      Real-time Monitoring (ON)
+                    </>
+                  ) : (
+                    <>
+                      📊 Start Real-time Monitoring
+                    </>
+                  )}
+                </button>
+                {isMonitoring && (
+                  <span className="monitoring-status">
+                    ⚡ Updating every second...
+                  </span>
+                )}
+              </div>
+            )}
+
             {/* Tag Operations */}
             {selectedTag && (
               <div className="tag-operations-section">
@@ -812,8 +842,13 @@ function App() {
                 </thead>
                 <tbody>
                   {monitoredTags.map((tag) => (
-                    <tr key={tag.name} className={tag.hasError ? 'error-row' : ''}>
-                      <td>{tag.name}</td>
+                    <tr key={tag.name} className={`${tag.hasError ? 'error-row' : ''} ${isMonitoring ? 'monitoring-active' : ''}`}>
+                      <td>
+                        {tag.name}
+                        {isMonitoring && (
+                          <span className="monitoring-indicator">🔄</span>
+                        )}
+                      </td>
                       <td>
                         {tag.hasError ? (
                           <span className="error-text">{tag.errorMessage}</span>
