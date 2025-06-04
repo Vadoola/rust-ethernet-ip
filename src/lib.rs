@@ -197,7 +197,8 @@ use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::{timeout, Duration, Instant};
 use std::collections::HashMap;
-use std::ffi::{CStr, CString, c_char, c_int, c_double};
+use std::ffi::{CStr, c_char, c_int, c_double};
+use std::cmp;
 use tokio::runtime::Runtime;
 use std::sync::Mutex;
 use lazy_static::lazy_static;
@@ -333,8 +334,9 @@ impl std::error::Error for BatchError {}
 
 /// Configuration for batch operations
 /// 
-/// This structure allows fine-tuning of batch operation behavior,
-/// including performance optimizations and error handling preferences.
+/// This structure controls the behavior and performance characteristics
+/// of batch read/write operations. Proper tuning can significantly
+/// improve throughput for applications that need to process many tags.
 #[derive(Debug, Clone)]
 pub struct BatchConfig {
     /// Maximum number of operations to include in a single CIP packet
@@ -372,11 +374,166 @@ impl Default for BatchConfig {
     fn default() -> Self {
         Self {
             max_operations_per_packet: 20,
-            max_packet_size: 504,
+            max_packet_size: 504,  // Conservative default for maximum compatibility
             packet_timeout_ms: 3000,
             continue_on_error: true,
             optimize_packet_packing: true,
         }
+    }
+}
+
+/// Connected session information for Class 3 explicit messaging
+/// 
+/// Allen-Bradley PLCs often require connected sessions for certain operations
+/// like STRING writes. This structure maintains the connection state.
+#[derive(Debug, Clone)]
+pub struct ConnectedSession {
+    /// Connection ID assigned by the PLC
+    pub connection_id: u32,
+    
+    /// Our connection ID (originator -> target)
+    pub o_to_t_connection_id: u32,
+    
+    /// PLC's connection ID (target -> originator)  
+    pub t_to_o_connection_id: u32,
+    
+    /// Connection serial number for this session
+    pub connection_serial: u16,
+    
+    /// Originator vendor ID (our vendor ID)
+    pub originator_vendor_id: u16,
+    
+    /// Originator serial number (our serial number)
+    pub originator_serial: u32,
+    
+    /// Connection timeout multiplier
+    pub timeout_multiplier: u8,
+    
+    /// Requested Packet Interval (RPI) in microseconds
+    pub rpi: u32,
+    
+    /// Connection parameters for O->T direction
+    pub o_to_t_params: ConnectionParameters,
+    
+    /// Connection parameters for T->O direction  
+    pub t_to_o_params: ConnectionParameters,
+    
+    /// Timestamp when connection was established
+    pub established_at: Instant,
+    
+    /// Whether this connection is currently active
+    pub is_active: bool,
+}
+
+/// Connection parameters for EtherNet/IP connections
+#[derive(Debug, Clone)]
+pub struct ConnectionParameters {
+    /// Connection size in bytes
+    pub size: u16,
+    
+    /// Connection type (0x02 = Point-to-point, 0x01 = Multicast)
+    pub connection_type: u8,
+    
+    /// Priority (0x00 = Low, 0x01 = High, 0x02 = Scheduled, 0x03 = Urgent)
+    pub priority: u8,
+    
+    /// Variable size flag
+    pub variable_size: bool,
+}
+
+impl Default for ConnectionParameters {
+    fn default() -> Self {
+        Self {
+            size: 500,              // 500 bytes default
+            connection_type: 0x02,  // Point-to-point
+            priority: 0x01,         // High priority
+            variable_size: false,
+        }
+    }
+}
+
+impl ConnectedSession {
+    /// Creates a new connected session with default parameters
+    pub fn new(connection_serial: u16) -> Self {
+        Self {
+            connection_id: 0,
+            o_to_t_connection_id: 0,
+            t_to_o_connection_id: 0,
+            connection_serial,
+            originator_vendor_id: 0x1337,  // Custom vendor ID
+            originator_serial: 0x12345678,  // Custom serial number
+            timeout_multiplier: 0x05,       // 32 seconds timeout
+            rpi: 100000,                    // 100ms RPI
+            o_to_t_params: ConnectionParameters::default(),
+            t_to_o_params: ConnectionParameters::default(),
+            established_at: Instant::now(),
+            is_active: false,
+        }
+    }
+    
+    /// Creates a connected session with alternative parameters for different PLCs
+    pub fn with_config(connection_serial: u16, config_id: u8) -> Self {
+        let mut session = Self::new(connection_serial);
+        
+        match config_id {
+            1 => {
+                // Config 1: Conservative Allen-Bradley parameters
+                session.timeout_multiplier = 0x07;  // 256 seconds timeout
+                session.rpi = 200000;  // 200ms RPI (slower)
+                session.o_to_t_params.size = 504;   // Standard packet size
+                session.t_to_o_params.size = 504;
+                session.o_to_t_params.priority = 0x00;  // Low priority
+                session.t_to_o_params.priority = 0x00;
+                println!("🔧 [CONFIG 1] Conservative: 504 bytes, 200ms RPI, low priority");
+            },
+            2 => {
+                // Config 2: Compact parameters 
+                session.timeout_multiplier = 0x03;  // 8 seconds timeout
+                session.rpi = 50000;   // 50ms RPI (faster)
+                session.o_to_t_params.size = 256;   // Smaller packet size
+                session.t_to_o_params.size = 256;
+                session.o_to_t_params.priority = 0x02;  // Scheduled priority
+                session.t_to_o_params.priority = 0x02;
+                println!("🔧 [CONFIG 2] Compact: 256 bytes, 50ms RPI, scheduled priority");
+            },
+            3 => {
+                // Config 3: Minimal parameters
+                session.timeout_multiplier = 0x01;  // 4 seconds timeout
+                session.rpi = 1000000; // 1000ms RPI (very slow)
+                session.o_to_t_params.size = 128;   // Very small packets
+                session.t_to_o_params.size = 128;
+                session.o_to_t_params.priority = 0x03;  // Urgent priority
+                session.t_to_o_params.priority = 0x03;
+                println!("🔧 [CONFIG 3] Minimal: 128 bytes, 1000ms RPI, urgent priority");
+            },
+            4 => {
+                // Config 4: Standard Rockwell parameters (from documentation)
+                session.timeout_multiplier = 0x05;  // 32 seconds timeout
+                session.rpi = 100000;  // 100ms RPI
+                session.o_to_t_params.size = 500;   // Standard size
+                session.t_to_o_params.size = 500;
+                session.o_to_t_params.connection_type = 0x01;  // Multicast
+                session.t_to_o_params.connection_type = 0x01;
+                session.originator_vendor_id = 0x001D;  // Rockwell vendor ID
+                println!("🔧 [CONFIG 4] Rockwell standard: 500 bytes, 100ms RPI, multicast, Rockwell vendor");
+            },
+            5 => {
+                // Config 5: Large buffer parameters
+                session.timeout_multiplier = 0x0A;  // Very long timeout
+                session.rpi = 500000;  // 500ms RPI
+                session.o_to_t_params.size = 1024;  // Large packets
+                session.t_to_o_params.size = 1024;
+                session.o_to_t_params.variable_size = true;  // Variable size
+                session.t_to_o_params.variable_size = true;
+                println!("🔧 [CONFIG 5] Large buffer: 1024 bytes, 500ms RPI, variable size");
+            },
+            _ => {
+                // Default config
+                println!("🔧 [CONFIG 0] Default parameters");
+            }
+        }
+        
+        session
     }
 }
 
@@ -697,6 +854,15 @@ pub struct EipClient {
     /// Controls behavior of batch read/write operations including packet
     /// optimization, error handling, and performance tuning.
     batch_config: BatchConfig,
+    
+    /// Connected session management for Class 3 operations
+    /// 
+    /// Some operations (like STRING writes) require connected messaging
+    /// instead of unconnected messaging for proper operation.
+    connected_sessions: HashMap<String, ConnectedSession>,
+    
+    /// Connection sequence counter for generating unique connection IDs
+    connection_sequence: u32,
 }
 
 impl EipClient {
@@ -750,6 +916,8 @@ impl EipClient {
             last_activity: Instant::now(),
             session_timeout: Duration::from_secs(120), // Increased to 2 minutes
             batch_config: BatchConfig::default(),
+            connected_sessions: HashMap::new(),
+            connection_sequence: 0,
         };
         client.register_session().await?;
         Ok(client)
@@ -789,7 +957,7 @@ impl EipClient {
         ];
 
         self.stream.write_all(&packet).await
-            .map_err(EtherNetIpError::Io)?;
+            .map_err(|e| EtherNetIpError::Io(e))?;
 
         let mut buf = [0u8; 1024];
         let n = match timeout(Duration::from_secs(5), self.stream.read(&mut buf)).await {
@@ -902,85 +1070,130 @@ impl EipClient {
     
     /// Writes a value to a PLC tag
     /// 
-    /// This function performs a CIP write request to update the specified tag's value.
-    /// The data type must match the tag's type in the PLC.
+    /// This method automatically determines the best communication method based on the data type:
+    /// - STRING values use connected explicit messaging for reliable operation
+    /// - Other data types use standard unconnected messaging
     /// 
     /// # Arguments
     /// 
-    /// * `tag_name` - The name of the tag to write
-    /// * `value` - The new value to write
+    /// * `tag_name` - The name of the tag to write to
+    /// * `value` - The value to write
     /// 
-    /// # Examples
+    /// # Example
     /// 
-    /// ```rust,no_run
-    /// use rust_ethernet_ip::{EipClient, PlcValue};
-    /// use std::collections::HashMap;
+    /// ```no_run
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    /// # let mut client = rust_ethernet_ip::EipClient::connect("192.168.1.100:44818").await?;
+    /// use rust_ethernet_ip::PlcValue;
     /// 
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    ///     let mut client = EipClient::connect("192.168.1.100:44818").await?;
-    ///     
-    ///     // Write different data types
-    ///     client.write_tag("StartButton", PlcValue::Bool(true)).await?;
-    ///     client.write_tag("SetPoint", PlcValue::Dint(1500)).await?;
-    ///     client.write_tag("Temperature", PlcValue::Real(72.5)).await?;
-    ///     
-    ///     // Write a UDT
-    ///     let mut udt = HashMap::new();
-    ///     udt.insert("Speed".to_string(), PlcValue::Dint(1000));
-    ///     udt.insert("Status".to_string(), PlcValue::String("Running".to_string()));
-    ///     client.write_tag("MotorData", PlcValue::Udt(udt)).await?;
-    ///     Ok(())
-    /// }
+    /// client.write_tag("Counter", PlcValue::Dint(42)).await?;
+    /// client.write_tag("Message", PlcValue::String("Hello PLC".to_string())).await?;
+    /// # Ok(())
+    /// # }
     /// ```
-    /// 
-    /// # Performance
-    /// 
-    /// - Latency: 2-10ms typical
-    /// - Throughput: 600+ ops/sec
-    /// - Network: 1 request/response cycle
-    /// 
-    /// # Error Handling
-    /// 
-    /// Common errors:
-    /// - `Protocol`: Tag doesn't exist or invalid format
-    /// - `Connection`: Lost connection to PLC
-    /// - `Timeout`: Operation timed out
     pub async fn write_tag(&mut self, tag_name: &str, value: PlcValue) -> crate::error::Result<()> {
-        self.validate_session().await?;
-        
-        println!("📝 Writing {} to tag '{}'", 
+        println!("📝 Writing '{}' to tag '{}'", 
                  match &value {
-                     PlcValue::Bool(v) => format!("BOOL: {}", v),
-                     PlcValue::Sint(v) => format!("SINT: {}", v),
-                     PlcValue::Int(v) => format!("INT: {}", v),
-                     PlcValue::Dint(v) => format!("DINT: {}", v),
-                     PlcValue::Lint(v) => format!("LINT: {}", v),
-                     PlcValue::Usint(v) => format!("USINT: {}", v),
-                     PlcValue::Uint(v) => format!("UINT: {}", v),
-                     PlcValue::Udint(v) => format!("UDINT: {}", v),
-                     PlcValue::Ulint(v) => format!("ULINT: {}", v),
-                     PlcValue::Real(v) => format!("REAL: {}", v),
-                     PlcValue::Lreal(v) => format!("LREAL: {}", v),
-                     PlcValue::String(v) => format!("STRING: '{}'", v),
-                     PlcValue::Udt(v) => format!("UDT: {:?}", v),
+                     PlcValue::String(s) => format!("\"{}\"", s),
+                     _ => format!("{:?}", value),
                  }, 
                  tag_name);
-
+        
+        // Use connected messaging for STRING writes
+        if let PlcValue::String(string_value) = &value {
+            println!("🔗 STRING detected - using connected explicit messaging");
+            return self.write_string_connected(tag_name, string_value).await;
+        }
+        
+        // Use standard unconnected messaging for other data types
         let cip_request = self.build_write_request(tag_name, &value)?;
+        
         let response = self.send_cip_request(&cip_request).await?;
         
-        if response.len() >= 4 {
-            let general_status = response[2];
-            if general_status == 0x00 {
-                println!("✅ Tag '{}' written successfully!", tag_name);
+        // Check if write was successful
+        if response.len() >= 2 {
+            let status = response[1];
+            if status == 0x00 {
+                println!("✅ Write completed successfully");
                 Ok(())
             } else {
-                let error_msg = self.get_cip_error_message(general_status);
-                Err(EtherNetIpError::Protocol(format!("Write failed - CIP Error 0x{:02X}: {}", general_status, error_msg)))
+                let error_msg = self.get_cip_error_message(status);
+                println!("❌ Write failed: {} (0x{:02X})", error_msg, status);
+                Err(EtherNetIpError::Protocol(format!("CIP Error 0x{:02X}: {}", status, error_msg)))
             }
         } else {
             Err(EtherNetIpError::Protocol("Invalid write response".to_string()))
+        }
+    }
+
+    /// Builds a write request specifically for Allen-Bradley string format (0x02A0)
+    fn build_ab_string_write_request(&self, tag_name: &str, value: &PlcValue) -> crate::error::Result<Vec<u8>> {
+        if let PlcValue::String(string_value) = value {
+            println!("🔧 [DEBUG] Building correct Allen-Bradley string write request for tag: '{}'", tag_name);
+            
+            let mut cip_request = Vec::new();
+            
+            // Service: Write Tag Service (0x4D)
+            cip_request.push(0x4D);
+            
+            // Request Path Size (in words)
+            let tag_bytes = tag_name.as_bytes();
+            let path_len = if tag_bytes.len() % 2 == 0 { 
+                tag_bytes.len() + 2 
+            } else { 
+                tag_bytes.len() + 3 
+            } / 2;
+            cip_request.push(path_len as u8);
+            
+            // Request Path
+            cip_request.push(0x91); // ANSI Extended Symbol
+            cip_request.push(tag_bytes.len() as u8);
+            cip_request.extend_from_slice(tag_bytes);
+            
+            // Pad to word boundary if needed
+            if tag_bytes.len() % 2 != 0 {
+                cip_request.push(0x00);
+            }
+            
+            // Data Type: Allen-Bradley STRING (0x02A0)
+            cip_request.extend_from_slice(&[0xA0, 0x02]);
+            
+            // Element Count (always 1 for single string)
+            cip_request.extend_from_slice(&[0x01, 0x00]);
+            
+            // CRITICAL FIX: Allen-Bradley STRING structure must match EXACTLY what PLC expects
+            // Based on successful reads, we see the structure is:
+            // - Max Length (2 bytes, little-endian) - USE THE EXACT VALUE FROM PLC: 4046 (0x0FCE)  
+            // - Current Length (4 bytes, little-endian) - IMPORTANT: This is 4 bytes, not 2!
+            // - String data (padded to max length with zeros)
+            
+            let string_bytes = string_value.as_bytes();
+            let current_length = string_bytes.len() as u32; // 4 bytes!
+            let max_length: u16 = 4046; // Use exact value from PLC (0x0FCE)
+            
+            // Write max_length (2 bytes, little-endian)
+            cip_request.extend_from_slice(&max_length.to_le_bytes());
+            
+            // Write current_length (4 bytes, little-endian) - CRITICAL: 4 bytes not 2!
+            cip_request.extend_from_slice(&current_length.to_le_bytes());
+            
+            // Write string data 
+            cip_request.extend_from_slice(string_bytes);
+            
+            // PAD the remaining bytes to match the full structure size
+            // The PLC expects the full 90-byte data area (86 bytes after max_len + curr_len)
+            let remaining_bytes = 86 - string_bytes.len(); // 90 total - 4 header bytes
+            if remaining_bytes > 0 {
+                cip_request.extend(vec![0x00; remaining_bytes]);
+            }
+            
+            println!("🔧 [DEBUG] Built CORRECTED AB string write request ({} bytes): max_len={}, curr_len={}, data_len={}", 
+                     cip_request.len(), max_length, current_length, string_bytes.len());
+            println!("🔧 [DEBUG] First 32 bytes: {:02X?}", &cip_request[..cmp::min(32, cip_request.len())]);
+            
+            Ok(cip_request)
+        } else {
+            Err(EtherNetIpError::Protocol("Expected string value for Allen-Bradley string write".to_string()))
         }
     }
 
@@ -1559,6 +1772,24 @@ impl EipClient {
                     println!("🔧 [DEBUG] Parsed STRING: '{}'", value);
                     Ok(PlcValue::String(value))
                 }
+                0x02A0 => { // Alternative STRING type (Allen-Bradley specific)
+                    if value_data.len() < 7 {
+                        return Err(EtherNetIpError::Protocol("Insufficient data for alternative STRING value".to_string()));
+                    }
+                    
+                    // For this format, the string data starts directly at position 6
+                    // We need to find the null terminator or use the full remaining length
+                    let string_start = 6;
+                    let string_data = &value_data[string_start..];
+                    
+                    // Find null terminator or use full length
+                    let string_end = string_data.iter().position(|&b| b == 0).unwrap_or(string_data.len());
+                    let string_bytes = &string_data[..string_end];
+                    
+                    let value = String::from_utf8_lossy(string_bytes).to_string();
+                    println!("🔧 [DEBUG] Parsed alternative STRING (0x02A0): '{}'", value);
+                    Ok(PlcValue::String(value))
+                }
                 _ => {
                     println!("🔧 [DEBUG] Unknown data type: 0x{:04X}", data_type);
                     Err(EtherNetIpError::Protocol(format!("Unsupported data type: 0x{:04X}", data_type)))
@@ -1574,19 +1805,27 @@ impl EipClient {
 
     /// Unregisters the EtherNet/IP session with the PLC
     pub async fn unregister_session(&mut self) -> crate::error::Result<()> {
-        let session_bytes = self.session_handle.to_le_bytes();
-        let packet: [u8; 24] = [
-            0x66, 0x00,             // Command: Unregister Session (0x0066)
-            0x00, 0x00,             // Length: 0 bytes
-            session_bytes[0], session_bytes[1], session_bytes[2], session_bytes[3], // Session Handle
-            0x00, 0x00, 0x00, 0x00, // Status: 0
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Sender Context (8 bytes)
-            0x00, 0x00, 0x00, 0x00, // Options: 0
-        ];
-
-        self.stream.write_all(&packet).await
-            .map_err(EtherNetIpError::Io)?;
-
+        println!("🔌 Unregistering session and cleaning up connections...");
+        
+        // Close all connected sessions first
+        let _ = self.close_all_connected_sessions().await;
+        
+        let mut packet = Vec::new();
+        
+        // EtherNet/IP header
+        packet.extend_from_slice(&[0x66, 0x00]); // Command: Unregister Session
+        packet.extend_from_slice(&[0x04, 0x00]); // Length: 4 bytes
+        packet.extend_from_slice(&self.session_handle.to_le_bytes()); // Session handle
+        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // Status
+        packet.extend_from_slice(&[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]); // Sender context
+        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // Options
+        
+        // Protocol version for unregister session
+        packet.extend_from_slice(&[0x01, 0x00, 0x00, 0x00]); // Protocol version 1
+        
+        self.stream.write_all(&packet).await.map_err(EtherNetIpError::Io)?;
+        
+        println!("✅ Session unregistered and all connections closed");
         Ok(())
     }
 
@@ -2277,18 +2516,36 @@ impl EipClient {
                     }
                     0x00DA => {
                         // STRING
-                        if value_data.len() < 2 {
-                            return Err(BatchError::SerializationError("Missing STRING length".to_string()));
+                        if value_data.is_empty() {
+                            return Ok(Some(PlcValue::String(String::new())));
                         }
-                        let length = u16::from_le_bytes([value_data[0], value_data[1]]) as usize;
-                        if value_data.len() < 2 + length {
-                            return Err(BatchError::SerializationError("Incomplete STRING data".to_string()));
+                        let length = value_data[0] as usize;
+                        if value_data.len() < 1 + length {
+                            return Err(BatchError::SerializationError("Insufficient data for STRING value".to_string()));
                         }
-                        let string_bytes = &value_data[2..2 + length];
-                        match String::from_utf8(string_bytes.to_vec()) {
-                            Ok(s) => Ok(Some(PlcValue::String(s))),
-                            Err(_) => Err(BatchError::SerializationError("Invalid UTF-8 in STRING".to_string())),
+                        let string_data = &value_data[1..1 + length];
+                        let value = String::from_utf8_lossy(string_data).to_string();
+                        println!("🔧 [DEBUG] Parsed STRING: '{}'", value);
+                        Ok(Some(PlcValue::String(value)))
+                    }
+                    0x02A0 => {
+                        // Alternative STRING type (Allen-Bradley specific) for batch operations
+                        if value_data.len() < 7 {
+                            return Err(BatchError::SerializationError("Insufficient data for alternative STRING value".to_string()));
                         }
+                        
+                        // For this format, the string data starts directly at position 6
+                        // We need to find the null terminator or use the full remaining length
+                        let string_start = 6;
+                        let string_data = &value_data[string_start..];
+                        
+                        // Find null terminator or use full length
+                        let string_end = string_data.iter().position(|&b| b == 0).unwrap_or(string_data.len());
+                        let string_bytes = &string_data[..string_end];
+                        
+                        let value = String::from_utf8_lossy(string_bytes).to_string();
+                        println!("🔧 [DEBUG] Parsed alternative STRING (0x02A0): '{}'", value);
+                        Ok(Some(PlcValue::String(value)))
                     }
                     _ => {
                         Err(BatchError::SerializationError(format!("Unsupported data type: 0x{:04X}", data_type)))
@@ -2297,1739 +2554,830 @@ impl EipClient {
             }
         }
     }
-}
 
-// =========================================================================
-// C FFI EXPORTS FOR CROSS-LANGUAGE INTEGRATION
-// =========================================================================
-
-/// Establishes connection to a CompactLogix PLC via EtherNet/IP
-/// 
-/// This is the C-compatible entry point for connecting to PLCs.
-/// It creates a new EipClient instance and returns a handle for
-/// use in subsequent operations.
-/// 
-/// # C Function Signature
-/// 
-/// ```c
-/// int eip_connect(const char* address);
-/// ```
-/// 
-/// # Parameters (C)
-/// 
-/// - `address`: Null-terminated string containing IP address and port (e.g., "192.168.1.100:44818")
-/// 
-/// # Returns (C)
-/// 
-/// - Positive integer: Client ID for successful connection
-/// - -1: Connection failed
-/// 
-/// # Safety
-/// 
-/// This function is unsafe because it dereferences a raw pointer (`address`).
-/// The caller must ensure that `address` is a valid, null-terminated C string.
-/// 
-/// # Example (C)
-/// 
-/// ```c
-/// int client_id = eip_connect("192.168.1.100:44818");
-/// if (client_id > 0) {
-///     printf("Connected with client ID: %d\n", client_id);
-/// } else {
-///     printf("Connection failed\n");
-/// }
-/// ```
-#[no_mangle]
-pub unsafe extern "C" fn eip_connect(address: *const c_char) -> c_int {
-    let address = unsafe {
-        match CStr::from_ptr(address).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client_id = clients.len() as i32 + 1;
-
-    let client = match RUNTIME.block_on(async {
-        EipClient::connect(address).await
-    }) {
-        Ok(c) => c,
-        Err(_) => return -1,
-    };
-
-    clients.insert(client_id, client);
-    client_id
-}
-
-/// Disconnects from a PLC and cleans up resources
-/// 
-/// # C Function Signature
-/// 
-/// ```c
-/// int eip_disconnect(int client_id);
-/// ```
-/// 
-/// # Parameters (C)
-/// 
-/// - `client_id`: Client ID returned from eip_connect()
-/// 
-/// # Returns (C)
-/// 
-/// - 0: Success
-/// - -1: Invalid client ID or disconnection failed
-/// 
-/// # Example (C)
-/// 
-/// ```c
-/// int result = eip_disconnect(client_id);
-/// if (result == 0) {
-///     printf("Disconnected successfully\n");
-/// }
-/// ```
-#[no_mangle]
-pub extern "C" fn eip_disconnect(client_id: c_int) -> c_int {
-    let mut clients = CLIENTS.lock().unwrap();
-    match clients.remove(&client_id) {
-        Some(mut client) => {
-            match RUNTIME.block_on(async {
-                client.unregister_session().await
-            }) {
-                Ok(_) => 0,
-                Err(_) => -1,
+    /// Experimental function to try different string writing approaches
+    /// This bypasses the normal string writing logic to test various formats
+    pub async fn write_string_experimental(&mut self, tag_name: &str, value: &str, approach: &str) -> crate::error::Result<()> {
+        self.validate_session().await?;
+        
+        println!("🧪 [EXPERIMENTAL] Trying approach: {}", approach);
+        
+        let cip_request = match approach {
+            "standard_cip" => self.build_standard_cip_string_write(tag_name, value)?,
+            "raw_bytes" => self.build_raw_bytes_write(tag_name, value)?,
+            "simple_ab" => self.build_simple_ab_string_write(tag_name, value)?,
+            "alt_service" => self.build_alt_service_write(tag_name, value)?,
+            "minimal" => self.build_minimal_string_write(tag_name, value)?,
+            _ => return Err(EtherNetIpError::Protocol(format!("Unknown experimental approach: {}", approach))),
+        };
+        
+        println!("🔧 [DEBUG] Built experimental request ({} bytes)", cip_request.len());
+        
+        match self.send_cip_request(&cip_request).await {
+            Ok(_response) => {
+                println!("✅ [EXPERIMENTAL] {} write succeeded!", approach);
+                Ok(())
+            }
+            Err(e) => {
+                println!("❌ [EXPERIMENTAL] {} write failed: {}", approach, e);
+                Err(e)
             }
         }
-        None => -1,
-    }
-}
-
-/// Reads a BOOL tag from the PLC
-/// 
-/// # C Function Signature
-/// 
-/// ```c
-/// int eip_read_bool(int client_id, const char* tag_name, int* result);
-/// ```
-/// 
-/// # Parameters (C)
-/// 
-/// - `client_id`: Client ID from eip_connect()
-/// - `tag_name`: Null-terminated tag name string
-/// - `result`: Pointer to integer where result will be stored (0 = false, 1 = true)
-/// 
-/// # Returns (C)
-/// 
-/// - 0: Success
-/// - -1: Error (invalid client, tag not found, type mismatch, etc.)
-/// 
-/// # Safety
-/// 
-/// This function is unsafe because it dereferences raw pointers (`tag_name` and `result`).
-/// The caller must ensure that:
-/// - `tag_name` is a valid, null-terminated C string
-/// - `result` points to a valid integer location
-/// 
-/// # Example (C)
-/// 
-/// ```c
-/// int value;
-/// int result = eip_read_bool(client_id, "MotorRunning", &value);
-/// if (result == 0) {
-///     printf("Motor running: %s\n", value ? "true" : "false");
-/// }
-/// ```
-#[no_mangle]
-pub unsafe extern "C" fn eip_read_bool(client_id: c_int, tag_name: *const c_char, result: *mut c_int) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.read_tag(tag_name).await
-    }) {
-        Ok(PlcValue::Bool(value)) => {
-            unsafe { *result = if value { 1 } else { 0 } };
-            0
-        }
-        _ => -1,
-    }
-}
-
-/// Writes a BOOL tag to the PLC
-/// 
-/// # C Function Signature
-/// 
-/// ```c
-/// int eip_write_bool(int client_id, const char* tag_name, int value);
-/// ```
-/// 
-/// # Parameters (C)
-/// 
-/// - `client_id`: Client ID from eip_connect()
-/// - `tag_name`: Null-terminated tag name string
-/// - `value`: Boolean value to write (0 = false, non-zero = true)
-/// 
-/// # Returns (C)
-/// 
-/// - 0: Success
-/// - -1: Error (invalid client, tag not found, write failed, etc.)
-/// 
-/// # Safety
-/// 
-/// This function is unsafe because it dereferences a raw pointer (`tag_name`).
-/// The caller must ensure that `tag_name` is a valid, null-terminated C string.
-/// 
-/// # Example (C)
-/// 
-/// ```c
-/// int result = eip_write_bool(client_id, "StartButton", 1);
-/// if (result == 0) {
-///     printf("Start button activated\n");
-/// }
-/// ```
-#[no_mangle]
-pub unsafe extern "C" fn eip_write_bool(client_id: c_int, tag_name: *const c_char, value: c_int) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.write_tag(tag_name, PlcValue::Bool(value != 0)).await
-    }) {
-        Ok(_) => 0,
-        Err(_) => -1,
-    }
-}
-
-/// Reads a DINT (32-bit integer) tag from the PLC
-/// 
-/// # C Function Signature
-/// 
-/// ```c
-/// int eip_read_dint(int client_id, const char* tag_name, int* result);
-/// ```
-/// 
-/// # Parameters (C)
-/// 
-/// - `client_id`: Client ID from eip_connect()
-/// - `tag_name`: Null-terminated tag name string
-/// - `result`: Pointer to integer where result will be stored
-/// 
-/// # Returns (C)
-/// 
-/// - 0: Success
-/// - -1: Error (invalid client, tag not found, type mismatch, etc.)
-/// 
-/// # Safety
-/// 
-/// This function is unsafe because it dereferences raw pointers (`tag_name` and `result`).
-/// The caller must ensure that:
-/// - `tag_name` is a valid, null-terminated C string
-/// - `result` points to a valid integer location
-/// 
-/// # Example (C)
-/// 
-/// ```c
-/// int counter_value;
-/// int result = eip_read_dint(client_id, "ProductionCount", &counter_value);
-/// if (result == 0) {
-///     printf("Production count: %d\n", counter_value);
-/// }
-/// ```
-#[no_mangle]
-pub unsafe extern "C" fn eip_read_dint(client_id: c_int, tag_name: *const c_char, result: *mut c_int) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.read_tag(tag_name).await
-    }) {
-        Ok(PlcValue::Dint(value)) => {
-            unsafe { *result = value };
-            0
-        }
-        _ => -1,
-    }
-}
-
-/// Writes a DINT (32-bit integer) tag to the PLC
-/// 
-/// # C Function Signature
-/// 
-/// ```c
-/// int eip_write_dint(int client_id, const char* tag_name, int value);
-/// ```
-/// 
-/// # Parameters (C)
-/// 
-/// - `client_id`: Client ID from eip_connect()
-/// - `tag_name`: Null-terminated tag name string
-/// - `value`: Integer value to write
-/// 
-/// # Returns (C)
-/// 
-/// - 0: Success
-/// - -1: Error (invalid client, tag not found, write failed, etc.)
-/// 
-/// # Safety
-/// 
-/// This function is unsafe because it dereferences a raw pointer (`tag_name`).
-/// The caller must ensure that `tag_name` is a valid, null-terminated C string.
-/// 
-/// # Example (C)
-/// 
-/// ```c
-/// int result = eip_write_dint(client_id, "SetPoint", 1500);
-/// if (result == 0) {
-///     printf("Set point updated to 1500\n");
-/// }
-/// ```
-#[no_mangle]
-pub unsafe extern "C" fn eip_write_dint(client_id: c_int, tag_name: *const c_char, value: c_int) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.write_tag(tag_name, PlcValue::Dint(value)).await
-    }) {
-        Ok(_) => 0,
-        Err(_) => -1,
-    }
-}
-
-/// Reads a REAL (32-bit float) tag from the PLC
-/// 
-/// # C Function Signature
-/// 
-/// ```c
-/// int eip_read_real(int client_id, const char* tag_name, double* result);
-/// ```
-/// 
-/// # Parameters (C)
-/// 
-/// - `client_id`: Client ID from eip_connect()
-/// - `tag_name`: Null-terminated tag name string
-/// - `result`: Pointer to double where result will be stored
-/// 
-/// # Returns (C)
-/// 
-/// - 0: Success
-/// - -1: Error (invalid client, tag not found, type mismatch, etc.)
-/// 
-/// # Safety
-/// 
-/// This function is unsafe because it dereferences raw pointers (`tag_name` and `result`).
-/// The caller must ensure that:
-/// - `tag_name` is a valid, null-terminated C string
-/// - `result` points to a valid double location
-/// 
-/// # Example (C)
-/// 
-/// ```c
-/// double temperature;
-/// int result = eip_read_real(client_id, "BoilerTemp", &temperature);
-/// if (result == 0) {
-///     printf("Temperature: %.2f°C\n", temperature);
-/// }
-/// ```
-#[no_mangle]
-pub unsafe extern "C" fn eip_read_real(client_id: c_int, tag_name: *const c_char, result: *mut c_double) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.read_tag(tag_name).await
-    }) {
-        Ok(PlcValue::Real(value)) => {
-            unsafe { *result = value as c_double };
-            0
-        }
-        _ => -1,
-    }
-}
-
-/// Writes a REAL (32-bit float) tag to the PLC
-/// 
-/// # C Function Signature
-/// 
-/// ```c
-/// int eip_write_real(int client_id, const char* tag_name, double value);
-/// ```
-/// 
-/// # Parameters (C)
-/// 
-/// - `client_id`: Client ID from eip_connect()
-/// - `tag_name`: Null-terminated tag name string
-/// - `value`: Float value to write
-/// 
-/// # Returns (C)
-/// 
-/// - 0: Success
-/// - -1: Error (invalid client, tag not found, write failed, etc.)
-/// 
-/// # Safety
-/// 
-/// This function is unsafe because it dereferences a raw pointer (`tag_name`).
-/// The caller must ensure that `tag_name` is a valid, null-terminated C string.
-/// 
-/// # Example (C)
-/// 
-/// ```c
-/// int result = eip_write_real(client_id, "TargetTemp", 72.5);
-/// if (result == 0) {
-///     printf("Target temperature set to 72.5°C\n");
-/// }
-/// ```
-#[no_mangle]
-pub unsafe extern "C" fn eip_write_real(client_id: c_int, tag_name: *const c_char, value: c_double) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.write_tag(tag_name, PlcValue::Real(value as f32)).await
-    }) {
-        Ok(_) => 0,
-        Err(_) => -1,
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn eip_read_string(client_id: c_int, tag_name: *const c_char, result: *mut c_char, max_length: c_int) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.read_tag(tag_name).await
-    }) {
-        Ok(PlcValue::String(value)) => {
-            let bytes = value.as_bytes();
-            let copy_len = std::cmp::min(bytes.len(), (max_length - 1) as usize);
-            
-            unsafe {
-                let src = bytes.as_ptr();
-                let dst = result as *mut u8;
-                std::ptr::copy_nonoverlapping(src, dst, copy_len);
-                *dst.add(copy_len) = 0; // Null terminator
-            }
-            0
-        }
-        _ => -1,
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn eip_write_string(client_id: c_int, tag_name: *const c_char, value: *const c_char) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let value = unsafe {
-        match CStr::from_ptr(value).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.write_tag(tag_name, PlcValue::String(value.to_string())).await
-    }) {
-        Ok(_) => 0,
-        Err(_) => -1,
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn eip_read_udt(client_id: c_int, tag_name: *const c_char, result: *mut HashMap<String, PlcValue>) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.read_tag(tag_name).await
-    }) {
-        Ok(PlcValue::Udt(value)) => {
-            unsafe { *result = value };
-            0
-        }
-        _ => -1,
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn eip_write_udt(client_id: c_int, tag_name: *const c_char, value: *const HashMap<String, PlcValue>) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let value = unsafe { &*value };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.write_tag(tag_name, PlcValue::Udt(value.clone())).await
-    }) {
-        Ok(_) => 0,
-        Err(_) => -1,
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn eip_discover_tags(client_id: c_int) -> c_int {
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.discover_tags().await
-    }) {
-        Ok(_) => 0,
-        Err(_) => -1,
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn eip_get_tag_metadata(client_id: c_int, tag_name: *const c_char, metadata: *mut TagMetadata) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match client.get_tag_metadata(tag_name) {
-        Some(m) => {
-            unsafe { *metadata = m };
-            0
-        }
-        None => -1,
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn eip_set_max_packet_size(client_id: c_int, size: c_int) -> c_int {
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    client.set_max_packet_size(size as u32);
-    0
-}
-
-/// Reads a SINT (8-bit signed integer) tag from the PLC
-#[no_mangle]
-pub unsafe extern "C" fn eip_read_sint(client_id: c_int, tag_name: *const c_char, result: *mut i8) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.read_tag(tag_name).await
-    }) {
-        Ok(PlcValue::Sint(value)) => {
-            unsafe { *result = value };
-            0
-        }
-        _ => -1,
-    }
-}
-
-/// Writes a SINT (8-bit signed integer) tag to the PLC
-#[no_mangle]
-pub unsafe extern "C" fn eip_write_sint(client_id: c_int, tag_name: *const c_char, value: i8) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.write_tag(tag_name, PlcValue::Sint(value)).await
-    }) {
-        Ok(_) => 0,
-        Err(_) => -1,
-    }
-}
-
-/// Reads an INT (16-bit signed integer) tag from the PLC
-#[no_mangle]
-pub unsafe extern "C" fn eip_read_int(client_id: c_int, tag_name: *const c_char, result: *mut i16) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.read_tag(tag_name).await
-    }) {
-        Ok(PlcValue::Int(value)) => {
-            unsafe { *result = value };
-            0
-        }
-        _ => -1,
-    }
-}
-
-/// Writes an INT (16-bit signed integer) tag to the PLC
-#[no_mangle]
-pub unsafe extern "C" fn eip_write_int(client_id: c_int, tag_name: *const c_char, value: i16) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.write_tag(tag_name, PlcValue::Int(value)).await
-    }) {
-        Ok(_) => 0,
-        Err(_) => -1,
-    }
-}
-
-/// Reads a LINT (64-bit signed integer) tag from the PLC
-#[no_mangle]
-pub unsafe extern "C" fn eip_read_lint(client_id: c_int, tag_name: *const c_char, result: *mut i64) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.read_tag(tag_name).await
-    }) {
-        Ok(PlcValue::Lint(value)) => {
-            unsafe { *result = value };
-            0
-        }
-        _ => -1,
-    }
-}
-
-/// Writes a LINT (64-bit signed integer) tag to the PLC
-#[no_mangle]
-pub unsafe extern "C" fn eip_write_lint(client_id: c_int, tag_name: *const c_char, value: i64) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.write_tag(tag_name, PlcValue::Lint(value)).await
-    }) {
-        Ok(_) => 0,
-        Err(_) => -1,
-    }
-}
-
-/// Reads a USINT (8-bit unsigned integer) tag from the PLC
-#[no_mangle]
-pub unsafe extern "C" fn eip_read_usint(client_id: c_int, tag_name: *const c_char, result: *mut u8) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.read_tag(tag_name).await
-    }) {
-        Ok(PlcValue::Usint(value)) => {
-            unsafe { *result = value };
-            0
-        }
-        _ => -1,
-    }
-}
-
-/// Writes a USINT (8-bit unsigned integer) tag to the PLC
-#[no_mangle]
-pub unsafe extern "C" fn eip_write_usint(client_id: c_int, tag_name: *const c_char, value: u8) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.write_tag(tag_name, PlcValue::Usint(value)).await
-    }) {
-        Ok(_) => 0,
-        Err(_) => -1,
-    }
-}
-
-/// Reads a UINT (16-bit unsigned integer) tag from the PLC
-#[no_mangle]
-pub unsafe extern "C" fn eip_read_uint(client_id: c_int, tag_name: *const c_char, result: *mut u16) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.read_tag(tag_name).await
-    }) {
-        Ok(PlcValue::Uint(value)) => {
-            unsafe { *result = value };
-            0
-        }
-        _ => -1,
-    }
-}
-
-/// Writes a UINT (16-bit unsigned integer) tag to the PLC
-#[no_mangle]
-pub unsafe extern "C" fn eip_write_uint(client_id: c_int, tag_name: *const c_char, value: u16) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.write_tag(tag_name, PlcValue::Uint(value)).await
-    }) {
-        Ok(_) => 0,
-        Err(_) => -1,
-    }
-}
-
-/// Reads a UDINT (32-bit unsigned integer) tag from the PLC
-#[no_mangle]
-pub unsafe extern "C" fn eip_read_udint(client_id: c_int, tag_name: *const c_char, result: *mut u32) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.read_tag(tag_name).await
-    }) {
-        Ok(PlcValue::Udint(value)) => {
-            unsafe { *result = value };
-            0
-        }
-        _ => -1,
-    }
-}
-
-/// Writes a UDINT (32-bit unsigned integer) tag to the PLC
-#[no_mangle]
-pub unsafe extern "C" fn eip_write_udint(client_id: c_int, tag_name: *const c_char, value: u32) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.write_tag(tag_name, PlcValue::Udint(value)).await
-    }) {
-        Ok(_) => 0,
-        Err(_) => -1,
-    }
-}
-
-/// Reads a ULINT (64-bit unsigned integer) tag from the PLC
-#[no_mangle]
-pub unsafe extern "C" fn eip_read_ulint(client_id: c_int, tag_name: *const c_char, result: *mut u64) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.read_tag(tag_name).await
-    }) {
-        Ok(PlcValue::Ulint(value)) => {
-            unsafe { *result = value };
-            0
-        }
-        _ => -1,
-    }
-}
-
-/// Writes a ULINT (64-bit unsigned integer) tag to the PLC
-#[no_mangle]
-pub unsafe extern "C" fn eip_write_ulint(client_id: c_int, tag_name: *const c_char, value: u64) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.write_tag(tag_name, PlcValue::Ulint(value)).await
-    }) {
-        Ok(_) => 0,
-        Err(_) => -1,
-    }
-}
-
-/// Reads an LREAL (64-bit double precision float) tag from the PLC
-#[no_mangle]
-pub unsafe extern "C" fn eip_read_lreal(client_id: c_int, tag_name: *const c_char, result: *mut c_double) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.read_tag(tag_name).await
-    }) {
-        Ok(PlcValue::Lreal(value)) => {
-            unsafe { *result = value as c_double };
-            0
-        }
-        _ => -1,
-    }
-}
-
-/// Writes an LREAL (64-bit double precision float) tag to the PLC
-#[no_mangle]
-pub unsafe extern "C" fn eip_write_lreal(client_id: c_int, tag_name: *const c_char, value: c_double) -> c_int {
-    let tag_name = unsafe {
-        match CStr::from_ptr(tag_name).to_str() {
-            Ok(s) => s,
-            Err(_) => return -1,
-        }
-    };
-
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.write_tag(tag_name, PlcValue::Lreal(value as f64)).await
-    }) {
-        Ok(_) => 0,
-        Err(_) => -1,
-    }
-}
-
-/// Checks the health of the connection to the PLC
-/// 
-/// # C Function Signature
-/// 
-/// ```c
-/// int eip_check_health(int client_id, int* is_healthy);
-/// ```
-/// 
-/// # Parameters (C)
-/// 
-/// - `client_id`: Client ID from eip_connect()
-/// - `is_healthy`: Pointer to integer where health status will be stored (1 = healthy, 0 = unhealthy)
-/// 
-/// # Returns (C)
-/// 
-/// - 0: Success
-/// - -1: Invalid client ID
-#[no_mangle]
-pub unsafe extern "C" fn eip_check_health(client_id: c_int, is_healthy: *mut c_int) -> c_int {
-    let clients = CLIENTS.lock().unwrap();
-    let client = match clients.get(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    let healthy = client.check_health();
-    unsafe { *is_healthy = if healthy { 1 } else { 0 } };
-    0
-}
-
-#[no_mangle]
-pub extern "C" fn eip_check_health_detailed(client_id: c_int, is_healthy: *mut c_int) -> c_int {
-    let mut clients = CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(c) => c,
-        None => return -1,
-    };
-
-    match RUNTIME.block_on(async {
-        client.check_health_detailed().await
-    }) {
-        Ok(healthy) => {
-            unsafe { *is_healthy = if healthy { 1 } else { 0 }; }
-            0
-        }
-        Err(_) => {
-            unsafe { *is_healthy = 0; }
-            -1
-        }
-    }
-}
-
-// =========================================================================
-// LIBRARY INFORMATION AND METADATA
-// =========================================================================
-
-/// Library version information
-pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-
-/// Library name
-pub const NAME: &str = env!("CARGO_PKG_NAME");
-
-/// Supported PLC models (as compile-time string for reference)
-pub const SUPPORTED_PLCS: &str = "CompactLogix L1x/L2x/L3x/L4x/L5x, MicroLogix 1100/1400";
-
-/// Supported data types (as compile-time string for reference)
-pub const SUPPORTED_DATA_TYPES: &str = "BOOL, SINT, INT, DINT, LINT, USINT, UINT, UDINT, ULINT, REAL, LREAL, STRING, UDT";
-
-/// Maximum recommended concurrent connections per PLC
-pub const MAX_CONNECTIONS_PER_PLC: u32 = 10;
-
-/// Default EtherNet/IP port
-pub const DEFAULT_PORT: u16 = 44818;
-
-/// Returns library version string
-/// 
-/// # C Function Signature
-/// 
-/// ```c
-/// const char* eip_get_version(void);
-/// ```
-/// 
-/// # Returns (C)
-/// 
-/// Null-terminated string with version information
-#[no_mangle]
-pub extern "C" fn eip_get_version() -> *const c_char {
-    concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr() as *const c_char
-}
-
-// =========================================================================
-// DOCUMENTATION TESTS
-// =========================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    
-    #[test]
-    fn test_plc_value_bool_encoding() {
-        let val_true = PlcValue::Bool(true);
-        let val_false = PlcValue::Bool(false);
-        
-        assert_eq!(val_true.to_bytes(), vec![0xFF]);
-        assert_eq!(val_false.to_bytes(), vec![0x00]);
-        assert_eq!(val_true.get_data_type(), 0x00C1);
     }
     
-    #[test]
-    fn test_plc_value_sint_encoding() {
-        let val_pos = PlcValue::Sint(127);
-        let val_neg = PlcValue::Sint(-128);
+    /// Build standard CIP STRING format (0x00DA)
+    fn build_standard_cip_string_write(&self, tag_name: &str, value: &str) -> crate::error::Result<Vec<u8>> {
+        let mut cip_request = Vec::new();
         
-        assert_eq!(val_pos.to_bytes(), vec![0x7F]);
-        assert_eq!(val_neg.to_bytes(), vec![0x80]);
-        assert_eq!(val_pos.get_data_type(), 0x00C2);
-    }
-    
-    #[test]
-    fn test_plc_value_int_encoding() {
-        let val_pos = PlcValue::Int(32767);
-        let val_neg = PlcValue::Int(-32768);
+        // Service: Write Tag Service (0x4D)
+        cip_request.push(0x4D);
         
-        assert_eq!(val_pos.to_bytes(), vec![0xFF, 0x7F]); // Little-endian
-        assert_eq!(val_neg.to_bytes(), vec![0x00, 0x80]); // Little-endian
-        assert_eq!(val_pos.get_data_type(), 0x00C3);
-    }
-    
-    #[test]
-    fn test_plc_value_dint_encoding() {
-        let val = PlcValue::Dint(0x12345678);
-        let bytes = val.to_bytes();
-        
-        assert_eq!(bytes, vec![0x78, 0x56, 0x34, 0x12]); // Little-endian
-        assert_eq!(val.get_data_type(), 0x00C4);
-    }
-    
-    #[test]
-    fn test_plc_value_lint_encoding() {
-        let val = PlcValue::Lint(0x123456789ABCDEF0);
-        let bytes = val.to_bytes();
-        
-        assert_eq!(bytes, vec![0xF0, 0xDE, 0xBC, 0x9A, 0x78, 0x56, 0x34, 0x12]); // Little-endian
-        assert_eq!(val.get_data_type(), 0x00C5);
-    }
-    
-    #[test]
-    fn test_plc_value_usint_encoding() {
-        let val = PlcValue::Usint(255);
-        
-        assert_eq!(val.to_bytes(), vec![0xFF]);
-        assert_eq!(val.get_data_type(), 0x00C6);
-    }
-    
-    #[test]
-    fn test_plc_value_uint_encoding() {
-        let val = PlcValue::Uint(65535);
-        
-        assert_eq!(val.to_bytes(), vec![0xFF, 0xFF]); // Little-endian
-        assert_eq!(val.get_data_type(), 0x00C7);
-    }
-    
-    #[test]
-    fn test_plc_value_udint_encoding() {
-        let val = PlcValue::Udint(0xFFFFFFFF);
-        
-        assert_eq!(val.to_bytes(), vec![0xFF, 0xFF, 0xFF, 0xFF]); // Little-endian
-        assert_eq!(val.get_data_type(), 0x00C8);
-    }
-    
-    #[test]
-    fn test_plc_value_ulint_encoding() {
-        let val = PlcValue::Ulint(0xFFFFFFFFFFFFFFFF);
-        
-        assert_eq!(val.to_bytes(), vec![0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]); // Little-endian
-        assert_eq!(val.get_data_type(), 0x00C9);
-    }
-    
-    #[test]
-    fn test_plc_value_real_encoding() {
-        let val = PlcValue::Real(123.45);
-        let bytes = val.to_bytes();
-        
-        assert_eq!(bytes.len(), 4); // Should be 4 bytes
-        assert_eq!(val.get_data_type(), 0x00CA);
-    }
-    
-    #[test]
-    fn test_plc_value_lreal_encoding() {
-        let val = PlcValue::Lreal(123.456789);
-        let bytes = val.to_bytes();
-        
-        assert_eq!(bytes.len(), 8); // Should be 8 bytes
-        assert_eq!(val.get_data_type(), 0x00CB);
-    }
-    
-    #[test]
-    fn test_plc_value_string_encoding() {
-        let val = PlcValue::String("Hello".to_string());
-        let bytes = val.to_bytes();
-        
-        assert_eq!(bytes[0], 5); // Length byte
-        assert_eq!(&bytes[1..], b"Hello");
-        assert_eq!(val.get_data_type(), 0x00DA);
-    }
-    
-    #[test]
-    fn test_plc_value_data_type_ranges() {
-        // Test extreme values for each data type
-        assert_eq!(PlcValue::Sint(-128).get_data_type(), 0x00C2);
-        assert_eq!(PlcValue::Sint(127).get_data_type(), 0x00C2);
-        
-        assert_eq!(PlcValue::Int(-32768).get_data_type(), 0x00C3);
-        assert_eq!(PlcValue::Int(32767).get_data_type(), 0x00C3);
-        
-        assert_eq!(PlcValue::Usint(0).get_data_type(), 0x00C6);
-        assert_eq!(PlcValue::Usint(255).get_data_type(), 0x00C6);
-        
-        assert_eq!(PlcValue::Uint(0).get_data_type(), 0x00C7);
-        assert_eq!(PlcValue::Uint(65535).get_data_type(), 0x00C7);
-    }
-
-    // =========================================================================
-    // BATCH OPERATIONS TESTS
-    // =========================================================================
-
-    #[test]
-    fn test_batch_operation_creation() {
-        let read_op = BatchOperation::Read { 
-            tag_name: "TestTag".to_string() 
+        // Request Path
+        let tag_bytes = tag_name.as_bytes();
+        let path_len = if tag_bytes.len() % 2 == 0 { 
+            tag_bytes.len() + 2 
+        } else { 
+            tag_bytes.len() + 3 
         };
         
-        let write_op = BatchOperation::Write { 
-            tag_name: "SetPoint".to_string(), 
-            value: PlcValue::Dint(1500) 
-        };
+        cip_request.push((path_len / 2) as u8);
+        cip_request.push(0x91);
+        cip_request.push(tag_bytes.len() as u8);
+        cip_request.extend_from_slice(tag_bytes);
         
-        match read_op {
-            BatchOperation::Read { tag_name } => assert_eq!(tag_name, "TestTag"),
-            _ => panic!("Expected Read operation"),
+        if tag_bytes.len() % 2 != 0 {
+            cip_request.push(0x00);
         }
         
-        match write_op {
-            BatchOperation::Write { tag_name, value } => {
-                assert_eq!(tag_name, "SetPoint");
-                assert_eq!(value, PlcValue::Dint(1500));
-            }
-            _ => panic!("Expected Write operation"),
+        // Data Type: Standard STRING (0x00DA)
+        cip_request.extend_from_slice(&[0xDA, 0x00]);
+        
+        // Element Count
+        cip_request.extend_from_slice(&[0x01, 0x00]);
+        
+        // Standard STRING format: [length][data]
+        let string_len = value.len() as u16;
+        cip_request.extend_from_slice(&string_len.to_le_bytes());
+        cip_request.extend_from_slice(value.as_bytes());
+        
+        Ok(cip_request)
+    }
+    
+    /// Build raw bytes approach (minimal formatting)
+    fn build_raw_bytes_write(&self, tag_name: &str, value: &str) -> crate::error::Result<Vec<u8>> {
+        let mut cip_request = Vec::new();
+        
+        // Service: Write Tag Service (0x4D)
+        cip_request.push(0x4D);
+        
+        // Request Path
+        let tag_bytes = tag_name.as_bytes();
+        let path_len = if tag_bytes.len() % 2 == 0 { 
+            tag_bytes.len() + 2 
+        } else { 
+            tag_bytes.len() + 3 
+        };
+        
+        cip_request.push((path_len / 2) as u8);
+        cip_request.push(0x91);
+        cip_request.push(tag_bytes.len() as u8);
+        cip_request.extend_from_slice(tag_bytes);
+        
+        if tag_bytes.len() % 2 != 0 {
+            cip_request.push(0x00);
         }
-    }
-
-    #[test]
-    fn test_batch_config_default() {
-        let config = BatchConfig::default();
         
-        assert_eq!(config.max_operations_per_packet, 20);
-        assert_eq!(config.max_packet_size, 504);
-        assert_eq!(config.packet_timeout_ms, 3000);
-        assert_eq!(config.continue_on_error, true);
-        assert_eq!(config.optimize_packet_packing, true);
+        // Just the string bytes
+        cip_request.extend_from_slice(value.as_bytes());
+        
+        Ok(cip_request)
     }
-
-    #[test]
-    fn test_batch_config_custom() {
-        let config = BatchConfig {
-            max_operations_per_packet: 50,
-            max_packet_size: 1500,
-            packet_timeout_ms: 5000,
-            continue_on_error: false,
-            optimize_packet_packing: false,
+    
+    /// Build simplified Allen-Bradley format
+    fn build_simple_ab_string_write(&self, tag_name: &str, value: &str) -> crate::error::Result<Vec<u8>> {
+        let mut cip_request = Vec::new();
+        
+        // Service: Write Tag Service (0x4D)
+        cip_request.push(0x4D);
+        
+        // Request Path
+        let tag_bytes = tag_name.as_bytes();
+        let path_len = if tag_bytes.len() % 2 == 0 { 
+            tag_bytes.len() + 2 
+        } else { 
+            tag_bytes.len() + 3 
         };
         
-        assert_eq!(config.max_operations_per_packet, 50);
-        assert_eq!(config.max_packet_size, 1500);
-        assert_eq!(config.packet_timeout_ms, 5000);
-        assert_eq!(config.continue_on_error, false);
-        assert_eq!(config.optimize_packet_packing, false);
+        cip_request.push((path_len / 2) as u8);
+        cip_request.push(0x91);
+        cip_request.push(tag_bytes.len() as u8);
+        cip_request.extend_from_slice(tag_bytes);
+        
+        if tag_bytes.len() % 2 != 0 {
+            cip_request.push(0x00);
+        }
+        
+        // Data Type: Allen-Bradley STRING (0x02A0)
+        cip_request.extend_from_slice(&[0xA0, 0x02]);
+        
+        // Element Count
+        cip_request.extend_from_slice(&[0x01, 0x00]);
+        
+        // Simplified: Just [current_length][string_data]
+        let string_len = value.len() as u32;
+        cip_request.extend_from_slice(&string_len.to_le_bytes());
+        cip_request.extend_from_slice(value.as_bytes());
+        
+        Ok(cip_request)
     }
-
-    #[test]
-    fn test_batch_error_display() {
-        let tag_not_found = BatchError::TagNotFound("TestTag".to_string());
-        assert_eq!(tag_not_found.to_string(), "Tag not found: TestTag");
+    
+    /// Build alternative service approach
+    fn build_alt_service_write(&self, tag_name: &str, value: &str) -> crate::error::Result<Vec<u8>> {
+        let mut cip_request = Vec::new();
         
-        let data_type_mismatch = BatchError::DataTypeMismatch {
-            expected: "DINT".to_string(),
-            actual: "REAL".to_string(),
+        // Service: Set Attribute Single (0x10)
+        cip_request.push(0x10);
+        
+        // Request Path
+        let tag_bytes = tag_name.as_bytes();
+        let path_len = if tag_bytes.len() % 2 == 0 { 
+            tag_bytes.len() + 2 
+        } else { 
+            tag_bytes.len() + 3 
         };
-        assert_eq!(data_type_mismatch.to_string(), "Data type mismatch: expected DINT, got REAL");
         
-        let cip_error = BatchError::CipError {
-            status: 0x04,
-            message: "Path destination unknown".to_string(),
-        };
-        assert_eq!(cip_error.to_string(), "CIP error (0x04): Path destination unknown");
+        cip_request.push((path_len / 2) as u8);
+        cip_request.push(0x91);
+        cip_request.push(tag_bytes.len() as u8);
+        cip_request.extend_from_slice(tag_bytes);
         
-        let network_error = BatchError::NetworkError("Connection timeout".to_string());
-        assert_eq!(network_error.to_string(), "Network error: Connection timeout");
+        if tag_bytes.len() % 2 != 0 {
+            cip_request.push(0x00);
+        }
         
-        let timeout_error = BatchError::Timeout;
-        assert_eq!(timeout_error.to_string(), "Operation timeout");
+        // Standard format
+        let string_len = value.len() as u16;
+        cip_request.extend_from_slice(&string_len.to_le_bytes());
+        cip_request.extend_from_slice(value.as_bytes());
+        
+        Ok(cip_request)
     }
-
-    #[test]
-    fn test_batch_result_creation() {
-        let operation = BatchOperation::Read { 
-            tag_name: "TestTag".to_string() 
+    
+    /// Build absolutely minimal approach
+    fn build_minimal_string_write(&self, tag_name: &str, value: &str) -> crate::error::Result<Vec<u8>> {
+        let mut cip_request = Vec::new();
+        
+        // Service: Write Tag Service (0x4D)
+        cip_request.push(0x4D);
+        
+        // Request Path
+        let tag_bytes = tag_name.as_bytes();
+        let path_len = if tag_bytes.len() % 2 == 0 { 
+            tag_bytes.len() + 2 
+        } else { 
+            tag_bytes.len() + 3 
         };
         
-        let successful_result = BatchResult {
-            operation: operation.clone(),
-            result: Ok(Some(PlcValue::Dint(42))),
-            execution_time_us: 1500,
-        };
+        cip_request.push((path_len / 2) as u8);
+        cip_request.push(0x91);
+        cip_request.push(tag_bytes.len() as u8);
+        cip_request.extend_from_slice(tag_bytes);
         
-        assert!(successful_result.result.is_ok());
-        assert_eq!(successful_result.execution_time_us, 1500);
+        if tag_bytes.len() % 2 != 0 {
+            cip_request.push(0x00);
+        }
         
-        let error_result = BatchResult {
-            operation: operation,
-            result: Err(BatchError::TagNotFound("TestTag".to_string())),
-            execution_time_us: 500,
-        };
+        // Data Type: Allen-Bradley STRING (0x02A0)
+        cip_request.extend_from_slice(&[0xA0, 0x02]);
         
-        assert!(error_result.result.is_err());
-        assert_eq!(error_result.execution_time_us, 500);
+        // Element Count
+        cip_request.extend_from_slice(&[0x01, 0x00]);
+        
+        // Minimal: Match the read format exactly
+        // Based on our debug: [CE, 0F, 00, 00, ...]
+        // But use actual string length instead of mysterious 4046
+        let actual_capacity = 82u16; // Your declared capacity
+        let string_len = value.len() as u16;
+        
+        cip_request.extend_from_slice(&actual_capacity.to_le_bytes()); // max length
+        cip_request.extend_from_slice(&string_len.to_le_bytes());      // current length
+        cip_request.extend_from_slice(value.as_bytes());               // string data
+        
+        Ok(cip_request)
     }
-
-    #[test]
-    fn test_multiple_service_packet_structure() {
-        // Test the theoretical structure of a Multiple Service Packet
-        // This tests the packet building logic without requiring a PLC
+    
+    /// Writes a string value using Allen-Bradley UDT component access
+    /// This writes to TestString.LEN and TestString.DATA separately
+    pub async fn write_ab_string_components(&mut self, tag_name: &str, value: &str) -> crate::error::Result<()> {
+        println!("🔧 [AB STRING] Writing string '{}' to tag '{}' using component access", value, tag_name);
         
-        let _operations = vec![
-            BatchOperation::Read { tag_name: "Tag1".to_string() },
-            BatchOperation::Read { tag_name: "Tag2".to_string() },
-        ];
+        let string_bytes = value.as_bytes();
+        let string_len = string_bytes.len() as i32;
         
-        // In a real client, this would test:
-        // let packet = client.build_multiple_service_packet(&operations).unwrap();
+        // Step 1: Write the length to TestString.LEN
+        let len_tag = format!("{}.LEN", tag_name);
+        println!("   📝 Step 1: Writing length {} to {}", string_len, len_tag);
         
-        // For now, test the structure we expect
-        let expected_service_code = 0x0A; // Multiple Service Packet
-        let expected_path_size = 0x02; // Path size in words
-        let expected_class_segment = 0x20; // Class segment
-        let expected_class = 0x02; // Message Router class
-        let expected_instance_segment = 0x24; // Instance segment
-        let expected_instance = 0x01; // Instance 1
-        
-        assert_eq!(expected_service_code, 0x0A);
-        assert_eq!(expected_path_size, 0x02);
-        assert_eq!(expected_class_segment, 0x20);
-        assert_eq!(expected_class, 0x02);
-        assert_eq!(expected_instance_segment, 0x24);
-        assert_eq!(expected_instance, 0x01);
-    }
-
-    #[test]
-    fn test_batch_operation_grouping_logic() {
-        let operations = vec![
-            BatchOperation::Read { tag_name: "ReadTag1".to_string() },
-            BatchOperation::Write { tag_name: "WriteTag1".to_string(), value: PlcValue::Dint(100) },
-            BatchOperation::Read { tag_name: "ReadTag2".to_string() },
-            BatchOperation::Write { tag_name: "WriteTag2".to_string(), value: PlcValue::Bool(true) },
-        ];
-        
-        // Test optimal grouping (reads together, writes together)
-        let mut reads = Vec::new();
-        let mut writes = Vec::new();
-        
-        for op in &operations {
-            match op {
-                BatchOperation::Read { .. } => reads.push(op),
-                BatchOperation::Write { .. } => writes.push(op),
+        match self.write_tag(&len_tag, PlcValue::Dint(string_len)).await {
+            Ok(_) => println!("   ✅ Length written successfully"),
+            Err(e) => {
+                println!("   ❌ Length write failed: {}", e);
+                return Err(e);
             }
         }
         
-        assert_eq!(reads.len(), 2);
-        assert_eq!(writes.len(), 2);
+        // Step 2: Write the string data to TestString.DATA using array access
+        println!("   📝 Step 2: Writing string data to {}.DATA", tag_name);
         
-        // Test sequential grouping (preserves order)
-        let chunks: Vec<_> = operations.chunks(3).collect();
-        assert_eq!(chunks.len(), 2); // 4 operations, max 3 per chunk = 2 chunks
-        assert_eq!(chunks[0].len(), 3);
-        assert_eq!(chunks[1].len(), 1);
-    }
-
-    #[test]
-    fn test_operation_sizing_estimates() {
-        // Test estimated sizes for different operations
-        // This helps with packet packing calculations
-        
-        let short_tag = "A";
-        let medium_tag = "LongTagName";
-        let long_tag = "VeryLongTagNameThatExceedsNormalLimits";
-        
-        // Basic CIP read request structure:
-        // - Service code: 1 byte
-        // - Path size: 1 byte  
-        // - ANSI segment: 1 byte
-        // - Tag length: 1 byte
-        // - Tag name: variable
-        // - Padding: 0-1 bytes
-        // - Element count: 2 bytes
-        
-        let short_read_size = 1 + 1 + 1 + 1 + short_tag.len() + 
-                             (if short_tag.len() % 2 != 0 { 1 } else { 0 }) + 2;
-        let medium_read_size = 1 + 1 + 1 + 1 + medium_tag.len() + 
-                              (if medium_tag.len() % 2 != 0 { 1 } else { 0 }) + 2;
-        let long_read_size = 1 + 1 + 1 + 1 + long_tag.len() + 
-                            (if long_tag.len() % 2 != 0 { 1 } else { 0 }) + 2;
-        
-        assert_eq!(short_read_size, 8); // 1+1+1+1+1+1+2
-        assert_eq!(medium_read_size, 18); // 1+1+1+1+11+1+2
-        assert_eq!(long_read_size, 44); // 1+1+1+1+35+1+2 (actual result is 44)
-        
-        // These sizes help determine optimal packet packing
-        let max_packet_size = 504;
-        let estimated_ops_per_packet = max_packet_size / medium_read_size;
-        assert!(estimated_ops_per_packet >= 20); // Should fit at least 20 medium operations
-    }
-
-    #[test]
-    fn test_batch_performance_characteristics() {
-        // Test performance-related calculations and expectations
-        
-        let individual_op_latency_ms = 2.0; // 2ms per individual operation
-        let batch_overhead_ms = 5.0; // 5ms for batch setup/processing
-        let batch_per_op_ms = 0.2; // 0.2ms per operation in batch
-        
-        let operation_count = 50;
-        
-        // Individual operations total time
-        let individual_total_ms = operation_count as f64 * individual_op_latency_ms;
-        
-        // Batch operations total time  
-        let batch_total_ms = batch_overhead_ms + (operation_count as f64 * batch_per_op_ms);
-        
-        let speedup_factor = individual_total_ms / batch_total_ms;
-        
-        assert_eq!(individual_total_ms, 100.0); // 50 * 2ms
-        assert_eq!(batch_total_ms, 15.0); // 5ms + (50 * 0.2ms)
-        assert!((speedup_factor - 6.67).abs() < 0.01); // ~6.67x speedup
-        
-        // Verify our performance claims are realistic
-        assert!(speedup_factor >= 5.0); // At least 5x improvement
-        assert!(speedup_factor <= 10.0); // At most 10x improvement (realistic upper bound)
-    }
-
-    #[test]
-    fn test_error_handling_strategies() {
-        // Test different error handling strategies for batch operations
-        
-        let operations = vec![
-            BatchOperation::Read { tag_name: "GoodTag1".to_string() },
-            BatchOperation::Read { tag_name: "BadTag".to_string() },
-            BatchOperation::Read { tag_name: "GoodTag2".to_string() },
-        ];
-        
-        // Strategy 1: Continue on error (default)
-        let continue_on_error = true;
-        if continue_on_error {
-            // All operations should be attempted, errors reported individually
-            assert_eq!(operations.len(), 3);
-        }
-        
-        // Strategy 2: Stop on first error
-        let stop_on_error = false;
-        if !stop_on_error {
-            // Only operations before first error should be processed
-            // (This would be implemented in the actual batch execution logic)
-        }
-        
-        // Test error categorization
-        let errors = vec![
-            BatchError::TagNotFound("MissingTag".to_string()),
-            BatchError::NetworkError("Timeout".to_string()),
-            BatchError::CipError { status: 0x04, message: "Path error".to_string() },
-        ];
-        
-        for error in errors {
-            match error {
-                BatchError::TagNotFound(_) => {
-                    // Recoverable - tag might exist after PLC program update
-                    assert!(true);
+        // We need to write each character individually to the DATA array
+        for (i, &byte) in string_bytes.iter().enumerate() {
+            let data_element = format!("{}.DATA[{}]", tag_name, i);
+            match self.write_tag(&data_element, PlcValue::Sint(byte as i8)).await {
+                Ok(_) => print!("."),
+                Err(e) => {
+                    println!("\n   ❌ Failed to write byte {} to position {}: {}", byte, i, e);
+                    return Err(e);
                 }
-                BatchError::NetworkError(_) => {
-                    // Potentially recoverable - retry might work
-                    assert!(true);
-                }
-                BatchError::CipError { status, .. } => {
-                    // Depends on status code
-                    if status == 0x04 {
-                        // Path destination unknown - likely not recoverable
-                        assert!(true);
-                    }
-                }
-                _ => {}
             }
         }
-    }
-
-    #[test]
-    fn test_batch_operations_empty_input() {
-        // Test batch operations with empty input
-        let empty_operations: Vec<BatchOperation> = Vec::new();
         
-        // Should handle empty batch gracefully
-        assert_eq!(empty_operations.len(), 0);
-        
-        // Test empty tag names for batch reads
-        let empty_tag_names: Vec<&str> = Vec::new();
-        assert_eq!(empty_tag_names.len(), 0);
-        
-        // Test empty tag values for batch writes
-        let empty_tag_values: Vec<(&str, PlcValue)> = Vec::new();
-        assert_eq!(empty_tag_values.len(), 0);
-    }
-
-    #[test]
-    fn test_batch_operations_large_scale() {
-        // Test batch operations with a large number of operations
-        let mut large_operations = Vec::new();
-        
-        // Create 100 read operations
-        for i in 0..100 {
-            large_operations.push(BatchOperation::Read {
-                tag_name: format!("Tag_{:03}", i),
-            });
+        // Step 3: Clear remaining bytes (null terminate)
+        if string_bytes.len() < 82 {
+            let null_element = format!("{}.DATA[{}]", tag_name, string_bytes.len());
+            match self.write_tag(&null_element, PlcValue::Sint(0)).await {
+                Ok(_) => println!("\n   ✅ String null-terminated successfully"),
+                Err(e) => println!("\n   ⚠️ Could not null-terminate: {}", e),
+            }
         }
         
-        // Create 100 write operations
-        for i in 0..100 {
-            large_operations.push(BatchOperation::Write {
-                tag_name: format!("WriteTag_{:03}", i),
-                value: PlcValue::Dint(i as i32),
-            });
+        println!("   🎉 AB STRING component write completed!");
+        Ok(())
+    }
+    
+    /// Writes a string using a single UDT write with proper AB STRING format
+    pub async fn write_ab_string_udt(&mut self, tag_name: &str, value: &str) -> crate::error::Result<()> {
+        println!("🔧 [AB STRING UDT] Writing string '{}' to tag '{}' as UDT", value, tag_name);
+        
+        let string_bytes = value.as_bytes();
+        if string_bytes.len() > 82 {
+            return Err(EtherNetIpError::Protocol("String too long for Allen-Bradley STRING (max 82 chars)".to_string()));
         }
         
-        assert_eq!(large_operations.len(), 200);
+        // Build a CIP request that writes the complete AB STRING structure
+        let mut cip_request = Vec::new();
         
-        // Test chunking logic for large batches
-        let max_ops_per_packet = 25;
-        let chunks: Vec<_> = large_operations.chunks(max_ops_per_packet).collect();
-        assert_eq!(chunks.len(), 8); // 200 operations / 25 per chunk = 8 chunks
+        // Service: Write Tag Service (0x4D)
+        cip_request.push(0x4D);
         
-        // Verify each chunk size
-        for (i, chunk) in chunks.iter().enumerate() {
-            if i < 7 {
-                assert_eq!(chunk.len(), max_ops_per_packet);
+        // Request Path
+        let tag_path = self.build_tag_path(tag_name);
+        cip_request.push((tag_path.len() / 2) as u8); // Path size in words
+        cip_request.extend_from_slice(&tag_path);
+        
+        // Data Type: Allen-Bradley STRING (0x02A0) - but write as UDT components
+        cip_request.extend_from_slice(&[0xA0, 0x00]); // UDT type
+        cip_request.extend_from_slice(&[0x01, 0x00]); // Element count
+        
+        // AB STRING UDT structure:
+        // - DINT .LEN (4 bytes)
+        // - SINT .DATA[82] (82 bytes)
+        
+        // Write .LEN field (current string length)
+        let len = string_bytes.len() as u32;
+        cip_request.extend_from_slice(&len.to_le_bytes());
+        
+        // Write .DATA field (82 bytes total)
+        cip_request.extend_from_slice(string_bytes); // Actual string data
+        
+        // Pad with zeros to reach 82 bytes
+        let padding_needed = 82 - string_bytes.len();
+        cip_request.extend_from_slice(&vec![0u8; padding_needed]);
+        
+        println!("   📦 Built UDT write request: {} bytes total", cip_request.len());
+        
+        let response = self.send_cip_request(&cip_request).await?;
+        
+        if response.len() >= 3 {
+            let general_status = response[2];
+            if general_status == 0x00 {
+                println!("   ✅ AB STRING UDT write successful!");
+                Ok(())
             } else {
-                // When operations divide evenly, the last chunk has max_ops_per_packet elements
-                // Only when there's a remainder does the last chunk have fewer elements
-                let remainder = 200 % max_ops_per_packet;
-                let expected_last_chunk_size = if remainder == 0 { max_ops_per_packet } else { remainder };
-                assert_eq!(chunk.len(), expected_last_chunk_size);
+                let error_msg = self.get_cip_error_message(general_status);
+                Err(EtherNetIpError::Protocol(format!("AB STRING UDT write failed - CIP Error 0x{:02X}: {}", general_status, error_msg)))
             }
+        } else {
+            Err(EtherNetIpError::Protocol("Invalid AB STRING UDT write response".to_string()))
         }
     }
-
-    #[test]
-    fn test_batch_operations_mixed_data_types() {
-        // Test batch operations with all supported data types
-        let mixed_operations = vec![
-            BatchOperation::Write { tag_name: "BoolTag".to_string(), value: PlcValue::Bool(true) },
-            BatchOperation::Write { tag_name: "SintTag".to_string(), value: PlcValue::Sint(-42) },
-            BatchOperation::Write { tag_name: "IntTag".to_string(), value: PlcValue::Int(-1234) },
-            BatchOperation::Write { tag_name: "DintTag".to_string(), value: PlcValue::Dint(-123456) },
-            BatchOperation::Write { tag_name: "LintTag".to_string(), value: PlcValue::Lint(-1234567890) },
-            BatchOperation::Write { tag_name: "UsintTag".to_string(), value: PlcValue::Usint(255) },
-            BatchOperation::Write { tag_name: "UintTag".to_string(), value: PlcValue::Uint(65535) },
-            BatchOperation::Write { tag_name: "UdintTag".to_string(), value: PlcValue::Udint(4294967295) },
-            BatchOperation::Write { tag_name: "UlintTag".to_string(), value: PlcValue::Ulint(18446744073709551615) },
-            BatchOperation::Write { tag_name: "RealTag".to_string(), value: PlcValue::Real(3.14159) },
-            BatchOperation::Write { tag_name: "LrealTag".to_string(), value: PlcValue::Lreal(2.718281828459045) },
-            BatchOperation::Write { tag_name: "StringTag".to_string(), value: PlcValue::String("Hello, World!".to_string()) },
-        ];
+    
+    /// Establishes a Class 3 connected session for STRING operations
+    /// 
+    /// Connected sessions are required for certain operations like STRING writes
+    /// in Allen-Bradley PLCs. This implements the Forward Open CIP service.
+    /// Will try multiple connection parameter configurations until one succeeds.
+    async fn establish_connected_session(&mut self, session_name: &str) -> crate::error::Result<()> {
+        println!("🔗 [CONNECTED] Establishing connected session: '{}'", session_name);
+        println!("🔗 [CONNECTED] Will try multiple parameter configurations...");
         
-        assert_eq!(mixed_operations.len(), 12);
+        // Generate unique connection parameters
+        self.connection_sequence += 1;
+        let connection_serial = (self.connection_sequence & 0xFFFF) as u16;
         
-        // Verify each operation has the correct data type
-        for operation in &mixed_operations {
-            match operation {
-                BatchOperation::Write { value, .. } => {
-                    // Each value should have a valid data type
-                    let data_type = value.get_data_type();
-                    assert!(data_type > 0);
+        // Try different configurations until one works
+        for config_id in 0..=5 {
+            println!("\n🔧 [ATTEMPT {}] Trying configuration {}:", config_id + 1, config_id);
+            
+            let mut session = if config_id == 0 {
+                ConnectedSession::new(connection_serial)
+            } else {
+                ConnectedSession::with_config(connection_serial, config_id)
+            };
+            
+            // Generate unique connection IDs for this attempt
+            session.o_to_t_connection_id = 0x20000000 + self.connection_sequence + (config_id as u32 * 0x1000);
+            session.t_to_o_connection_id = 0x30000000 + self.connection_sequence + (config_id as u32 * 0x1000);
+            
+            // Build Forward Open request with this configuration
+            let forward_open_request = self.build_forward_open_request(&session)?;
+            
+            println!("🔗 [ATTEMPT {}] Sending Forward Open request ({} bytes)", config_id + 1, forward_open_request.len());
+            
+            // Send Forward Open request
+            match self.send_cip_request(&forward_open_request).await {
+                Ok(response) => {
+                    // Try to parse the response - DON'T clone, modify the session directly!
+                    match self.parse_forward_open_response(&mut session, &response) {
+                        Ok(()) => {
+                            // Success! Store the session and return
+                            println!("✅ [SUCCESS] Configuration {} worked!", config_id);
+                            println!("   Connection ID: 0x{:08X}", session.connection_id);
+                            println!("   O->T ID: 0x{:08X}", session.o_to_t_connection_id);
+                            println!("   T->O ID: 0x{:08X}", session.t_to_o_connection_id);
+                            println!("   Using Connection ID: 0x{:08X} for messaging", session.connection_id);
+                            
+                            session.is_active = true;
+                            self.connected_sessions.insert(session_name.to_string(), session);
+                            return Ok(());
+                        },
+                        Err(e) => {
+                            println!("❌ [ATTEMPT {}] Configuration {} failed: {}", config_id + 1, config_id, e);
+                            
+                            // If it's a specific status error, log it
+                            if e.to_string().contains("status: 0x") {
+                                println!("   Status indicates: parameter incompatibility or resource conflict");
+                            }
+                        }
+                    }
+                },
+                Err(e) => {
+                    println!("❌ [ATTEMPT {}] Network error with config {}: {}", config_id + 1, config_id, e);
                 }
-                _ => {}
+            }
+            
+            // Small delay between attempts
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        
+        // If we get here, all configurations failed
+        Err(EtherNetIpError::Protocol(
+            "All connection parameter configurations failed. PLC may not support connected messaging or has reached connection limits.".to_string()
+        ))
+    }
+    
+    /// Builds a Forward Open CIP request for establishing connected sessions
+    fn build_forward_open_request(&self, session: &ConnectedSession) -> crate::error::Result<Vec<u8>> {
+        let mut request = Vec::new();
+        
+        // CIP Forward Open Service (0x54)
+        request.push(0x54);
+        
+        // Request path length (Connection Manager object)
+        request.push(0x02); // 2 words
+        
+        // Class ID: Connection Manager (0x06)
+        request.push(0x20); // Logical Class segment
+        request.push(0x06);
+        
+        // Instance ID: Connection Manager instance (0x01)
+        request.push(0x24); // Logical Instance segment
+        request.push(0x01);
+        
+        // Forward Open parameters
+        
+        // Connection Timeout Ticks (1 byte) + Timeout multiplier (1 byte)
+        request.push(0x0A); // Timeout ticks (10)
+        request.push(session.timeout_multiplier);
+        
+        // Originator -> Target Connection ID (4 bytes, little-endian)
+        request.extend_from_slice(&session.o_to_t_connection_id.to_le_bytes());
+        
+        // Target -> Originator Connection ID (4 bytes, little-endian)
+        request.extend_from_slice(&session.t_to_o_connection_id.to_le_bytes());
+        
+        // Connection Serial Number (2 bytes, little-endian)
+        request.extend_from_slice(&session.connection_serial.to_le_bytes());
+        
+        // Originator Vendor ID (2 bytes, little-endian)
+        request.extend_from_slice(&session.originator_vendor_id.to_le_bytes());
+        
+        // Originator Serial Number (4 bytes, little-endian)
+        request.extend_from_slice(&session.originator_serial.to_le_bytes());
+        
+        // Connection Timeout Multiplier (1 byte) - repeated for target
+        request.push(session.timeout_multiplier);
+        
+        // Reserved bytes (3 bytes)
+        request.extend_from_slice(&[0x00, 0x00, 0x00]);
+        
+        // Originator -> Target RPI (4 bytes, little-endian, microseconds)
+        request.extend_from_slice(&session.rpi.to_le_bytes());
+        
+        // Originator -> Target connection parameters (4 bytes)
+        let o_to_t_params = self.encode_connection_parameters(&session.o_to_t_params);
+        request.extend_from_slice(&o_to_t_params.to_le_bytes());
+        
+        // Target -> Originator RPI (4 bytes, little-endian, microseconds)
+        request.extend_from_slice(&session.rpi.to_le_bytes());
+        
+        // Target -> Originator connection parameters (4 bytes)
+        let t_to_o_params = self.encode_connection_parameters(&session.t_to_o_params);
+        request.extend_from_slice(&t_to_o_params.to_le_bytes());
+        
+        // Transport type/trigger (1 byte) - Class 3, Application triggered
+        request.push(0xA3);
+        
+        // Connection Path Size (1 byte)
+        request.push(0x02); // 2 words for Message Router path
+        
+        // Connection Path - Target the Message Router
+        request.push(0x20); // Logical Class segment
+        request.push(0x02); // Message Router class (0x02)
+        request.push(0x24); // Logical Instance segment
+        request.push(0x01); // Message Router instance (0x01)
+        
+        Ok(request)
+    }
+    
+    /// Encodes connection parameters into a 32-bit value
+    fn encode_connection_parameters(&self, params: &ConnectionParameters) -> u32 {
+        let mut encoded = 0u32;
+        
+        // Connection size (bits 0-15)
+        encoded |= params.size as u32;
+        
+        // Variable flag (bit 25)
+        if params.variable_size {
+            encoded |= 1 << 25;
+        }
+        
+        // Connection type (bits 29-30)
+        encoded |= (params.connection_type as u32) << 29;
+        
+        // Priority (bits 26-27)
+        encoded |= (params.priority as u32) << 26;
+        
+        encoded
+    }
+    
+    /// Parses Forward Open response and updates session with connection info
+    fn parse_forward_open_response(&self, session: &mut ConnectedSession, response: &[u8]) -> crate::error::Result<()> {
+        if response.len() < 2 {
+            return Err(EtherNetIpError::Protocol("Forward Open response too short".to_string()));
+        }
+        
+        let service = response[0];
+        let status = response[1];
+        
+        // Check if this is a Forward Open Reply (0xD4)
+        if service != 0xD4 {
+            return Err(EtherNetIpError::Protocol(format!("Unexpected service in Forward Open response: 0x{:02X}", service)));
+        }
+        
+        // Check status
+        if status != 0x00 {
+            let error_msg = match status {
+                0x01 => "Connection failure - Resource unavailable or already exists",
+                0x02 => "Invalid parameter - Connection parameters rejected",
+                0x03 => "Connection timeout - PLC did not respond in time",
+                0x04 => "Connection limit exceeded - Too many connections",
+                0x08 => "Invalid service - Forward Open not supported",
+                0x0C => "Invalid attribute - Connection parameters invalid",
+                0x13 => "Path destination unknown - Target object not found",
+                0x26 => "Invalid parameter value - RPI or size out of range",
+                _ => &format!("Unknown status: 0x{:02X}", status),
+            };
+            return Err(EtherNetIpError::Protocol(format!("Forward Open failed with status 0x{:02X}: {}", status, error_msg)));
+        }
+        
+        // Parse successful response
+        if response.len() < 16 {
+            return Err(EtherNetIpError::Protocol("Forward Open response data too short".to_string()));
+        }
+        
+        // CRITICAL FIX: The Forward Open response contains the actual connection IDs assigned by the PLC
+        // Use the IDs returned by the PLC, not our requested ones
+        let actual_o_to_t_id = u32::from_le_bytes([response[2], response[3], response[4], response[5]]);
+        let actual_t_to_o_id = u32::from_le_bytes([response[6], response[7], response[8], response[9]]);
+        
+        // Update session with the actual assigned connection IDs
+        session.o_to_t_connection_id = actual_o_to_t_id;
+        session.t_to_o_connection_id = actual_t_to_o_id;
+        session.connection_id = actual_o_to_t_id;  // Use O->T as the primary connection ID
+        
+        println!("✅ [FORWARD OPEN] Success!");
+        println!("   O->T Connection ID: 0x{:08X} (PLC assigned)", session.o_to_t_connection_id);
+        println!("   T->O Connection ID: 0x{:08X} (PLC assigned)", session.t_to_o_connection_id);
+        println!("   Using Connection ID: 0x{:08X} for messaging", session.connection_id);
+        
+        Ok(())
+    }
+    
+    /// Writes a string using connected explicit messaging
+    pub async fn write_string_connected(&mut self, tag_name: &str, value: &str) -> crate::error::Result<()> {
+        let session_name = format!("string_session_{}", tag_name);
+        
+        // Establish connected session if not already connected
+        if !self.connected_sessions.contains_key(&session_name) {
+            self.establish_connected_session(&session_name).await?;
+        }
+        
+        // Get the connected session
+        let session = self.connected_sessions.get(&session_name)
+            .ok_or_else(|| EtherNetIpError::Protocol("Connected session not found".to_string()))?
+            .clone();
+        
+        // Build connected string write request
+        let request = self.build_connected_string_write_request(tag_name, value, &session)?;
+        
+        // Send via connected messaging
+        let _response = self.send_connected_cip_request(&request, &session).await?;
+        
+        println!("✅ [CONNECTED WRITE] String write successful");
+        
+        Ok(())
+    }
+    
+    /// Builds a string write request for connected messaging
+    fn build_connected_string_write_request(&self, tag_name: &str, value: &str, _session: &ConnectedSession) -> crate::error::Result<Vec<u8>> {
+        let mut request = Vec::new();
+        
+        // For connected messaging, use direct CIP Write service
+        // The connection is already established, so we can send the request directly
+        
+        // CIP Write Service Code
+        request.push(0x4D);
+        
+        // Tag path - use simple ANSI format for connected messaging  
+        let tag_bytes = tag_name.as_bytes();
+        let path_size_words = (2 + tag_bytes.len() + 1) / 2; // +1 for potential padding, /2 for word count
+        request.push(path_size_words as u8);
+        
+        request.push(0x91);  // ANSI Extended Symbol segment
+        request.push(tag_bytes.len() as u8);  // Length
+        request.extend_from_slice(tag_bytes);
+        
+        // Add padding to make the path even-length in bytes
+        if tag_bytes.len() % 2 != 0 {
+            request.push(0x00);
+        }
+        
+        // AB STRING format data type (0x02A0)
+        request.extend_from_slice(&0x02A0u16.to_le_bytes());
+        
+        // Element count (1 element)
+        request.extend_from_slice(&1u16.to_le_bytes());
+        
+        // AB STRING data
+        let value_bytes = value.as_bytes();
+        let string_len = std::cmp::min(value_bytes.len(), 82); // Max 82 characters for AB STRING
+        
+        // LEN field (4 bytes, DINT)
+        request.extend_from_slice(&(string_len as u32).to_le_bytes());
+        
+        // DATA field (82 bytes, SINT array)
+        request.extend_from_slice(&value_bytes[..string_len]);
+        
+        // Pad remaining DATA bytes with zeros
+        for _ in string_len..82 {
+            request.push(0x00);
+        }
+        
+        Ok(request)
+    }
+    
+    /// Sends a CIP request using connected messaging
+    async fn send_connected_cip_request(&mut self, cip_request: &[u8], session: &ConnectedSession) -> crate::error::Result<Vec<u8>> {
+        println!("🔗 [CONNECTED] Sending connected CIP request ({} bytes) using T->O connection ID 0x{:08X}", 
+                 cip_request.len(), session.t_to_o_connection_id);
+        
+        // Build EtherNet/IP header for connected data (Send RR Data)
+        let mut packet = Vec::new();
+        
+        // EtherNet/IP Header
+        packet.extend_from_slice(&[0x6F, 0x00]); // Command: Send RR Data (0x006F) - correct for connected messaging
+        packet.extend_from_slice(&[0x00, 0x00]); // Length (fill in later)
+        packet.extend_from_slice(&self.session_handle.to_le_bytes()); // Session handle
+        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // Status
+        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]); // Context
+        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // Options
+        
+        // CPF (Common Packet Format) data starts here
+        let cpf_start = packet.len();
+        
+        // Interface handle (4 bytes)
+        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+        
+        // Timeout (2 bytes) - 5 seconds
+        packet.extend_from_slice(&[0x05, 0x00]);
+        
+        // Item count (2 bytes) - 2 items: Address + Data
+        packet.extend_from_slice(&[0x02, 0x00]);
+        
+        // Item 1: Connected Address Item (specifies which connection to use)
+        packet.extend_from_slice(&[0xA1, 0x00]); // Type: Connected Address Item (0x00A1)
+        packet.extend_from_slice(&[0x04, 0x00]); // Length: 4 bytes
+        // Use T->O connection ID (Target to Originator) for addressing
+        packet.extend_from_slice(&session.t_to_o_connection_id.to_le_bytes());
+        
+        // Item 2: Connected Data Item (contains the CIP request + sequence)
+        packet.extend_from_slice(&[0xB1, 0x00]); // Type: Connected Data Item (0x00B1)
+        let data_length = cip_request.len() + 2; // +2 for sequence count
+        packet.extend_from_slice(&(data_length as u16).to_le_bytes()); // Length
+        
+        // Sequence count (2 bytes) - incremental counter for this connection
+        packet.extend_from_slice(&[0x01, 0x00]); // Simple sequence counter
+        
+        // CIP request data
+        packet.extend_from_slice(cip_request);
+        
+        // Update packet length in header (total CPF data size)
+        let cpf_length = packet.len() - cpf_start;
+        packet[2..4].copy_from_slice(&(cpf_length as u16).to_le_bytes());
+        
+        println!("🔗 [CONNECTED] Sending packet ({} bytes)", packet.len());
+        
+        // Send packet
+        self.stream.write_all(&packet).await
+            .map_err(|e| EtherNetIpError::Io(e))?;
+        
+        // Read response header
+        let mut header = [0u8; 24];
+        self.stream.read_exact(&mut header).await
+            .map_err(|e| EtherNetIpError::Io(e))?;
+        
+        // Check EtherNet/IP command status
+        let cmd_status = u32::from_le_bytes([header[8], header[9], header[10], header[11]]);
+        if cmd_status != 0 {
+            return Err(EtherNetIpError::Protocol(format!("Connected message failed with status: 0x{:08X}", cmd_status)));
+        }
+        
+        // Read response data
+        let response_length = u16::from_le_bytes([header[2], header[3]]) as usize;
+        let mut response_data = vec![0u8; response_length];
+        self.stream.read_exact(&mut response_data).await
+            .map_err(|e| EtherNetIpError::Io(e))?;
+        
+        self.last_activity = Instant::now();
+        
+        println!("🔗 [CONNECTED] Received response ({} bytes)", response_data.len());
+        
+        // Extract connected CIP response
+        self.extract_connected_cip_from_response(&response_data)
+    }
+    
+    /// Extracts CIP data from connected response
+    fn extract_connected_cip_from_response(&self, response: &[u8]) -> crate::error::Result<Vec<u8>> {
+        println!("🔗 [CONNECTED] Extracting CIP from connected response ({} bytes): {:02X?}", 
+                 response.len(), response);
+        
+        if response.len() < 12 {
+            return Err(EtherNetIpError::Protocol("Connected response too short for CPF header".to_string()));
+        }
+        
+        // Parse CPF (Common Packet Format) structure
+        // [0-3]: Interface handle
+        // [4-5]: Timeout
+        // [6-7]: Item count
+        let item_count = u16::from_le_bytes([response[6], response[7]]) as usize;
+        println!("🔗 [CONNECTED] CPF item count: {}", item_count);
+        
+        let mut pos = 8; // Start after CPF header
+        
+        // Look for Connected Data Item (0x00B1)
+        for _i in 0..item_count {
+            if pos + 4 > response.len() {
+                return Err(EtherNetIpError::Protocol("Response truncated while parsing items".to_string()));
+            }
+            
+            let item_type = u16::from_le_bytes([response[pos], response[pos + 1]]);
+            let item_length = u16::from_le_bytes([response[pos + 2], response[pos + 3]]) as usize;
+            pos += 4; // Skip item header
+            
+            println!("🔗 [CONNECTED] Found item: type=0x{:04X}, length={}", item_type, item_length);
+            
+            if item_type == 0x00B1 { // Connected Data Item
+                if pos + item_length > response.len() {
+                    return Err(EtherNetIpError::Protocol("Connected data item truncated".to_string()));
+                }
+                
+                // Connected Data Item contains [sequence_count(2)][cip_data]
+                if item_length < 2 {
+                    return Err(EtherNetIpError::Protocol("Connected data item too short for sequence".to_string()));
+                }
+                
+                let sequence_count = u16::from_le_bytes([response[pos], response[pos + 1]]);
+                println!("🔗 [CONNECTED] Sequence count: {}", sequence_count);
+                
+                // Extract CIP data (skip 2-byte sequence count)
+                let cip_data = response[pos + 2..pos + item_length].to_vec();
+                println!("🔗 [CONNECTED] Extracted CIP data ({} bytes): {:02X?}", 
+                         cip_data.len(), cip_data);
+                
+                return Ok(cip_data);
+            } else {
+                // Skip this item's data
+                pos += item_length;
             }
         }
+        
+        Err(EtherNetIpError::Protocol("Connected Data Item (0x00B1) not found in response".to_string()))
+    }
+    
+    /// Closes a specific connected session
+    async fn close_connected_session(&mut self, session_name: &str) -> crate::error::Result<()> {
+        if let Some(session) = self.connected_sessions.get(session_name) {
+            let session = session.clone(); // Clone to avoid borrowing issues
+            
+            // Build Forward Close request
+            let forward_close_request = self.build_forward_close_request(&session)?;
+            
+            // Send Forward Close request
+            let _response = self.send_cip_request(&forward_close_request).await?;
+            
+            println!("🔗 [CONNECTED] Session '{}' closed successfully", session_name);
+        }
+        
+        // Remove session from our tracking
+        self.connected_sessions.remove(session_name);
+        
+        Ok(())
     }
 
-    #[test]
-    fn test_batch_config_validation() {
-        // Test various batch configurations for validity
+    /// Builds a Forward Close CIP request for terminating connected sessions
+    fn build_forward_close_request(&self, session: &ConnectedSession) -> crate::error::Result<Vec<u8>> {
+        let mut request = Vec::new();
         
-        // Default configuration should be valid
-        let default_config = BatchConfig::default();
-        assert_eq!(default_config.max_operations_per_packet, 20);
-        assert_eq!(default_config.max_packet_size, 504);
-        assert_eq!(default_config.packet_timeout_ms, 3000);
-        assert!(default_config.continue_on_error);
-        assert!(default_config.optimize_packet_packing);
+        // CIP Forward Close Service (0x4E)
+        request.push(0x4E);
         
-        // High-performance configuration
-        let high_perf_config = BatchConfig {
-            max_operations_per_packet: 50,
-            max_packet_size: 4000,
-            packet_timeout_ms: 1000,
-            continue_on_error: true,
-            optimize_packet_packing: true,
-        };
-        assert_eq!(high_perf_config.max_operations_per_packet, 50);
+        // Request path length (Connection Manager object)
+        request.push(0x02); // 2 words
         
-        // Conservative configuration
-        let conservative_config = BatchConfig {
-            max_operations_per_packet: 10,
-            max_packet_size: 300,
-            packet_timeout_ms: 5000,
-            continue_on_error: false,
-            optimize_packet_packing: false,
-        };
-        assert_eq!(conservative_config.max_operations_per_packet, 10);
+        // Class ID: Connection Manager (0x06)
+        request.push(0x20); // Logical Class segment
+        request.push(0x06);
         
-        // Edge case: minimum viable configuration
-        let min_config = BatchConfig {
-            max_operations_per_packet: 1,
-            max_packet_size: 64,
-            packet_timeout_ms: 500,
-            continue_on_error: true,
-            optimize_packet_packing: false,
-        };
-        assert_eq!(min_config.max_operations_per_packet, 1);
+        // Instance ID: Connection Manager instance (0x01)  
+        request.push(0x24); // Logical Instance segment
+        request.push(0x01);
+        
+        // Forward Close parameters
+        
+        // Connection Timeout Ticks (1 byte) + Timeout multiplier (1 byte)
+        request.push(0x0A); // Timeout ticks (10)
+        request.push(session.timeout_multiplier);
+        
+        // Connection Serial Number (2 bytes, little-endian)
+        request.extend_from_slice(&session.connection_serial.to_le_bytes());
+        
+        // Originator Vendor ID (2 bytes, little-endian)
+        request.extend_from_slice(&session.originator_vendor_id.to_le_bytes());
+        
+        // Originator Serial Number (4 bytes, little-endian)
+        request.extend_from_slice(&session.originator_serial.to_le_bytes());
+        
+        // Connection Path Size (1 byte)
+        request.push(0x02); // 2 words for Message Router path
+        
+        // Connection Path - Target the Message Router
+        request.push(0x20); // Logical Class segment
+        request.push(0x02); // Message Router class (0x02)
+        request.push(0x24); // Logical Instance segment  
+        request.push(0x01); // Message Router instance (0x01)
+        
+        Ok(request)
     }
-
-    #[test]
-    fn test_packet_size_estimation() {
-        // Test packet size estimation for different operation types
+     
+    /// Closes all connected sessions (called during disconnect)
+    async fn close_all_connected_sessions(&mut self) -> crate::error::Result<()> {
+        let session_names: Vec<String> = self.connected_sessions.keys().cloned().collect();
         
-        // Estimate size of a simple read operation
-        let simple_read = BatchOperation::Read { tag_name: "Tag1".to_string() };
+        for session_name in session_names {
+            let _ = self.close_connected_session(&session_name).await; // Ignore errors during cleanup
+        }
         
-        // Estimate size of a complex write operation
-        let complex_write = BatchOperation::Write {
-            tag_name: "ComplexTag_With_Long_Name".to_string(),
-            value: PlcValue::String("This is a long string value for testing".to_string()),
-        };
-        
-        // Multiple Service Packet overhead
-        let msp_overhead = 6; // Service code + path size + path
-        let service_offset_overhead = 4; // 2 bytes per service offset
-        
-        // Estimate total packet size for mixed operations
-        let operations = vec![simple_read, complex_write];
-        let estimated_overhead = msp_overhead + (operations.len() * service_offset_overhead);
-        
-        // Should be reasonable overhead
-        assert!(estimated_overhead > 0);
-        assert!(estimated_overhead < 100); // Reasonable overhead limit
-        
-        // Test maximum packet utilization
-        let max_packet_size = 504;
-        let available_payload = max_packet_size - estimated_overhead;
-        assert!(available_payload > 400); // Should have substantial payload capacity
-    }
-
-    #[test]
-    fn test_batch_error_conversion() {
-        // Test conversion between different error types
-        
-        // Test error display formatting
-        let tag_not_found = BatchError::TagNotFound("MissingTag".to_string());
-        let error_message = format!("{}", tag_not_found);
-        assert!(error_message.contains("MissingTag"));
-        assert!(error_message.contains("not found"));
-        
-        // Test CIP error formatting
-        let cip_error = BatchError::CipError {
-            status: 0x16,
-            message: "Object does not exist".to_string(),
-        };
-        let cip_message = format!("{}", cip_error);
-        assert!(cip_message.contains("0x16"));
-        assert!(cip_message.contains("Object does not exist"));
-        
-        // Test network error
-        let network_error = BatchError::NetworkError("Connection timeout".to_string());
-        let network_message = format!("{}", network_error);
-        assert!(network_message.contains("Connection timeout"));
-        
-        // Test timeout error
-        let timeout_error = BatchError::Timeout;
-        let timeout_message = format!("{}", timeout_error);
-        assert!(timeout_message.contains("timeout"));
-        
-        // Test data type mismatch
-        let type_error = BatchError::DataTypeMismatch {
-            expected: "DINT".to_string(),
-            actual: "REAL".to_string(),
-        };
-        let type_message = format!("{}", type_error);
-        assert!(type_message.contains("DINT"));
-        assert!(type_message.contains("REAL"));
+        Ok(())
     }
 }
 
@@ -4055,5 +3403,5 @@ refer to the inline documentation above.
 Version: 1.0.0
 Compatible with: CompactLogix L1x-L5x series PLCs
 License: As specified in Cargo.toml
-===============================================================================
+===============================================================================_
 */

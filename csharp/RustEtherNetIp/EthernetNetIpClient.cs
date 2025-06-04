@@ -1081,11 +1081,7 @@ namespace RustEtherNetIp
                         catch (Exception ex) 
                         { 
                             lastException = ex;
-                            // STRING operations may not be implemented in the underlying Rust library yet
-                            if (ex.Message.Contains("DllNotFoundException") || ex.Message.Contains("EntryPointNotFoundException"))
-                            {
-                                lastException = new Exception("STRING support not yet implemented in underlying Rust library");
-                            }
+                            // STRING operations are fully supported in the Rust library
                         }
                     }
 
@@ -1197,10 +1193,10 @@ namespace RustEtherNetIp
                                     }
                                     catch (Exception ex)
                                     {
-                                        // STRING operations may not be implemented in the underlying Rust library yet
+                                        // Handle any unexpected errors during STRING operations
                                         if (ex.Message.Contains("DllNotFoundException") || ex.Message.Contains("EntryPointNotFoundException"))
                                         {
-                                            throw new Exception("STRING support not yet implemented in underlying Rust library");
+                                            throw new Exception("STRING support library not found or accessible");
                                         }
                                         throw;
                                     }
@@ -1238,10 +1234,10 @@ namespace RustEtherNetIp
                             }
                             catch (Exception ex)
                             {
-                                // STRING operations may not be implemented in the underlying Rust library yet
+                                // Handle any unexpected errors during STRING operations
                                 if (ex.Message.Contains("DllNotFoundException") || ex.Message.Contains("EntryPointNotFoundException"))
                                 {
-                                    throw new Exception("STRING support not yet implemented in underlying Rust library");
+                                    throw new Exception("STRING support library not found or accessible");
                                 }
                                 throw;
                             }
@@ -1367,10 +1363,10 @@ namespace RustEtherNetIp
                                         }
                                         catch (Exception ex)
                                         {
-                                            // STRING operations may not be implemented in the underlying Rust library yet
+                                            // Handle any unexpected errors during STRING operations
                                             if (ex.Message.Contains("DllNotFoundException") || ex.Message.Contains("EntryPointNotFoundException"))
                                             {
-                                                throw new Exception("STRING support not yet implemented in underlying Rust library");
+                                                throw new Exception("STRING support library not found or accessible");
                                             }
                                             throw;
                                         }
@@ -1408,10 +1404,10 @@ namespace RustEtherNetIp
                                 }
                                 catch (Exception ex)
                                 {
-                                    // STRING operations may not be implemented in the underlying Rust library yet
+                                    // Handle any unexpected errors during STRING operations
                                     if (ex.Message.Contains("DllNotFoundException") || ex.Message.Contains("EntryPointNotFoundException"))
                                     {
-                                        throw new Exception("STRING support not yet implemented in underlying Rust library");
+                                        throw new Exception("STRING support library not found or accessible");
                                     }
                                     throw;
                                 }
@@ -1490,11 +1486,7 @@ namespace RustEtherNetIp
                             catch (Exception ex) 
                             { 
                                 lastException = ex;
-                                // STRING operations may not be implemented in the underlying Rust library yet
-                                if (ex.Message.Contains("DllNotFoundException") || ex.Message.Contains("EntryPointNotFoundException"))
-                                {
-                                    lastException = new Exception("STRING support not yet implemented in underlying Rust library");
-                                }
+                                // STRING operations are fully supported in the Rust library
                             }
                         }
 

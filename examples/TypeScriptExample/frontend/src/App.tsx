@@ -81,17 +81,17 @@ function App() {
   // ================================================================================
 
   // Batch Read
-  const [batchReadTags, setBatchReadTags] = useState<string>('TestTag\nTestBool\nTestInt\nTestReal');
+  const [batchReadTags, setBatchReadTags] = useState<string>('TestTag\nTestBool\nTestInt\nTestReal\nTestString');
   const [batchReadResult, setBatchReadResult] = useState<BatchReadResult | null>(null);
   const [isBatchReading, setIsBatchReading] = useState(false);
 
   // Batch Write
-  const [batchWriteData, setBatchWriteData] = useState<string>('TestTag=true\nTestBool=false\nTestInt=999\nTestReal=88.8');
+  const [batchWriteData, setBatchWriteData] = useState<string>('TestTag=true\nTestBool=false\nTestInt=999\nTestReal=88.8\nTestString=Hello PLC');
   const [batchWriteResult, setBatchWriteResult] = useState<BatchWriteResult | null>(null);
   const [isBatchWriting, setIsBatchWriting] = useState(false);
 
   // Mixed Operations
-  const [mixedOperations, setMixedOperations] = useState<string>('read:TestTag\nread:TestBool\nwrite:TestInt=777\nwrite:TestReal=99.9');
+  const [mixedOperations, setMixedOperations] = useState<string>('read:TestTag\nread:TestBool\nwrite:TestInt=777\nwrite:TestReal=99.9\nwrite:TestString=Updated Text');
   const [mixedResult, setMixedResult] = useState<BatchMixedResult | null>(null);
   const [isMixedExecuting, setIsMixedExecuting] = useState(false);
 
@@ -902,7 +902,8 @@ function App() {
       { name: 'TestTag', type: 'BOOL' as PlcDataType, value: true },
       { name: 'TestBool', type: 'BOOL' as PlcDataType, value: true },
       { name: 'TestInt', type: 'DINT' as PlcDataType, value: 42 },
-      { name: 'TestReal', type: 'REAL' as PlcDataType, value: 123.45 }
+      { name: 'TestReal', type: 'REAL' as PlcDataType, value: 123.45 },
+      { name: 'TestString', type: 'STRING' as PlcDataType, value: 'Hello from TypeScript!' }
     ];
 
     let successCount = 0;
@@ -1284,8 +1285,8 @@ function App() {
                         <li><code>TestReal</code> (REAL) - A floating point number</li>
                       </ul>
                       <div className="string-limitation-note">
-                        <strong>⚠️ Note:</strong> STRING tag support is not yet implemented in the underlying Rust library.
-                        Only BOOL, DINT, INT, REAL, and numeric types are currently supported.
+                        <strong>ℹ️ Note:</strong> All data types including STRING are fully supported in the Rust library.
+                        Test with BOOL, DINT, INT, REAL, STRING, and other data types as needed.
                       </div>
                     </div>
                     <div className="instruction-step">
@@ -1320,7 +1321,7 @@ function App() {
                       <textarea
                         value={batchReadTags}
                         onChange={(e) => setBatchReadTags(e.target.value)}
-                        placeholder="TestTag&#10;TestBool&#10;TestInt&#10;TestReal"
+                        placeholder="TestTag&#10;TestBool&#10;TestInt&#10;TestReal&#10;TestString"
                         disabled={!isConnected}
                         className="batch-textarea"
                         rows={5}
@@ -1398,7 +1399,7 @@ function App() {
                       <textarea
                         value={batchWriteData}
                         onChange={(e) => setBatchWriteData(e.target.value)}
-                        placeholder="TestTag=true&#10;TestBool=false&#10;TestInt=999&#10;TestReal=88.8"
+                        placeholder="TestTag=true&#10;TestBool=false&#10;TestInt=999&#10;TestReal=88.8&#10;TestString=Hello PLC"
                         disabled={!isConnected}
                         className="batch-textarea"
                         rows={5}
@@ -1474,7 +1475,7 @@ function App() {
                       <textarea
                         value={mixedOperations}
                         onChange={(e) => setMixedOperations(e.target.value)}
-                        placeholder="read:TestTag&#10;read:TestBool&#10;write:TestInt=777&#10;write:TestReal=99.9"
+                        placeholder="read:TestTag&#10;read:TestBool&#10;write:TestInt=777&#10;write:TestReal=99.9&#10;write:TestString=Mixed Test"
                         disabled={!isConnected}
                         className="batch-textarea"
                         rows={5}
