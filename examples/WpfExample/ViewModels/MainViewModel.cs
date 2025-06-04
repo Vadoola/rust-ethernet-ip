@@ -9,6 +9,8 @@ using System.Windows.Threading;
 using WpfExample.Models;
 using RustEtherNetIp;
 using System.Threading;
+using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace WpfExample.ViewModels
 {
@@ -52,6 +54,19 @@ namespace WpfExample.ViewModels
         [ObservableProperty]
         private string selectedDataType = "BOOL";
 
+        // Batch Operations Properties
+        [ObservableProperty]
+        private string batchReadTags = "TestTag\nTestBool\nTestInt\nTestReal";
+
+        [ObservableProperty]
+        private string batchWriteTags = "TestTag=true\nTestBool=false\nTestInt=999\nTestReal=88.8";
+
+        [ObservableProperty]
+        private string batchResults = "";
+
+        [ObservableProperty]
+        private string batchPerformance = "";
+
         public ObservableCollection<string> DataTypes { get; } = new()
         {
             "BOOL",    // Boolean values
@@ -64,9 +79,8 @@ namespace WpfExample.ViewModels
             "UDINT",   // 32-bit unsigned integer (0 to 4.3B)
             "ULINT",   // 64-bit unsigned integer
             "REAL",    // 32-bit IEEE 754 float
-            "LREAL",   // 64-bit IEEE 754 double
-            "STRING",  // Variable-length strings
-            "UDT"      // User Defined Types
+            "LREAL"    // 64-bit IEEE 754 double
+            // Note: STRING and UDT types removed as they're not supported in current Rust library
         };
 
         public ObservableCollection<PlcTag> Tags { get; } = new();
@@ -80,15 +94,16 @@ namespace WpfExample.ViewModels
 
         private void InitializeTags()
         {
-            // Basic tags
+            // Updated test tags to match TypeScript frontend (remove STRING examples)
+            // Focus on supported data types only
+            Tags.Add(new PlcTag("TestTag", "BOOL"));
             Tags.Add(new PlcTag("TestBool", "BOOL"));
-            Tags.Add(new PlcTag("TestDint", "DINT"));
+            Tags.Add(new PlcTag("TestInt", "DINT"));
             Tags.Add(new PlcTag("TestReal", "REAL"));
-            Tags.Add(new PlcTag("TestString", "STRING"));
             
-            // All integer types
+            // Additional supported integer types for advanced users
             Tags.Add(new PlcTag("TestSint", "SINT"));
-            Tags.Add(new PlcTag("TestInt", "INT"));
+            Tags.Add(new PlcTag("TestInt16", "INT"));
             Tags.Add(new PlcTag("TestLint", "LINT"));
             Tags.Add(new PlcTag("TestUsint", "USINT"));
             Tags.Add(new PlcTag("TestUint", "UINT"));
@@ -96,12 +111,13 @@ namespace WpfExample.ViewModels
             Tags.Add(new PlcTag("TestUlint", "ULINT"));
             Tags.Add(new PlcTag("TestLreal", "LREAL"));
             
-            // Advanced tag addressing examples
+            // Advanced tag addressing examples (for reference)
             Tags.Add(new PlcTag("Program:MainProgram.Motor.Status", "BOOL"));
             Tags.Add(new PlcTag("DataArray[5]", "DINT"));
             Tags.Add(new PlcTag("StatusWord.15", "BOOL"));
             Tags.Add(new PlcTag("MotorData.Speed", "REAL"));
-            Tags.Add(new PlcTag("ProductName.LEN", "DINT"));
+            
+            // Note: STRING tags are not included as they're not supported in current Rust library
         }
 
         private void SetupTimer()
@@ -240,6 +256,17 @@ namespace WpfExample.ViewModels
 
                         try
                         {
+                            var sintValue = _plcClient.ReadSint(TagToDiscover);
+                            SelectedDataType = "SINT";
+                            TagName = TagToDiscover;
+                            TagValue = sintValue.ToString();
+                            LogMessage($"✅ Discovered SINT tag: {TagToDiscover} = {sintValue}");
+                            return true;
+                        }
+                        catch { }
+
+                        try
+                        {
                             var intValue = _plcClient.ReadInt(TagToDiscover);
                             SelectedDataType = "INT";
                             TagName = TagToDiscover;
@@ -251,11 +278,88 @@ namespace WpfExample.ViewModels
 
                         try
                         {
+                            var dintValue = _plcClient.ReadDint(TagToDiscover);
+                            SelectedDataType = "DINT";
+                            TagName = TagToDiscover;
+                            TagValue = dintValue.ToString();
+                            LogMessage($"✅ Discovered DINT tag: {TagToDiscover} = {dintValue}");
+                            return true;
+                        }
+                        catch { }
+
+                        try
+                        {
+                            var lintValue = _plcClient.ReadLint(TagToDiscover);
+                            SelectedDataType = "LINT";
+                            TagName = TagToDiscover;
+                            TagValue = lintValue.ToString();
+                            LogMessage($"✅ Discovered LINT tag: {TagToDiscover} = {lintValue}");
+                            return true;
+                        }
+                        catch { }
+
+                        try
+                        {
+                            var usintValue = _plcClient.ReadUsint(TagToDiscover);
+                            SelectedDataType = "USINT";
+                            TagName = TagToDiscover;
+                            TagValue = usintValue.ToString();
+                            LogMessage($"✅ Discovered USINT tag: {TagToDiscover} = {usintValue}");
+                            return true;
+                        }
+                        catch { }
+
+                        try
+                        {
+                            var uintValue = _plcClient.ReadUint(TagToDiscover);
+                            SelectedDataType = "UINT";
+                            TagName = TagToDiscover;
+                            TagValue = uintValue.ToString();
+                            LogMessage($"✅ Discovered UINT tag: {TagToDiscover} = {uintValue}");
+                            return true;
+                        }
+                        catch { }
+
+                        try
+                        {
+                            var udintValue = _plcClient.ReadUdint(TagToDiscover);
+                            SelectedDataType = "UDINT";
+                            TagName = TagToDiscover;
+                            TagValue = udintValue.ToString();
+                            LogMessage($"✅ Discovered UDINT tag: {TagToDiscover} = {udintValue}");
+                            return true;
+                        }
+                        catch { }
+
+                        try
+                        {
+                            var ulintValue = _plcClient.ReadUlint(TagToDiscover);
+                            SelectedDataType = "ULINT";
+                            TagName = TagToDiscover;
+                            TagValue = ulintValue.ToString();
+                            LogMessage($"✅ Discovered ULINT tag: {TagToDiscover} = {ulintValue}");
+                            return true;
+                        }
+                        catch { }
+
+                        try
+                        {
                             var realValue = _plcClient.ReadReal(TagToDiscover);
                             SelectedDataType = "REAL";
                             TagName = TagToDiscover;
                             TagValue = realValue.ToString();
                             LogMessage($"✅ Discovered REAL tag: {TagToDiscover} = {realValue}");
+                            return true;
+                        }
+                        catch { }
+
+                        try
+                        {
+                            var lrealValue = _plcClient.ReadLreal(TagToDiscover);
+                            SelectedDataType = "LREAL";
+                            TagName = TagToDiscover;
+                            TagValue = lrealValue.ToString();
+                            LogMessage($"✅ Discovered LREAL tag: {TagToDiscover} = {lrealValue}");
                             return true;
                         }
                         catch { }
@@ -519,6 +623,215 @@ namespace WpfExample.ViewModels
             catch (Exception ex)
             {
                 LogMessage($"❌ Benchmark error: {ex.Message}");
+            }
+        }
+
+        [RelayCommand]
+        private async Task CreateTestTags()
+        {
+            if (!IsConnected || _plcClient == null) return;
+
+            try
+            {
+                LogMessage("📋 Creating test tags in PLC...");
+
+                var testTags = new(string name, string type, object value)[]
+                {
+                    ("TestTag", "BOOL", true),
+                    ("TestBool", "BOOL", false),
+                    ("TestInt", "DINT", 42),
+                    ("TestReal", "REAL", 123.45f)
+                };
+
+                int successCount = 0;
+                int errorCount = 0;
+
+                foreach (var (name, type, value) in testTags)
+                {
+                    try
+                    {
+                        await Task.Run(() =>
+                        {
+                            switch (type)
+                            {
+                                case "BOOL":
+                                    _plcClient.WriteBool(name, (bool)value);
+                                    break;
+                                case "DINT":
+                                    _plcClient.WriteDint(name, (int)value);
+                                    break;
+                                case "REAL":
+                                    _plcClient.WriteReal(name, (float)value);
+                                    break;
+                            }
+                        });
+
+                        LogMessage($"✅ Created {type} tag: {name} = {value}");
+                        successCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        LogMessage($"❌ Failed to create {name}: {ex.Message}");
+                        errorCount++;
+                    }
+                }
+
+                if (successCount > 0)
+                {
+                    LogMessage($"✅ Created {successCount}/{testTags.Length} test tags successfully");
+                    LogMessage("🚀 Test tags are ready for operations!");
+                }
+                else
+                {
+                    LogMessage($"❌ Failed to create any test tags ({errorCount} errors)");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"❌ Error creating test tags: {ex.Message}");
+            }
+        }
+
+        [RelayCommand]
+        private async Task ExecuteBatchRead()
+        {
+            if (!IsConnected || _plcClient == null) return;
+
+            try
+            {
+                var tagNames = BatchReadTags.Split('\n')
+                    .Select(line => line.Trim())
+                    .Where(line => !string.IsNullOrEmpty(line))
+                    .ToArray();
+
+                if (tagNames.Length == 0)
+                {
+                    LogMessage("❌ Please enter at least one tag name for batch read");
+                    return;
+                }
+
+                LogMessage($"🚀 Executing batch read for {tagNames.Length} tags...");
+                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+                var results = await Task.Run(() => _plcClient.ReadTagsBatch(tagNames));
+                
+                stopwatch.Stop();
+                var totalTime = stopwatch.ElapsedMilliseconds;
+
+                var resultsText = new System.Text.StringBuilder();
+                int successCount = 0;
+
+                resultsText.AppendLine($"📊 Batch Read Results ({tagNames.Length} tags in {totalTime}ms):");
+                resultsText.AppendLine("".PadRight(50, '='));
+
+                foreach (var result in results)
+                {
+                    if (result.Value.Success)
+                    {
+                        resultsText.AppendLine($"✅ {result.Key}: {result.Value.Value} ({result.Value.DataType})");
+                        successCount++;
+                    }
+                    else
+                    {
+                        resultsText.AppendLine($"❌ {result.Key}: {result.Value.ErrorMessage}");
+                    }
+                }
+
+                BatchResults = resultsText.ToString();
+                BatchPerformance = $"⏱️ Performance: {totalTime}ms total, {(double)totalTime / tagNames.Length:F1}ms avg/tag, {successCount}/{tagNames.Length} successful";
+                
+                LogMessage($"✅ Batch read completed: {successCount}/{tagNames.Length} successful in {totalTime}ms");
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"❌ Batch read error: {ex.Message}");
+                BatchResults = $"❌ Batch read failed: {ex.Message}";
+                BatchPerformance = "⏱️ Performance: Error occurred";
+            }
+        }
+
+        [RelayCommand]
+        private async Task ExecuteBatchWrite()
+        {
+            if (!IsConnected || _plcClient == null) return;
+
+            try
+            {
+                var lines = BatchWriteTags.Split('\n')
+                    .Select(line => line.Trim())
+                    .Where(line => !string.IsNullOrEmpty(line) && line.Contains('='))
+                    .ToArray();
+
+                if (lines.Length == 0)
+                {
+                    LogMessage("❌ Please enter tag=value pairs (one per line) for batch write");
+                    return;
+                }
+
+                var tagValues = new Dictionary<string, object>();
+
+                foreach (var line in lines)
+                {
+                    var parts = line.Split('=', 2);
+                    if (parts.Length == 2)
+                    {
+                        var tagName = parts[0].Trim();
+                        var valueStr = parts[1].Trim();
+
+                        // Try to parse the value as different types
+                        object value;
+                        if (bool.TryParse(valueStr, out bool boolVal))
+                            value = boolVal;
+                        else if (int.TryParse(valueStr, out int intVal))
+                            value = intVal;
+                        else if (float.TryParse(valueStr, out float floatVal))
+                            value = floatVal;
+                        else
+                            value = valueStr; // String
+
+                        tagValues[tagName] = value;
+                    }
+                }
+
+                LogMessage($"✏️ Executing batch write for {tagValues.Count} tags...");
+                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+                var results = await Task.Run(() => _plcClient.WriteTagsBatch(tagValues));
+                
+                stopwatch.Stop();
+                var totalTime = stopwatch.ElapsedMilliseconds;
+
+                var resultsText = new System.Text.StringBuilder();
+                int successCount = 0;
+
+                resultsText.AppendLine($"✏️ Batch Write Results ({tagValues.Count} tags in {totalTime}ms):");
+                resultsText.AppendLine("".PadRight(50, '='));
+
+                foreach (var result in results)
+                {
+                    var originalValue = tagValues.ContainsKey(result.Key) ? tagValues[result.Key] : "Unknown";
+                    
+                    if (result.Value.Success)
+                    {
+                        resultsText.AppendLine($"✅ {result.Key}: {originalValue} → Written successfully");
+                        successCount++;
+                    }
+                    else
+                    {
+                        resultsText.AppendLine($"❌ {result.Key}: {originalValue} → {result.Value.ErrorMessage}");
+                    }
+                }
+
+                BatchResults = resultsText.ToString();
+                BatchPerformance = $"⏱️ Performance: {totalTime}ms total, {(double)totalTime / tagValues.Count:F1}ms avg/tag, {successCount}/{tagValues.Count} successful";
+                
+                LogMessage($"✅ Batch write completed: {successCount}/{tagValues.Count} successful in {totalTime}ms");
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"❌ Batch write error: {ex.Message}");
+                BatchResults = $"❌ Batch write failed: {ex.Message}";
+                BatchPerformance = "⏱️ Performance: Error occurred";
             }
         }
 

@@ -110,116 +110,203 @@
         
         <!-- Main Content -->
         <Grid Grid.Row="2">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-            
-            <!-- Left Panel: Tag Monitoring -->
-            <Border Grid.Column="0" Background="{StaticResource SurfaceBrush}" 
-                    CornerRadius="8" Padding="16" Margin="0,0,8,0">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    
-                    <!-- Tag Monitor Title -->
-                    <TextBlock Grid.Row="0" Text="📊 Tag Monitoring" 
-                               FontSize="18" FontWeight="Bold" Margin="0,0,0,16"/>
-                    
-                    <!-- Tag Discovery -->
-                    <Grid Grid.Row="1">
+            <TabControl>
+                <!-- Individual Operations Tab -->
+                <TabItem Header="📋 Individual Operations">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <!-- Left Panel: Tag Monitoring -->
+                        <Border Grid.Column="0" Background="{StaticResource SurfaceBrush}" 
+                                CornerRadius="8" Padding="16" Margin="0,0,8,0">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                
+                                <!-- Tag Monitor Title -->
+                                <TextBlock Grid.Row="0" Text="📊 Tag Monitoring" 
+                                           FontSize="18" FontWeight="Bold" Margin="0,0,0,8"/>
+                                
+                                <!-- STRING Limitation Notice -->
+                                <Border Background="#FFF3CD" BorderBrush="#FFEAA7" BorderThickness="1" 
+                                        CornerRadius="4" Padding="8" Margin="0,0,0,16">
+                                    <TextBlock Text="⚠️ Note: STRING tags are not supported in the current Rust library implementation. Use BOOL, DINT, INT, REAL, and other numeric types."
+                                               FontSize="12" Foreground="#856404" TextWrapping="Wrap"/>
+                                </Border>
+                                
+                                <!-- Tag Discovery -->
+                                <Grid Grid.Row="1">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+
+                                    <!-- Tag Discovery Controls -->
+                                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+                                        <TextBox Text="{Binding TagToDiscover}" Width="200" Padding="8,4" Margin="0,0,8,0"/>
+                                        <Button Content="Discover Tag" Command="{Binding DiscoverTagCommand}"
+                                                Style="{StaticResource ModernButton}" Margin="0,0,8,0"/>
+                                        <Button Content="Create Test Tags" Command="{Binding CreateTestTagsCommand}"
+                                                Style="{StaticResource SuccessButton}"
+                                                IsEnabled="{Binding IsConnected}"/>
+                                    </StackPanel>
+
+                                    <!-- Tag Operations -->
+                                    <Grid Grid.Row="1" Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        
+                                        <StackPanel Grid.Column="0" Orientation="Horizontal">
+                                            <TextBox Text="{Binding TagName}" Width="200" Padding="8,4" Margin="0,0,8,0"/>
+                                            <ComboBox ItemsSource="{Binding DataTypes}" SelectedItem="{Binding SelectedDataType}" 
+                                                      Width="100" Padding="8,4" Margin="0,0,8,0"/>
+                                            <TextBox Text="{Binding TagValue}" Width="100" Padding="8,4"/>
+                                        </StackPanel>
+                                        
+                                        <Button Grid.Column="1" Content="Read" Command="{Binding ReadTagCommand}"
+                                                Style="{StaticResource ModernButton}" Margin="0,0,8,0"/>
+                                        <Button Grid.Column="2" Content="Write" Command="{Binding WriteTagCommand}"
+                                                Style="{StaticResource ModernButton}"/>
+                                    </Grid>
+
+                                    <!-- Tags DataGrid -->
+                                    <DataGrid Grid.Row="2" ItemsSource="{Binding Tags}" 
+                                              AutoGenerateColumns="False" CanUserAddRows="False"
+                                              GridLinesVisibility="Horizontal" HeadersVisibility="Column"
+                                              Background="Transparent" BorderThickness="0">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Tag Name" Binding="{Binding Name}" Width="*"/>
+                                            <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*"/>
+                                            <DataGridTextColumn Header="Type" Binding="{Binding DataType}" Width="Auto"/>
+                                            <DataGridTextColumn Header="Updated" 
+                                                              Binding="{Binding LastUpdated, StringFormat='HH:mm:ss'}" Width="Auto"/>
+                                        </DataGrid.Columns>
+                                        <DataGrid.RowStyle>
+                                            <Style TargetType="DataGridRow">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasError}" Value="True">
+                                                        <Setter Property="Background" Value="#FFEBEE"/>
+                                                        <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </DataGrid.RowStyle>
+                                    </DataGrid>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                        
+                        <!-- Right Panel: Activity Log -->
+                        <Border Grid.Column="1" Background="{StaticResource SurfaceBrush}" 
+                                CornerRadius="8" Padding="16" Margin="8,0,0,0">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                
+                                <!-- Log Title -->
+                                <TextBlock Grid.Row="0" Text="📝 Activity Log" 
+                                           FontSize="18" FontWeight="Bold" Margin="0,0,0,16"/>
+                                
+                                <!-- Log ListBox -->
+                                <ListBox Grid.Row="1" ItemsSource="{Binding LogMessages}"
+                                         Background="#1E1E1E" Foreground="#00FF00" 
+                                         FontFamily="Consolas" FontSize="12"
+                                         BorderThickness="0" Padding="8">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="Padding" Value="2"/>
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="BorderThickness" Value="0"/>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                </ListBox>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </TabItem>
+                
+                <!-- Batch Operations Tab -->
+                <TabItem Header="🚀 Batch Operations">
+                    <Grid Margin="16">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-
-                        <!-- Tag Discovery Controls -->
-                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
-                            <TextBox Text="{Binding TagToDiscover}" Width="200" Padding="8,4" Margin="0,0,8,0"/>
-                            <Button Content="Discover Tag" Command="{Binding DiscoverTagCommand}"
-                                    Style="{StaticResource ModernButton}"/>
-                        </StackPanel>
-
-                        <!-- Tag Operations -->
-                        <Grid Grid.Row="1" Margin="0,0,0,8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            
-                            <StackPanel Grid.Column="0" Orientation="Horizontal">
-                                <TextBox Text="{Binding TagName}" Width="200" Padding="8,4" Margin="0,0,8,0"/>
-                                <ComboBox ItemsSource="{Binding DataTypes}" SelectedItem="{Binding SelectedDataType}" 
-                                          Width="100" Padding="8,4" Margin="0,0,8,0"/>
-                                <TextBox Text="{Binding TagValue}" Width="100" Padding="8,4"/>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <!-- Batch Read Section -->
+                        <Border Grid.Row="0" Grid.Column="0" Background="{StaticResource SurfaceBrush}" 
+                                CornerRadius="8" Padding="16" Margin="0,0,8,8">
+                            <StackPanel>
+                                <TextBlock Text="🚀 Batch Read Operations" FontSize="16" FontWeight="Bold" 
+                                           Foreground="{StaticResource SuccessBrush}" Margin="0,0,0,8"/>
+                                <TextBlock Text="Enter tag names (one per line):" Margin="0,0,0,8"/>
+                                <TextBox Text="{Binding BatchReadTags}" Height="80" TextWrapping="Wrap" 
+                                         AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/>
+                                <Button Content="🚀 Execute Batch Read" Command="{Binding ExecuteBatchReadCommand}"
+                                        Style="{StaticResource SuccessButton}" Margin="0,8,0,0"
+                                        IsEnabled="{Binding IsConnected}"/>
                             </StackPanel>
-                            
-                            <Button Grid.Column="1" Content="Read" Command="{Binding ReadTagCommand}"
-                                    Style="{StaticResource ModernButton}" Margin="0,0,8,0"/>
-                            <Button Grid.Column="2" Content="Write" Command="{Binding WriteTagCommand}"
-                                    Style="{StaticResource ModernButton}"/>
-                        </Grid>
-
-                        <!-- Tags DataGrid -->
-                        <DataGrid Grid.Row="2" ItemsSource="{Binding Tags}" 
-                                  AutoGenerateColumns="False" CanUserAddRows="False"
-                                  GridLinesVisibility="Horizontal" HeadersVisibility="Column"
-                                  Background="Transparent" BorderThickness="0">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="Tag Name" Binding="{Binding Name}" Width="*"/>
-                                <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*"/>
-                                <DataGridTextColumn Header="Type" Binding="{Binding DataType}" Width="Auto"/>
-                                <DataGridTextColumn Header="Updated" 
-                                                  Binding="{Binding LastUpdated, StringFormat='HH:mm:ss'}" Width="Auto"/>
-                            </DataGrid.Columns>
-                            <DataGrid.RowStyle>
-                                <Style TargetType="DataGridRow">
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding HasError}" Value="True">
-                                            <Setter Property="Background" Value="#FFEBEE"/>
-                                            <Setter Property="Foreground" Value="{StaticResource ErrorBrush}"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </DataGrid.RowStyle>
-                        </DataGrid>
+                        </Border>
+                        
+                        <!-- Batch Write Section -->
+                        <Border Grid.Row="0" Grid.Column="1" Background="{StaticResource SurfaceBrush}" 
+                                CornerRadius="8" Padding="16" Margin="8,0,0,8">
+                            <StackPanel>
+                                <TextBlock Text="✏️ Batch Write Operations" FontSize="16" FontWeight="Bold" 
+                                           Foreground="{StaticResource WarningBrush}" Margin="0,0,0,8"/>
+                                <TextBlock Text="Enter tag=value pairs (one per line):" Margin="0,0,0,8"/>
+                                <TextBox Text="{Binding BatchWriteTags}" Height="80" TextWrapping="Wrap" 
+                                         AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/>
+                                <Button Content="✏️ Execute Batch Write" Command="{Binding ExecuteBatchWriteCommand}"
+                                        Style="{StaticResource WarningButton}" Margin="0,8,0,0"
+                                        IsEnabled="{Binding IsConnected}"/>
+                            </StackPanel>
+                        </Border>
+                        
+                        <!-- Performance Info -->
+                        <Border Grid.Row="2" Grid.ColumnSpan="2" Background="{StaticResource SurfaceBrush}" 
+                                CornerRadius="8" Padding="16" Margin="0,8">
+                            <TextBlock Text="{Binding BatchPerformance}" FontWeight="Bold" 
+                                       FontSize="14" HorizontalAlignment="Center"/>
+                        </Border>
+                        
+                        <!-- Results Section -->
+                        <Border Grid.Row="3" Grid.ColumnSpan="2" Background="{StaticResource SurfaceBrush}" 
+                                CornerRadius="8" Padding="16" Margin="0,8,0,0">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                
+                                <TextBlock Grid.Row="0" Text="📊 Batch Results" FontSize="16" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                    <TextBlock Text="{Binding BatchResults}" FontFamily="Consolas" FontSize="12" 
+                                               Background="#1E1E1E" Foreground="#00FF00" Padding="8"/>
+                                </ScrollViewer>
+                            </Grid>
+                        </Border>
                     </Grid>
-                </Grid>
-            </Border>
-            
-            <!-- Right Panel: Activity Log -->
-            <Border Grid.Column="1" Background="{StaticResource SurfaceBrush}" 
-                    CornerRadius="8" Padding="16" Margin="8,0,0,0">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-                    
-                    <!-- Log Title -->
-                    <TextBlock Grid.Row="0" Text="📝 Activity Log" 
-                               FontSize="18" FontWeight="Bold" Margin="0,0,0,16"/>
-                    
-                    <!-- Log ListBox -->
-                    <ListBox Grid.Row="1" ItemsSource="{Binding LogMessages}"
-                             Background="#1E1E1E" Foreground="#00FF00" 
-                             FontFamily="Consolas" FontSize="12"
-                             BorderThickness="0" Padding="8">
-                        <ListBox.ItemContainerStyle>
-                            <Style TargetType="ListBoxItem">
-                                <Setter Property="Padding" Value="2"/>
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="BorderThickness" Value="0"/>
-                            </Style>
-                        </ListBox.ItemContainerStyle>
-                    </ListBox>
-                </Grid>
-            </Border>
+                </TabItem>
+            </TabControl>
         </Grid>
     </Grid>
 </Window>

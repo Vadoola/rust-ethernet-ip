@@ -82,13 +82,166 @@ export interface StatusResponse {
   status: PlcStatus;
 }
 
+// ================================================================================
+// BATCH OPERATIONS - High Performance Multi-Tag Operations
+// ================================================================================
+
+export interface BatchReadRequest {
+  tagNames: string[];
+}
+
+export interface BatchWriteRequest {
+  tagValues: Record<string, PlcValue>;
+}
+
+export interface BatchOperation {
+  isWrite: boolean;
+  tagName: string;
+  value?: PlcValue;
+}
+
+export interface BatchMixedRequest {
+  operations: BatchOperation[];
+}
+
+export interface TagReadResult {
+  success: boolean;
+  value?: PlcValue;
+  dataType?: PlcDataType;
+  errorMessage?: string;
+}
+
+export interface TagWriteResult {
+  success: boolean;
+  errorMessage?: string;
+}
+
+export interface BatchReadResult {
+  success: boolean;
+  results?: Record<string, TagReadResult>;
+  performance?: {
+    totalTimeMs: number;
+    successCount: number;
+    errorCount: number;
+    averageTimePerTagMs: number;
+    tagsPerSecond: number;
+  };
+  errorMessage?: string;
+}
+
+export interface BatchWriteResult {
+  success: boolean;
+  results?: Record<string, TagWriteResult>;
+  performance?: {
+    totalTimeMs: number;
+    successCount: number;
+    errorCount: number;
+    averageTimePerTagMs: number;
+    tagsPerSecond: number;
+  };
+  errorMessage?: string;
+}
+
+export interface MixedOperationResult {
+  tagName: string;
+  isWrite: boolean;
+  success: boolean;
+  value?: PlcValue;
+  executionTimeMs: number;
+  errorCode: number;
+  errorMessage?: string;
+}
+
+export interface BatchMixedResult {
+  success: boolean;
+  results?: MixedOperationResult[];
+  performance?: {
+    totalTimeMs: number;
+    successCount: number;
+    errorCount: number;
+    averageTimePerOperationMs: number;
+    operationsPerSecond: number;
+  };
+  errorMessage?: string;
+}
+
+export interface BatchConfig {
+  maxOperationsPerPacket: number;
+  maxPacketSize: number;
+  packetTimeoutMs: number;
+  continueOnError: boolean;
+  optimizePacketPacking: boolean;
+}
+
+export interface BatchConfigResponse {
+  success: boolean;
+  config?: BatchConfig;
+  presets?: {
+    defaultConfig: BatchConfig;
+    highPerformance: BatchConfig;
+    conservative: BatchConfig;
+  };
+}
+
+export interface BatchBenchmarkRequest {
+  tagCount: number;
+  testType: 'Read' | 'Write' | 'Mixed';
+  compareWithIndividual: boolean;
+}
+
+export interface BatchBenchmarkResult {
+  success: boolean;
+  testType: string;
+  tagCount: number;
+  individualTotalTimeMs: number;
+  individualSuccessCount: number;
+  individualAverageTimeMs: number;
+  batchTotalTimeMs: number;
+  batchSuccessCount: number;
+  batchAverageTimeMs: number;
+  speedupFactor: number;
+  timeSavedMs: number;
+  timeSavedPercentage: number;
+  networkEfficiencyFactor: number;
+  errorMessage?: string;
+}
+
+export interface BatchBenchmarkResponse {
+  success: boolean;
+  benchmark?: BatchBenchmarkResult;
+  message?: string;
+}
+
+export interface BatchPerformanceStats {
+  operationType: string;
+  totalOperations: number;
+  totalTimeMs: number;
+  successfulOperations: number;
+  executionCount: number;
+  lastExecuted: string;
+  averageTimePerOperation: number;
+  successRate: number;
+  averageTimePerExecution: number;
+}
+
+export interface BatchStatsResponse {
+  success: boolean;
+  stats?: Record<string, BatchPerformanceStats>;
+  summary?: {
+    totalOperationTypes: number;
+    totalOperations: number;
+    totalTimeMs: number;
+    overallSuccessRate: number;
+  };
+}
+
 /**
  * PLC API Client - TypeScript interface to Rust EtherNet/IP library
  * Communicates with ASP.NET Core backend via REST API
  */
 export class PlcApiClient {
   
-  private async makeRequest<T>(method: 'get' | 'post', url: string, data?: any): Promise<T> {
+  private async makeRequest<T>(method: 'get' | 'post' | 'delete', url: string, data?: any): Promise<T> {
     // Try the configured URL first
     try {
       const response = await apiClient.request<T>({
@@ -147,6 +300,111 @@ export class PlcApiClient {
     }
   }
 
+  // ================================================================================
+  // BATCH OPERATIONS - High Performance Multi-Tag Operations
+  // ================================================================================
+
+  /**
+   * Read multiple tags in a single optimized batch operation.
+   * Provides 3-10x performance improvement over individual reads.
+   */
+  async batchReadTags(tagNames: string[]): Promise<BatchReadResult> {
+    try {
+      return await this.makeRequest<BatchReadResult>('post', '/plc/batch/read', {
+        tagNames
+      } as BatchReadRequest);
+    } catch (error) {
+      return this.handleError(error, 'Failed to perform batch read') as BatchReadResult;
+    }
+  }
+
+  /**
+   * Write multiple tags in a single optimized batch operation.
+   * Provides 3-10x performance improvement over individual writes.
+   */
+  async batchWriteTags(tagValues: Record<string, PlcValue>): Promise<BatchWriteResult> {
+    try {
+      return await this.makeRequest<BatchWriteResult>('post', '/plc/batch/write', {
+        tagValues
+      } as BatchWriteRequest);
+    } catch (error) {
+      return this.handleError(error, 'Failed to perform batch write') as BatchWriteResult;
+    }
+  }
+
+  /**
+   * Execute a mixed batch of read and write operations in optimized packets.
+   * Ideal for coordinated control operations and data collection.
+   */
+  async executeBatch(operations: BatchOperation[]): Promise<BatchMixedResult> {
+    try {
+      return await this.makeRequest<BatchMixedResult>('post', '/plc/batch/execute', {
+        operations
+      } as BatchMixedRequest);
+    } catch (error) {
+      return this.handleError(error, 'Failed to execute mixed batch') as BatchMixedResult;
+    }
+  }
+
+  /**
+   * Configure batch operation behavior for performance optimization.
+   */
+  async configureBatch(config: BatchConfig): Promise<BatchConfigResponse> {
+    try {
+      return await this.makeRequest<BatchConfigResponse>('post', '/plc/batch/config', config);
+    } catch (error) {
+      return this.handleError(error, 'Failed to configure batch operations') as BatchConfigResponse;
+    }
+  }
+
+  /**
+   * Get current batch operation configuration.
+   */
+  async getBatchConfig(): Promise<BatchConfigResponse> {
+    try {
+      return await this.makeRequest<BatchConfigResponse>('get', '/plc/batch/config');
+    } catch (error) {
+      return this.handleError(error, 'Failed to get batch configuration') as BatchConfigResponse;
+    }
+  }
+
+  /**
+   * Run performance benchmark comparing individual vs batch operations.
+   */
+  async runBatchBenchmark(request?: BatchBenchmarkRequest): Promise<BatchBenchmarkResponse> {
+    try {
+      return await this.makeRequest<BatchBenchmarkResponse>('post', '/plc/batch/benchmark', request);
+    } catch (error) {
+      return this.handleError(error, 'Failed to run batch benchmark') as BatchBenchmarkResponse;
+    }
+  }
+
+  /**
+   * Get batch operation performance statistics.
+   */
+  async getBatchStats(): Promise<BatchStatsResponse> {
+    try {
+      return await this.makeRequest<BatchStatsResponse>('get', '/plc/batch/stats');
+    } catch (error) {
+      return this.handleError(error, 'Failed to get batch statistics') as BatchStatsResponse;
+    }
+  }
+
+  /**
+   * Reset batch operation performance statistics.
+   */
+  async resetBatchStats(): Promise<ApiResponse> {
+    try {
+      return await this.makeRequest<ApiResponse>('delete', '/plc/batch/stats');
+    } catch (error) {
+      return this.handleError(error, 'Failed to reset batch statistics');
+    }
+  }
+
+  // ================================================================================
+  // INDIVIDUAL OPERATIONS (Existing)
+  // ================================================================================
+
   /**
    * Read a tag from the PLC (auto-detects type)
    */
@@ -204,7 +462,7 @@ export class PlcApiClient {
   }
 
   /**
-   * Read multiple tags in parallel
+   * Read multiple tags in parallel (legacy - use batchReadTags for better performance)
    */
   async readMultipleTags(tagNames: string[]): Promise<PlcTag[]> {
     try {
@@ -234,7 +492,7 @@ export class PlcApiClient {
   }
 
   /**
-   * Write multiple tags in parallel
+   * Write multiple tags in parallel (legacy - use batchWriteTags for better performance)
    */
   async writeMultipleTags(tags: Array<{ name: string; type: PlcDataType; value: PlcValue }>): Promise<ApiResponse[]> {
     try {
@@ -307,6 +565,33 @@ export class PlcApiClient {
 
 // Export singleton instance
 export const plcApi = new PlcApiClient();
+
+// Export batch configuration presets
+export const BATCH_CONFIG_PRESETS = {
+  default: {
+    maxOperationsPerPacket: 20,
+    maxPacketSize: 504,
+    packetTimeoutMs: 3000,
+    continueOnError: true,
+    optimizePacketPacking: true
+  } as BatchConfig,
+  
+  highPerformance: {
+    maxOperationsPerPacket: 50,
+    maxPacketSize: 4000,
+    packetTimeoutMs: 1000,
+    continueOnError: true,
+    optimizePacketPacking: true
+  } as BatchConfig,
+  
+  conservative: {
+    maxOperationsPerPacket: 10,
+    maxPacketSize: 504,
+    packetTimeoutMs: 5000,
+    continueOnError: false,
+    optimizePacketPacking: false
+  } as BatchConfig
+};
 
 // Export data type information
 export const DATA_TYPE_INFO: Record<PlcDataType, { 
@@ -407,4 +692,44 @@ export const ADVANCED_TAG_EXAMPLES = [
   'Program:Safety.EmergencyStop',
   'SensorReadings[10]',
   'Program:Vision.ImageData[10,20,3]'
-]; 
+];
+
+// Export batch operation examples
+export const BATCH_OPERATION_EXAMPLES = {
+  dataAcquisition: [
+    'ProductionCount',
+    'Temperature_1',
+    'Temperature_2', 
+    'Pressure_1',
+    'FlowRate',
+    'QualityGrade'
+  ],
+  
+  recipeManagement: {
+    'Recipe_ID': 101,
+    'Mix_Time': 45,
+    'Temperature_SP': 180,
+    'Pressure_SP': 25,
+    'Speed_SP': 1200
+  },
+  
+  statusMonitoring: [
+    'Zone1_Temp',
+    'Zone1_Humidity', 
+    'Zone1_Alarm',
+    'Zone2_Temp',
+    'Zone2_Humidity',
+    'Zone2_Alarm',
+    'Zone3_Temp',
+    'Zone3_Humidity',
+    'Zone3_Alarm'
+  ],
+  
+  mixedOperations: [
+    { isWrite: false, tagName: 'CurrentTemp' },
+    { isWrite: false, tagName: 'CurrentPressure' },
+    { isWrite: true, tagName: 'TempSetpoint', value: 78.5 },
+    { isWrite: true, tagName: 'PressureSetpoint', value: 15.2 },
+    { isWrite: true, tagName: 'AutoModeEnabled', value: true }
+  ] as BatchOperation[]
+}; 

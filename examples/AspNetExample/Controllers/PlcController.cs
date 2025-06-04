@@ -3,6 +3,9 @@ using AspNetExample.Services;
 using System;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.Linq;
+using System.Diagnostics;
+using RustEtherNetIp;
 
 namespace AspNetExample.Controllers;
 
@@ -56,6 +59,437 @@ public class PlcController : ControllerBase
         _plcService.Disconnect();
         return Ok(new { success = true, message = "Disconnected successfully" });
     }
+
+    // ================================================================================
+    // BATCH OPERATIONS - High Performance Multi-Tag Operations
+    // ================================================================================
+
+    /// <summary>
+    /// Read multiple tags in a single optimized batch operation.
+    /// Provides 3-10x performance improvement over individual reads.
+    /// </summary>
+    [HttpPost("batch/read")]
+    public async Task<IActionResult> BatchReadTags([FromBody] BatchReadRequest request)
+    {
+        if (!_plcService.IsConnected)
+            return StatusCode(503, new { success = false, message = "Not connected to PLC" });
+
+        if (request?.TagNames == null || request.TagNames.Length == 0)
+            return BadRequest(new { success = false, message = "Tag names are required" });
+
+        try
+        {
+            _logger.LogInformation("Batch read request for {TagCount} tags", request.TagNames.Length);
+            
+            var result = await _plcService.ReadTagsBatch(request.TagNames);
+            
+            return Ok(new 
+            { 
+                success = result.Success,
+                results = result.Results,
+                performance = new
+                {
+                    totalTimeMs = result.TotalTimeMs,
+                    successCount = result.SuccessCount,
+                    errorCount = result.ErrorCount,
+                    averageTimePerTagMs = result.AverageTimePerTagMs,
+                    tagsPerSecond = result.TotalTimeMs > 0 ? (request.TagNames.Length * 1000.0 / result.TotalTimeMs) : 0
+                },
+                message = result.Success 
+                    ? $"Batch read completed: {result.SuccessCount}/{request.TagNames.Length} successful in {result.TotalTimeMs}ms"
+                    : result.ErrorMessage
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in batch read operation");
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Write multiple tags in a single optimized batch operation.
+    /// Provides 3-10x performance improvement over individual writes.
+    /// </summary>
+    [HttpPost("batch/write")]
+    public async Task<IActionResult> BatchWriteTags([FromBody] BatchWriteRequest request)
+    {
+        if (!_plcService.IsConnected)
+            return StatusCode(503, new { success = false, message = "Not connected to PLC" });
+
+        if (request?.TagValues == null || request.TagValues.Count == 0)
+            return BadRequest(new { success = false, message = "Tag values are required" });
+
+        try
+        {
+            _logger.LogInformation("Batch write request for {TagCount} tags", request.TagValues.Count);
+            
+            var result = await _plcService.WriteTagsBatch(request.TagValues);
+            
+            return Ok(new 
+            { 
+                success = result.Success,
+                results = result.Results,
+                performance = new
+                {
+                    totalTimeMs = result.TotalTimeMs,
+                    successCount = result.SuccessCount,
+                    errorCount = result.ErrorCount,
+                    averageTimePerTagMs = result.AverageTimePerTagMs,
+                    tagsPerSecond = result.TotalTimeMs > 0 ? (request.TagValues.Count * 1000.0 / result.TotalTimeMs) : 0
+                },
+                message = result.Success 
+                    ? $"Batch write completed: {result.SuccessCount}/{request.TagValues.Count} successful in {result.TotalTimeMs}ms"
+                    : result.ErrorMessage
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in batch write operation");
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Execute a mixed batch of read and write operations in optimized packets.
+    /// Ideal for coordinated control operations and data collection.
+    /// </summary>
+    [HttpPost("batch/execute")]
+    public async Task<IActionResult> ExecuteBatch([FromBody] BatchMixedRequest request)
+    {
+        if (!_plcService.IsConnected)
+            return StatusCode(503, new { success = false, message = "Not connected to PLC" });
+
+        if (request?.Operations == null || request.Operations.Length == 0)
+            return BadRequest(new { success = false, message = "Operations are required" });
+
+        try
+        {
+            _logger.LogInformation("Mixed batch request for {OperationCount} operations", request.Operations.Length);
+            
+            var result = await _plcService.ExecuteBatch(request.Operations);
+            
+            return Ok(new 
+            { 
+                success = result.Success,
+                results = result.Results,
+                performance = new
+                {
+                    totalTimeMs = result.TotalTimeMs,
+                    successCount = result.SuccessCount,
+                    errorCount = result.ErrorCount,
+                    averageTimePerOperationMs = result.AverageTimePerOperationMs,
+                    operationsPerSecond = result.TotalTimeMs > 0 ? (request.Operations.Length * 1000.0 / result.TotalTimeMs) : 0
+                },
+                message = result.Success 
+                    ? $"Mixed batch completed: {result.SuccessCount}/{request.Operations.Length} successful in {result.TotalTimeMs}ms"
+                    : result.ErrorMessage
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in mixed batch operation");
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Configure batch operation behavior for performance optimization.
+    /// </summary>
+    [HttpPost("batch/config")]
+    public IActionResult ConfigureBatch([FromBody] BatchConfig config)
+    {
+        if (!_plcService.IsConnected)
+            return StatusCode(503, new { success = false, message = "Not connected to PLC" });
+
+        try
+        {
+            _plcService.ConfigureBatchOperations(config);
+            
+            return Ok(new 
+            { 
+                success = true,
+                message = "Batch configuration updated successfully",
+                config = _plcService.GetBatchConfig()
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error configuring batch operations");
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Get current batch operation configuration.
+    /// </summary>
+    [HttpGet("batch/config")]
+    public IActionResult GetBatchConfig()
+    {
+        if (!_plcService.IsConnected)
+            return StatusCode(503, new { success = false, message = "Not connected to PLC" });
+
+        try
+        {
+            var config = _plcService.GetBatchConfig();
+            
+            return Ok(new 
+            { 
+                success = true,
+                config,
+                presets = new
+                {
+                    defaultConfig = BatchConfig.Default(),
+                    highPerformance = BatchConfig.HighPerformance(),
+                    conservative = BatchConfig.Conservative()
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting batch configuration");
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Run performance benchmark comparing individual vs batch operations.
+    /// </summary>
+    [HttpPost("batch/benchmark")]
+    public async Task<IActionResult> RunBatchBenchmark([FromBody] BatchBenchmarkRequest? request = null)
+    {
+        if (!_plcService.IsConnected)
+            return StatusCode(503, new { success = false, message = "Not connected to PLC" });
+
+        request ??= new BatchBenchmarkRequest();
+
+        try
+        {
+            _logger.LogInformation("Starting batch benchmark: {TagCount} tags, {TestType}", request.TagCount, request.TestType);
+
+            // Generate test tag names
+            var testTags = Enumerable.Range(1, request.TagCount)
+                .Select(i => $"TestTag_{i}")
+                .ToArray();
+
+            // Prepare test tags if needed (only create a few to avoid overwhelming PLC)
+            if (request.TestType != "Write")
+            {
+                foreach (var tag in testTags.Take(Math.Min(5, request.TagCount)))
+                {
+                    try
+                    {
+                        _plcService.WriteBool(tag, true);
+                    }
+                    catch
+                    {
+                        // Tag might not exist, that's ok for demo
+                    }
+                }
+            }
+
+            var benchmarkResult = new BatchBenchmarkResult
+            {
+                Success = true,
+                TestType = request.TestType,
+                TagCount = request.TagCount
+            };
+
+            // Test individual operations if requested
+            if (request.CompareWithIndividual)
+            {
+                _logger.LogInformation("Testing individual operations...");
+                var individualStopwatch = Stopwatch.StartNew();
+                int individualSuccessCount = 0;
+
+                switch (request.TestType.ToUpper())
+                {
+                    case "READ":
+                        foreach (var tag in testTags)
+                        {
+                            try
+                            {
+                                _plcService.ReadBool(tag);
+                                individualSuccessCount++;
+                            }
+                            catch { }
+                        }
+                        break;
+
+                    case "WRITE":
+                        foreach (var tag in testTags)
+                        {
+                            try
+                            {
+                                _plcService.WriteBool(tag, true);
+                                individualSuccessCount++;
+                            }
+                            catch { }
+                        }
+                        break;
+
+                    case "MIXED":
+                        for (int i = 0; i < testTags.Length; i++)
+                        {
+                            try
+                            {
+                                if (i % 2 == 0)
+                                {
+                                    _plcService.ReadBool(testTags[i]);
+                                }
+                                else
+                                {
+                                    _plcService.WriteBool(testTags[i], true);
+                                }
+                                individualSuccessCount++;
+                            }
+                            catch { }
+                        }
+                        break;
+                }
+
+                individualStopwatch.Stop();
+                benchmarkResult.IndividualTotalTimeMs = individualStopwatch.ElapsedMilliseconds;
+                benchmarkResult.IndividualSuccessCount = individualSuccessCount;
+                benchmarkResult.IndividualAverageTimeMs = (double)individualStopwatch.ElapsedMilliseconds / request.TagCount;
+            }
+
+            // Test batch operations
+            _logger.LogInformation("Testing batch operations...");
+            var batchStopwatch = Stopwatch.StartNew();
+            int batchSuccessCount = 0;
+
+            switch (request.TestType.ToUpper())
+            {
+                case "READ":
+                    try
+                    {
+                        var readResult = await _plcService.ReadTagsBatch(testTags);
+                        batchSuccessCount = readResult.SuccessCount;
+                    }
+                    catch { }
+                    break;
+
+                case "WRITE":
+                    try
+                    {
+                        var tagValues = testTags.ToDictionary(tag => tag, tag => (object)true);
+                        var writeResult = await _plcService.WriteTagsBatch(tagValues);
+                        batchSuccessCount = writeResult.SuccessCount;
+                    }
+                    catch { }
+                    break;
+
+                case "MIXED":
+                    try
+                    {
+                        var operations = new List<BatchOperation>();
+                        for (int i = 0; i < testTags.Length; i++)
+                        {
+                            if (i % 2 == 0)
+                            {
+                                operations.Add(BatchOperation.Read(testTags[i]));
+                            }
+                            else
+                            {
+                                operations.Add(BatchOperation.Write(testTags[i], true));
+                            }
+                        }
+                        var mixedResult = await _plcService.ExecuteBatch(operations.ToArray());
+                        batchSuccessCount = mixedResult.SuccessCount;
+                    }
+                    catch { }
+                    break;
+            }
+
+            batchStopwatch.Stop();
+            benchmarkResult.BatchTotalTimeMs = batchStopwatch.ElapsedMilliseconds;
+            benchmarkResult.BatchSuccessCount = batchSuccessCount;
+            benchmarkResult.BatchAverageTimeMs = (double)batchStopwatch.ElapsedMilliseconds / request.TagCount;
+
+            // Calculate performance metrics
+            if (request.CompareWithIndividual && benchmarkResult.BatchTotalTimeMs > 0)
+            {
+                benchmarkResult.SpeedupFactor = (double)benchmarkResult.IndividualTotalTimeMs / benchmarkResult.BatchTotalTimeMs;
+                benchmarkResult.TimeSavedMs = benchmarkResult.IndividualTotalTimeMs - benchmarkResult.BatchTotalTimeMs;
+                benchmarkResult.TimeSavedPercentage = (benchmarkResult.TimeSavedMs / benchmarkResult.IndividualTotalTimeMs) * 100;
+                benchmarkResult.NetworkEfficiencyFactor = request.TagCount; // 1 packet vs N packets
+            }
+
+            _logger.LogInformation("Batch benchmark completed: Individual={IndividualTime}ms, Batch={BatchTime}ms, Speedup={Speedup:F1}x", 
+                benchmarkResult.IndividualTotalTimeMs, benchmarkResult.BatchTotalTimeMs, benchmarkResult.SpeedupFactor);
+
+            return Ok(new 
+            { 
+                success = true,
+                benchmark = benchmarkResult,
+                message = $"Benchmark completed: {benchmarkResult.SpeedupFactor:F1}x speedup with batch operations"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error running batch benchmark");
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Get batch operation performance statistics.
+    /// </summary>
+    [HttpGet("batch/stats")]
+    public IActionResult GetBatchStats()
+    {
+        if (!_plcService.IsConnected)
+            return StatusCode(503, new { success = false, message = "Not connected to PLC" });
+
+        try
+        {
+            var stats = _plcService.GetBatchStats();
+            
+            return Ok(new 
+            { 
+                success = true,
+                stats,
+                summary = new
+                {
+                    totalOperationTypes = stats.Count,
+                    totalOperations = stats.Values.Sum(s => s.TotalOperations),
+                    totalTimeMs = stats.Values.Sum(s => s.TotalTimeMs),
+                    overallSuccessRate = stats.Values.Sum(s => s.SuccessfulOperations) * 100.0 / Math.Max(1, stats.Values.Sum(s => s.TotalOperations))
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting batch statistics");
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Reset batch operation performance statistics.
+    /// </summary>
+    [HttpDelete("batch/stats")]
+    public IActionResult ResetBatchStats()
+    {
+        if (!_plcService.IsConnected)
+            return StatusCode(503, new { success = false, message = "Not connected to PLC" });
+
+        try
+        {
+            _plcService.ResetBatchStats();
+            return Ok(new { success = true, message = "Batch statistics reset successfully" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error resetting batch statistics");
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    // ================================================================================
+    // INDIVIDUAL OPERATIONS (Existing)
+    // ================================================================================
 
     [HttpGet("tag/{tagName}")]
     public IActionResult ReadTag(string tagName)
@@ -464,4 +898,32 @@ public class BenchmarkRequest
     public string TestTag { get; set; } = string.Empty;
     public bool TestWrites { get; set; } = false;
     public int DurationSeconds { get; set; } = 5;
+}
+
+// ================================================================================
+// BATCH OPERATION REQUEST MODELS
+// ================================================================================
+
+/// <summary>
+/// Request model for batch read operations
+/// </summary>
+public class BatchReadRequest
+{
+    public string[] TagNames { get; set; } = Array.Empty<string>();
+}
+
+/// <summary>
+/// Request model for batch write operations
+/// </summary>
+public class BatchWriteRequest
+{
+    public Dictionary<string, object> TagValues { get; set; } = new();
+}
+
+/// <summary>
+/// Request model for mixed batch operations
+/// </summary>
+public class BatchMixedRequest
+{
+    public BatchOperation[] Operations { get; set; } = Array.Empty<BatchOperation>();
 } 

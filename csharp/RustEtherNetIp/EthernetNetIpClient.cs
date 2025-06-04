@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Threading;
+using System.Text.Json;
 
 namespace RustEtherNetIp
 {
@@ -1017,17 +1018,113 @@ namespace RustEtherNetIp
             {
                 try
                 {
-                    // Try to read as DINT first (most common type)
-                    var value = ReadDint(tagName);
-                    results[tagName] = new TagReadResult
+                    // Try multiple data types to find the correct one
+                    object value = null;
+                    string dataType = "UNKNOWN";
+                    bool success = false;
+                    Exception lastException = null;
+
+                    // Try BOOL first
+                    try
                     {
-                        TagName = tagName,
-                        Success = true,
-                        Value = value,
-                        DataType = "DINT",
-                        ErrorCode = 0,
-                        ErrorMessage = null
-                    };
+                        value = ReadBool(tagName);
+                        dataType = "BOOL";
+                        success = true;
+                    }
+                    catch (Exception ex) { lastException = ex; }
+
+                    // Try DINT if BOOL failed
+                    if (!success)
+                    {
+                        try
+                        {
+                            value = ReadDint(tagName);
+                            dataType = "DINT";
+                            success = true;
+                        }
+                        catch (Exception ex) { lastException = ex; }
+                    }
+
+                    // Try INT if DINT failed
+                    if (!success)
+                    {
+                        try
+                        {
+                            value = ReadInt(tagName);
+                            dataType = "INT";
+                            success = true;
+                        }
+                        catch (Exception ex) { lastException = ex; }
+                    }
+
+                    // Try REAL if INT failed
+                    if (!success)
+                    {
+                        try
+                        {
+                            value = ReadReal(tagName);
+                            dataType = "REAL";
+                            success = true;
+                        }
+                        catch (Exception ex) { lastException = ex; }
+                    }
+
+                    // Try STRING if REAL failed
+                    if (!success)
+                    {
+                        try
+                        {
+                            value = ReadString(tagName);
+                            dataType = "STRING";
+                            success = true;
+                        }
+                        catch (Exception ex) 
+                        { 
+                            lastException = ex;
+                            // STRING operations may not be implemented in the underlying Rust library yet
+                            if (ex.Message.Contains("DllNotFoundException") || ex.Message.Contains("EntryPointNotFoundException"))
+                            {
+                                lastException = new Exception("STRING support not yet implemented in underlying Rust library");
+                            }
+                        }
+                    }
+
+                    // Try SINT if STRING failed
+                    if (!success)
+                    {
+                        try
+                        {
+                            value = ReadSint(tagName);
+                            dataType = "SINT";
+                            success = true;
+                        }
+                        catch (Exception ex) { lastException = ex; }
+                    }
+
+                    if (success)
+                    {
+                        results[tagName] = new TagReadResult
+                        {
+                            TagName = tagName,
+                            Success = true,
+                            Value = value,
+                            DataType = dataType,
+                            ErrorCode = 0,
+                            ErrorMessage = null
+                        };
+                    }
+                    else
+                    {
+                        results[tagName] = new TagReadResult
+                        {
+                            TagName = tagName,
+                            Success = false,
+                            Value = null,
+                            DataType = "UNKNOWN",
+                            ErrorCode = -1,
+                            ErrorMessage = lastException?.Message
+                        };
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -1070,20 +1167,87 @@ namespace RustEtherNetIp
                     // Determine type and call appropriate write method
                     switch (kvp.Value)
                     {
+                        case System.Text.Json.JsonElement jsonElement:
+                            // Handle JSON deserialized values from ASP.NET Core
+                            switch (jsonElement.ValueKind)
+                            {
+                                case System.Text.Json.JsonValueKind.True:
+                                    WriteBool(kvp.Key, true);
+                                    break;
+                                case System.Text.Json.JsonValueKind.False:
+                                    WriteBool(kvp.Key, false);
+                                    break;
+                                case System.Text.Json.JsonValueKind.Number:
+                                    var numberValue = jsonElement.GetDouble();
+                                    if (numberValue == Math.Floor(numberValue) && numberValue >= int.MinValue && numberValue <= int.MaxValue)
+                                    {
+                                        // Looks like an integer value, write as DINT
+                                        WriteDint(kvp.Key, (int)numberValue);
+                                    }
+                                    else
+                                    {
+                                        // Decimal value, write as REAL
+                                        WriteReal(kvp.Key, (float)numberValue);
+                                    }
+                                    break;
+                                case System.Text.Json.JsonValueKind.String:
+                                    try
+                                    {
+                                        WriteString(kvp.Key, jsonElement.GetString() ?? "");
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        // STRING operations may not be implemented in the underlying Rust library yet
+                                        if (ex.Message.Contains("DllNotFoundException") || ex.Message.Contains("EntryPointNotFoundException"))
+                                        {
+                                            throw new Exception("STRING support not yet implemented in underlying Rust library");
+                                        }
+                                        throw;
+                                    }
+                                    break;
+                                default:
+                                    throw new ArgumentException($"Unsupported JSON value kind: {jsonElement.ValueKind} for tag '{kvp.Key}'. Value: {jsonElement}");
+                            }
+                            break;
                         case bool boolValue:
                             WriteBool(kvp.Key, boolValue);
                             break;
                         case int intValue:
                             WriteDint(kvp.Key, intValue);
                             break;
+                        case double doubleValue:
+                            // JavaScript sends all numbers as double - determine if it should be int or float
+                            if (doubleValue == Math.Floor(doubleValue) && doubleValue >= int.MinValue && doubleValue <= int.MaxValue)
+                            {
+                                // Looks like an integer value, write as DINT
+                                WriteDint(kvp.Key, (int)doubleValue);
+                            }
+                            else
+                            {
+                                // Decimal value, write as REAL
+                                WriteReal(kvp.Key, (float)doubleValue);
+                            }
+                            break;
                         case float floatValue:
                             WriteReal(kvp.Key, floatValue);
                             break;
                         case string stringValue:
-                            WriteString(kvp.Key, stringValue);
+                            try
+                            {
+                                WriteString(kvp.Key, stringValue);
+                            }
+                            catch (Exception ex)
+                            {
+                                // STRING operations may not be implemented in the underlying Rust library yet
+                                if (ex.Message.Contains("DllNotFoundException") || ex.Message.Contains("EntryPointNotFoundException"))
+                                {
+                                    throw new Exception("STRING support not yet implemented in underlying Rust library");
+                                }
+                                throw;
+                            }
                             break;
                         default:
-                            throw new ArgumentException($"Unsupported value type: {kvp.Value.GetType()}");
+                            throw new ArgumentException($"Unsupported value type: {kvp.Value.GetType()} for tag '{kvp.Key}'. Value: {kvp.Value}");
                     }
                     
                     results[kvp.Key] = new TagWriteResult
@@ -1100,97 +1264,6 @@ namespace RustEtherNetIp
                     {
                         TagName = kvp.Key,
                         Success = false,
-                        ErrorCode = -1,
-                        ErrorMessage = ex.Message
-                    };
-                }
-            }
-            
-            return results;
-        }
-
-        /// <summary>
-        /// Execute a mixed batch of read and write operations in optimized packets.
-        /// Ideal for coordinated control operations and data collection.
-        /// </summary>
-        /// <param name="operations">Array of batch operations to execute</param>
-        /// <returns>Array of batch operation results</returns>
-        /// <exception cref="ArgumentException">Thrown if operations array is null or empty</exception>
-        /// <exception cref="InvalidOperationException">Thrown if not connected to PLC</exception>
-        public BatchOperationResult[] ExecuteBatch(BatchOperation[] operations)
-        {
-            if (operations == null || operations.Length == 0)
-                throw new ArgumentException("Operations array cannot be null or empty", nameof(operations));
-
-            // For now, return a simplified implementation that executes operations sequentially
-            // TODO: Implement proper batch FFI when Rust FFI is updated
-            var results = new BatchOperationResult[operations.Length];
-            
-            for (int i = 0; i < operations.Length; i++)
-            {
-                var operation = operations[i];
-                var startTime = DateTime.UtcNow;
-                
-                try
-                {
-                    if (operation.IsWrite)
-                    {
-                        // Write operation
-                        switch (operation.Value)
-                        {
-                            case bool boolValue:
-                                WriteBool(operation.TagName, boolValue);
-                                break;
-                            case int intValue:
-                                WriteDint(operation.TagName, intValue);
-                                break;
-                            case float floatValue:
-                                WriteReal(operation.TagName, floatValue);
-                                break;
-                            case string stringValue:
-                                WriteString(operation.TagName, stringValue);
-                                break;
-                            default:
-                                throw new ArgumentException($"Unsupported value type: {operation.Value?.GetType()}");
-                        }
-                        
-                        results[i] = new BatchOperationResult
-                        {
-                            TagName = operation.TagName,
-                            IsWrite = true,
-                            Success = true,
-                            Value = null,
-                            ExecutionTimeMs = (DateTime.UtcNow - startTime).TotalMilliseconds,
-                            ErrorCode = 0,
-                            ErrorMessage = null
-                        };
-                    }
-                    else
-                    {
-                        // Read operation - try DINT first
-                        var value = ReadDint(operation.TagName);
-                        
-                        results[i] = new BatchOperationResult
-                        {
-                            TagName = operation.TagName,
-                            IsWrite = false,
-                            Success = true,
-                            Value = value,
-                            ExecutionTimeMs = (DateTime.UtcNow - startTime).TotalMilliseconds,
-                            ErrorCode = 0,
-                            ErrorMessage = null
-                        };
-                    }
-                }
-                catch (Exception ex)
-                {
-                    results[i] = new BatchOperationResult
-                    {
-                        TagName = operation.TagName,
-                        IsWrite = operation.IsWrite,
-                        Success = false,
-                        Value = null,
-                        ExecutionTimeMs = (DateTime.UtcNow - startTime).TotalMilliseconds,
                         ErrorCode = -1,
                         ErrorMessage = ex.Message
                     };
@@ -1233,6 +1306,253 @@ namespace RustEtherNetIp
                 ContinueOnError = true,
                 OptimizePacketPacking = true
             };
+        }
+
+        /// <summary>
+        /// Execute a mixed batch of read and write operations in optimized packets.
+        /// Ideal for coordinated control operations and data collection.
+        /// </summary>
+        /// <param name="operations">Array of batch operations to execute</param>
+        /// <returns>Array of batch operation results</returns>
+        /// <exception cref="ArgumentException">Thrown if operations array is null or empty</exception>
+        /// <exception cref="InvalidOperationException">Thrown if not connected to PLC</exception>
+        public BatchOperationResult[] ExecuteBatch(BatchOperation[] operations)
+        {
+            if (operations == null || operations.Length == 0)
+                throw new ArgumentException("Operations array cannot be null or empty", nameof(operations));
+
+            // For now, return a simplified implementation that executes operations sequentially
+            // TODO: Implement proper batch FFI when Rust FFI is updated
+            var results = new BatchOperationResult[operations.Length];
+            
+            for (int i = 0; i < operations.Length; i++)
+            {
+                var operation = operations[i];
+                var startTime = DateTime.UtcNow;
+                
+                try
+                {
+                    if (operation.IsWrite)
+                    {
+                        // Write operation
+                        switch (operation.Value)
+                        {
+                            case System.Text.Json.JsonElement jsonElement:
+                                // Handle JSON deserialized values from ASP.NET Core
+                                switch (jsonElement.ValueKind)
+                                {
+                                    case System.Text.Json.JsonValueKind.True:
+                                        WriteBool(operation.TagName, true);
+                                        break;
+                                    case System.Text.Json.JsonValueKind.False:
+                                        WriteBool(operation.TagName, false);
+                                        break;
+                                    case System.Text.Json.JsonValueKind.Number:
+                                        var numberValue = jsonElement.GetDouble();
+                                        if (numberValue == Math.Floor(numberValue) && numberValue >= int.MinValue && numberValue <= int.MaxValue)
+                                        {
+                                            // Looks like an integer value, write as DINT
+                                            WriteDint(operation.TagName, (int)numberValue);
+                                        }
+                                        else
+                                        {
+                                            // Decimal value, write as REAL
+                                            WriteReal(operation.TagName, (float)numberValue);
+                                        }
+                                        break;
+                                    case System.Text.Json.JsonValueKind.String:
+                                        try
+                                        {
+                                            WriteString(operation.TagName, jsonElement.GetString() ?? "");
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            // STRING operations may not be implemented in the underlying Rust library yet
+                                            if (ex.Message.Contains("DllNotFoundException") || ex.Message.Contains("EntryPointNotFoundException"))
+                                            {
+                                                throw new Exception("STRING support not yet implemented in underlying Rust library");
+                                            }
+                                            throw;
+                                        }
+                                        break;
+                                    default:
+                                        throw new ArgumentException($"Unsupported JSON value kind: {jsonElement.ValueKind} for tag '{operation.TagName}'. Value: {jsonElement}");
+                                }
+                                break;
+                            case bool boolValue:
+                                WriteBool(operation.TagName, boolValue);
+                                break;
+                            case int intValue:
+                                WriteDint(operation.TagName, intValue);
+                                break;
+                            case double doubleValue:
+                                // JavaScript sends all numbers as double - determine if it should be int or float
+                                if (doubleValue == Math.Floor(doubleValue) && doubleValue >= int.MinValue && doubleValue <= int.MaxValue)
+                                {
+                                    // Looks like an integer value, write as DINT
+                                    WriteDint(operation.TagName, (int)doubleValue);
+                                }
+                                else
+                                {
+                                    // Decimal value, write as REAL
+                                    WriteReal(operation.TagName, (float)doubleValue);
+                                }
+                                break;
+                            case float floatValue:
+                                WriteReal(operation.TagName, floatValue);
+                                break;
+                            case string stringValue:
+                                try
+                                {
+                                    WriteString(operation.TagName, stringValue);
+                                }
+                                catch (Exception ex)
+                                {
+                                    // STRING operations may not be implemented in the underlying Rust library yet
+                                    if (ex.Message.Contains("DllNotFoundException") || ex.Message.Contains("EntryPointNotFoundException"))
+                                    {
+                                        throw new Exception("STRING support not yet implemented in underlying Rust library");
+                                    }
+                                    throw;
+                                }
+                                break;
+                            default:
+                                throw new ArgumentException($"Unsupported value type: {operation.Value?.GetType()} for tag '{operation.TagName}'. Value: {operation.Value}");
+                        }
+                        
+                        results[i] = new BatchOperationResult
+                        {
+                            TagName = operation.TagName,
+                            IsWrite = true,
+                            Success = true,
+                            Value = null,
+                            ExecutionTimeMs = (DateTime.UtcNow - startTime).TotalMilliseconds,
+                            ErrorCode = 0,
+                            ErrorMessage = null
+                        };
+                    }
+                    else
+                    {
+                        // Read operation - try multiple data types to find the correct one
+                        object value = null;
+                        bool success = false;
+                        Exception lastException = null;
+
+                        // Try BOOL first
+                        try
+                        {
+                            value = ReadBool(operation.TagName);
+                            success = true;
+                        }
+                        catch (Exception ex) { lastException = ex; }
+
+                        // Try DINT if BOOL failed
+                        if (!success)
+                        {
+                            try
+                            {
+                                value = ReadDint(operation.TagName);
+                                success = true;
+                            }
+                            catch (Exception ex) { lastException = ex; }
+                        }
+
+                        // Try INT if DINT failed
+                        if (!success)
+                        {
+                            try
+                            {
+                                value = ReadInt(operation.TagName);
+                                success = true;
+                            }
+                            catch (Exception ex) { lastException = ex; }
+                        }
+
+                        // Try REAL if INT failed
+                        if (!success)
+                        {
+                            try
+                            {
+                                value = ReadReal(operation.TagName);
+                                success = true;
+                            }
+                            catch (Exception ex) { lastException = ex; }
+                        }
+
+                        // Try STRING if REAL failed
+                        if (!success)
+                        {
+                            try
+                            {
+                                value = ReadString(operation.TagName);
+                                success = true;
+                            }
+                            catch (Exception ex) 
+                            { 
+                                lastException = ex;
+                                // STRING operations may not be implemented in the underlying Rust library yet
+                                if (ex.Message.Contains("DllNotFoundException") || ex.Message.Contains("EntryPointNotFoundException"))
+                                {
+                                    lastException = new Exception("STRING support not yet implemented in underlying Rust library");
+                                }
+                            }
+                        }
+
+                        // Try SINT if STRING failed
+                        if (!success)
+                        {
+                            try
+                            {
+                                value = ReadSint(operation.TagName);
+                                success = true;
+                            }
+                            catch (Exception ex) { lastException = ex; }
+                        }
+
+                        if (success)
+                        {
+                            results[i] = new BatchOperationResult
+                            {
+                                TagName = operation.TagName,
+                                IsWrite = false,
+                                Success = true,
+                                Value = value,
+                                ExecutionTimeMs = (DateTime.UtcNow - startTime).TotalMilliseconds,
+                                ErrorCode = 0,
+                                ErrorMessage = null
+                            };
+                        }
+                        else
+                        {
+                            results[i] = new BatchOperationResult
+                            {
+                                TagName = operation.TagName,
+                                IsWrite = false,
+                                Success = false,
+                                Value = null,
+                                ExecutionTimeMs = (DateTime.UtcNow - startTime).TotalMilliseconds,
+                                ErrorCode = -1,
+                                ErrorMessage = lastException?.Message ?? "Tag not found or unsupported data type"
+                            };
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    results[i] = new BatchOperationResult
+                    {
+                        TagName = operation.TagName,
+                        IsWrite = operation.IsWrite,
+                        Success = false,
+                        Value = null,
+                        ExecutionTimeMs = (DateTime.UtcNow - startTime).TotalMilliseconds,
+                        ErrorCode = -1,
+                        ErrorMessage = ex.Message
+                    };
+                }
+            }
+            
+            return results;
         }
 
         #endregion
