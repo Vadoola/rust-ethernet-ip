@@ -1047,8 +1047,8 @@ function App() {
           </div>
         </section>
 
-        {/* Main Content Grid */}
-        <div className="content-grid">
+        {/* Main Content Area */}
+        <div className="main-content-area">
           {/* Tab Navigation */}
           <section className="tab-navigation">
             <div className="tab-buttons">
@@ -1082,677 +1082,682 @@ function App() {
             </div>
           </section>
 
-          {/* Individual Operations Tab */}
-          {activeTab === 'individual' && (
-            <section className="panel tag-monitoring-panel">
-              <h2>📊 Individual Tag Operations</h2>
-              
-              {/* Tag Discovery */}
-              <div className="tag-discovery-section">
-                <div className="discovery-controls">
-                  <input
-                    type="text"
-                    value={tagToDiscover}
-                    onChange={(e) => setTagToDiscover(e.target.value)}
-                    placeholder="Enter tag name"
-                    disabled={!isConnected}
-                    className="tag-input"
-                  />
-                  <button
-                    onClick={handleDiscoverTag}
-                    disabled={!isConnected || isDiscovering}
-                    className="btn btn-discover"
-                  >
-                    {isDiscovering ? <Activity className="spinning" size={16} /> : 'Discover Tag'}
-                  </button>
-                </div>
-              </div>
+          {/* Tab Content */}
+          <div className="tab-content">
+            {/* Individual Operations Tab */}
+            {activeTab === 'individual' && (
+              <div className="content-grid">
+                <section className="panel tag-monitoring-panel">
+                  <h2>📊 Individual Tag Operations</h2>
+                  
+                  {/* Tag Discovery */}
+                  <div className="tag-discovery-section">
+                    <div className="discovery-controls">
+                      <input
+                        type="text"
+                        value={tagToDiscover}
+                        onChange={(e) => setTagToDiscover(e.target.value)}
+                        placeholder="Enter tag name"
+                        disabled={!isConnected}
+                        className="tag-input"
+                      />
+                      <button
+                        onClick={handleDiscoverTag}
+                        disabled={!isConnected || isDiscovering}
+                        className="btn btn-discover"
+                      >
+                        {isDiscovering ? <Activity className="spinning" size={16} /> : 'Discover Tag'}
+                      </button>
+                    </div>
+                  </div>
 
-              {/* Real-time Monitoring Toggle */}
-              {monitoredTags.length > 0 && (
-                <div className="monitoring-controls-section">
-                  <button
-                    onClick={() => {
-                      setIsMonitoring(!isMonitoring);
-                      addLog('info', `🔄 Real-time monitoring ${!isMonitoring ? 'enabled' : 'disabled'}`);
-                    }}
-                    disabled={!isConnected}
-                    className={`btn ${isMonitoring ? 'btn-monitoring-active' : 'btn-monitoring-inactive'}`}
-                  >
-                    {isMonitoring ? (
-                      <>
-                        <Activity className="spinning" size={16} />
-                        Real-time Monitoring (ON)
-                      </>
-                    ) : (
-                      <>
-                        📊 Start Real-time Monitoring
-                      </>
+                  {/* Real-time Monitoring Toggle */}
+                  {monitoredTags.length > 0 && (
+                    <div className="monitoring-controls-section">
+                      <button
+                        onClick={() => {
+                          setIsMonitoring(!isMonitoring);
+                          addLog('info', `🔄 Real-time monitoring ${!isMonitoring ? 'enabled' : 'disabled'}`);
+                        }}
+                        disabled={!isConnected}
+                        className={`btn ${isMonitoring ? 'btn-monitoring-active' : 'btn-monitoring-inactive'}`}
+                      >
+                        {isMonitoring ? (
+                          <>
+                            <Activity className="spinning" size={16} />
+                            Real-time Monitoring (ON)
+                          </>
+                        ) : (
+                          <>
+                            📊 Start Real-time Monitoring
+                          </>
+                        )}
+                      </button>
+                      {isMonitoring && (
+                        <span className="monitoring-status">
+                          ⚡ Updating every second...
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Tag Operations */}
+                  {selectedTag && (
+                    <div className="tag-operations-section">
+                      <div className="tag-controls">
+                        <div className="tag-input-row">
+                          <input
+                            type="text"
+                            value={selectedTag.name}
+                            disabled
+                            className="tag-name-input"
+                          />
+                          <select
+                            value={selectedDataType}
+                            onChange={(e) => setSelectedDataType(e.target.value as PlcDataType)}
+                            disabled={!isConnected}
+                            className="data-type-select"
+                          >
+                            {Object.entries(DATA_TYPE_INFO).map(([type]) => (
+                              <option key={type} value={type}>
+                                {type}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="text"
+                            value={tagValue}
+                            onChange={(e) => setTagValue(e.target.value)}
+                            placeholder="Value"
+                            disabled={!isConnected}
+                            className="tag-value-input"
+                          />
+                        </div>
+                        <div className="tag-action-buttons">
+                          <button
+                            onClick={handleReadTag}
+                            disabled={!isConnected || isReading}
+                            className="btn btn-read"
+                          >
+                            {isReading ? <Activity className="spinning" size={16} /> : 'Read'}
+                          </button>
+                          <button
+                            onClick={handleWriteTag}
+                            disabled={!isConnected || isWriting}
+                            className="btn btn-write"
+                          >
+                            {isWriting ? <Activity className="spinning" size={16} /> : 'Write'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tag Table */}
+                  <div className="tag-table-section">
+                    <table className="tag-table">
+                      <thead>
+                        <tr>
+                          <th>Tag Name</th>
+                          <th>Value</th>
+                          <th>Type</th>
+                          <th>Updated</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {monitoredTags.map((tag) => (
+                          <tr key={tag.name} className={`${tag.hasError ? 'error-row' : ''} ${isMonitoring ? 'monitoring-active' : ''}`}>
+                            <td>
+                              {tag.name}
+                              {isMonitoring && (
+                                <span className="monitoring-indicator">🔄</span>
+                              )}
+                            </td>
+                            <td>
+                              {tag.hasError ? (
+                                <span className="error-text">{tag.errorMessage}</span>
+                              ) : (
+                                <span className="value-text">{String(tag.value)}</span>
+                              )}
+                            </td>
+                            <td>{tag.type}</td>
+                            <td className="timestamp">{tag.lastUpdated}</td>
+                          </tr>
+                        ))}
+                        {monitoredTags.length === 0 && (
+                          <tr>
+                            <td colSpan={4} className="no-tags">
+                              No tags being monitored. Discover and read tags to populate this table.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                {/* Activity Log Panel */}
+                <section className="panel activity-log-panel">
+                  <h2>📋 Activity Log</h2>
+                  <div className="log-container">
+                    {logs.map((log) => (
+                      <div key={log.id} className={`log-entry log-${log.level}`}>
+                        <span className="log-timestamp">[{log.timestamp}]</span>
+                        <span className="log-level-icon">
+                          {log.level === 'success' && '✅'}
+                          {log.level === 'info' && '📘'}
+                          {log.level === 'warning' && '⚠️'}
+                          {log.level === 'error' && '❌'}
+                        </span>
+                        <span className="log-message">{log.message}</span>
+                      </div>
+                    ))}
+                    {logs.length === 0 && (
+                      <div className="no-logs">
+                        Activity will be logged here when you interact with the PLC.
+                      </div>
                     )}
-                  </button>
-                  {isMonitoring && (
-                    <span className="monitoring-status">
-                      ⚡ Updating every second...
-                    </span>
+                  </div>
+                </section>
+              </div>
+            )}
+
+            {/* Batch Operations Tab */}
+            {activeTab === 'batch' && (
+              <section className="panel batch-operations-panel">
+                <h2>🚀 Batch Operations - High Performance Multi-Tag Operations</h2>
+                <p className="batch-description">
+                  Batch operations provide <strong>3-10x performance improvement</strong> over individual operations 
+                  by combining multiple reads/writes into optimized network packets.
+                </p>
+
+                {/* Setup Instructions */}
+                <div className="batch-setup-info">
+                  <h4>📋 Setup Instructions for Testing</h4>
+                  <div className="setup-instructions">
+                    <div className="instruction-step">
+                      <strong>Step 1:</strong> Create test tags in your PLC program:
+                      <ul>
+                        <li><code>TestTag</code> (BOOL) - A boolean value for testing</li>
+                        <li><code>TestBool</code> (BOOL) - Another boolean value</li>
+                        <li><code>TestInt</code> (DINT) - A 32-bit integer</li>
+                        <li><code>TestReal</code> (REAL) - A floating point number</li>
+                      </ul>
+                      <div className="string-limitation-note">
+                        <strong>⚠️ Note:</strong> STRING tag support is not yet implemented in the underlying Rust library.
+                        Only BOOL, DINT, INT, REAL, and numeric types are currently supported.
+                      </div>
+                    </div>
+                    <div className="instruction-step">
+                      <strong>Step 2:</strong> Or click the button below to create test tags automatically:
+                      <div style={{ marginTop: '0.5rem' }}>
+                        <button
+                          onClick={handleCreateTestTags}
+                          disabled={!isConnected || isCreatingTags}
+                          className="btn btn-create-tags"
+                        >
+                          {isCreatingTags ? <Activity className="spinning" size={16} /> : <Settings size={16} />}
+                          {isCreatingTags ? 'Creating Tags...' : 'Create Test Tags'}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="instruction-step">
+                      <strong>Step 3:</strong> Or modify the tag names below to match existing tags in your PLC program.
+                    </div>
+                    <div className="instruction-step">
+                      <strong>Note:</strong> If you see "1/5 successful" results, it likely means most tags don't exist in your PLC.
+                      Use the Individual Operations tab to discover existing tags first.
+                    </div>
+                  </div>
+                </div>
+
+                {/* Batch Read Section */}
+                <div className="batch-section">
+                  <h3>📖 Batch Read Operations</h3>
+                  <div className="batch-controls">
+                    <div className="batch-input-section">
+                      <label>Tag Names (one per line):</label>
+                      <textarea
+                        value={batchReadTags}
+                        onChange={(e) => setBatchReadTags(e.target.value)}
+                        placeholder="TestTag&#10;TestBool&#10;TestInt&#10;TestReal"
+                        disabled={!isConnected}
+                        className="batch-textarea"
+                        rows={5}
+                      />
+                    </div>
+                    <button
+                      onClick={handleBatchRead}
+                      disabled={!isConnected || isBatchReading}
+                      className="btn btn-batch-read"
+                    >
+                      {isBatchReading ? <Activity className="spinning" size={16} /> : <Play size={16} />}
+                      {isBatchReading ? 'Reading...' : 'Execute Batch Read'}
+                    </button>
+                  </div>
+
+                  {/* Batch Read Results */}
+                  {batchReadResult && (
+                    <div className="batch-results">
+                      <h4>📊 Batch Read Results</h4>
+                      {batchReadResult.success ? (
+                        <>
+                          <div className="performance-summary">
+                            <span className="perf-metric">
+                              ✅ Success: {batchReadResult.performance?.successCount}/{Object.keys(batchReadResult.results || {}).length}
+                            </span>
+                            <span className="perf-metric">
+                              ⏱️ Time: {batchReadResult.performance?.totalTimeMs}ms
+                            </span>
+                            <span className="perf-metric">
+                              🚀 Rate: {batchReadResult.performance?.tagsPerSecond.toFixed(1)} tags/sec
+                            </span>
+                          </div>
+                          <div className="results-table">
+                            <table className="batch-results-table">
+                              <thead>
+                                <tr>
+                                  <th>Tag Name</th>
+                                  <th>Value</th>
+                                  <th>Type</th>
+                                  <th>Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {Object.entries(batchReadResult.results || {}).map(([tagName, result]) => (
+                                  <tr key={tagName} className={result.success ? 'success-row' : 'error-row'}>
+                                    <td>{tagName}</td>
+                                    <td>{result.success ? String(result.value) : '-'}</td>
+                                    <td>{result.dataType || '-'}</td>
+                                    <td>
+                                      {result.success ? (
+                                        <span className="status-success">✅ Success</span>
+                                      ) : (
+                                        <span className="status-error">❌ {result.errorMessage}</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="error-message">❌ {batchReadResult.errorMessage}</div>
+                      )}
+                    </div>
                   )}
                 </div>
-              )}
 
-              {/* Tag Operations */}
-              {selectedTag && (
-                <div className="tag-operations-section">
-                  <div className="tag-controls">
-                    <div className="tag-input-row">
-                      <input
-                        type="text"
-                        value={selectedTag.name}
-                        disabled
-                        className="tag-name-input"
-                      />
-                      <select
-                        value={selectedDataType}
-                        onChange={(e) => setSelectedDataType(e.target.value as PlcDataType)}
+                {/* Batch Write Section */}
+                <div className="batch-section">
+                  <h3>✏️ Batch Write Operations</h3>
+                  <div className="batch-controls">
+                    <div className="batch-input-section">
+                      <label>Tag=Value pairs (one per line):</label>
+                      <textarea
+                        value={batchWriteData}
+                        onChange={(e) => setBatchWriteData(e.target.value)}
+                        placeholder="TestTag=true&#10;TestBool=false&#10;TestInt=999&#10;TestReal=88.8"
                         disabled={!isConnected}
-                        className="data-type-select"
-                      >
-                        {Object.entries(DATA_TYPE_INFO).map(([type]) => (
-                          <option key={type} value={type}>
-                            {type}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        type="text"
-                        value={tagValue}
-                        onChange={(e) => setTagValue(e.target.value)}
-                        placeholder="Value"
-                        disabled={!isConnected}
-                        className="tag-value-input"
+                        className="batch-textarea"
+                        rows={5}
                       />
                     </div>
-                    <div className="tag-action-buttons">
-                      <button
-                        onClick={handleReadTag}
-                        disabled={!isConnected || isReading}
-                        className="btn btn-read"
-                      >
-                        {isReading ? <Activity className="spinning" size={16} /> : 'Read'}
-                      </button>
-                      <button
-                        onClick={handleWriteTag}
-                        disabled={!isConnected || isWriting}
-                        className="btn btn-write"
-                      >
-                        {isWriting ? <Activity className="spinning" size={16} /> : 'Write'}
-                      </button>
-                    </div>
+                    <button
+                      onClick={handleBatchWrite}
+                      disabled={!isConnected || isBatchWriting}
+                      className="btn btn-batch-write"
+                    >
+                      {isBatchWriting ? <Activity className="spinning" size={16} /> : <Play size={16} />}
+                      {isBatchWriting ? 'Writing...' : 'Execute Batch Write'}
+                    </button>
                   </div>
-                </div>
-              )}
 
-              {/* Tag Table */}
-              <div className="tag-table-section">
-                <table className="tag-table">
-                  <thead>
-                    <tr>
-                      <th>Tag Name</th>
-                      <th>Value</th>
-                      <th>Type</th>
-                      <th>Updated</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {monitoredTags.map((tag) => (
-                      <tr key={tag.name} className={`${tag.hasError ? 'error-row' : ''} ${isMonitoring ? 'monitoring-active' : ''}`}>
-                        <td>
-                          {tag.name}
-                          {isMonitoring && (
-                            <span className="monitoring-indicator">🔄</span>
-                          )}
-                        </td>
-                        <td>
-                          {tag.hasError ? (
-                            <span className="error-text">{tag.errorMessage}</span>
-                          ) : (
-                            <span className="value-text">{String(tag.value)}</span>
-                          )}
-                        </td>
-                        <td>{tag.type}</td>
-                        <td className="timestamp">{tag.lastUpdated}</td>
-                      </tr>
-                    ))}
-                    {monitoredTags.length === 0 && (
-                      <tr>
-                        <td colSpan={4} className="no-tags">
-                          No tags being monitored. Discover and read tags to populate this table.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          )}
-
-          {/* Batch Operations Tab */}
-          {activeTab === 'batch' && (
-            <section className="panel batch-operations-panel">
-              <h2>🚀 Batch Operations - High Performance Multi-Tag Operations</h2>
-              <p className="batch-description">
-                Batch operations provide <strong>3-10x performance improvement</strong> over individual operations 
-                by combining multiple reads/writes into optimized network packets.
-              </p>
-
-              {/* Setup Instructions */}
-              <div className="batch-setup-info">
-                <h4>📋 Setup Instructions for Testing</h4>
-                <div className="setup-instructions">
-                  <div className="instruction-step">
-                    <strong>Step 1:</strong> Create test tags in your PLC program:
-                    <ul>
-                      <li><code>TestTag</code> (BOOL) - A boolean value for testing</li>
-                      <li><code>TestBool</code> (BOOL) - Another boolean value</li>
-                      <li><code>TestInt</code> (DINT) - A 32-bit integer</li>
-                      <li><code>TestReal</code> (REAL) - A floating point number</li>
-                    </ul>
-                    <div className="string-limitation-note">
-                      <strong>⚠️ Note:</strong> STRING tag support is not yet implemented in the underlying Rust library.
-                      Only BOOL, DINT, INT, REAL, and numeric types are currently supported.
-                    </div>
-                  </div>
-                  <div className="instruction-step">
-                    <strong>Step 2:</strong> Or click the button below to create test tags automatically:
-                    <div style={{ marginTop: '0.5rem' }}>
-                      <button
-                        onClick={handleCreateTestTags}
-                        disabled={!isConnected || isCreatingTags}
-                        className="btn btn-create-tags"
-                      >
-                        {isCreatingTags ? <Activity className="spinning" size={16} /> : <Settings size={16} />}
-                        {isCreatingTags ? 'Creating Tags...' : 'Create Test Tags'}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="instruction-step">
-                    <strong>Step 3:</strong> Or modify the tag names below to match existing tags in your PLC program.
-                  </div>
-                  <div className="instruction-step">
-                    <strong>Note:</strong> If you see "1/5 successful" results, it likely means most tags don't exist in your PLC.
-                    Use the Individual Operations tab to discover existing tags first.
-                  </div>
-                </div>
-              </div>
-
-              {/* Batch Read Section */}
-              <div className="batch-section">
-                <h3>📖 Batch Read Operations</h3>
-                <div className="batch-controls">
-                  <div className="batch-input-section">
-                    <label>Tag Names (one per line):</label>
-                    <textarea
-                      value={batchReadTags}
-                      onChange={(e) => setBatchReadTags(e.target.value)}
-                      placeholder="TestTag&#10;TestBool&#10;TestInt&#10;TestReal"
-                      disabled={!isConnected}
-                      className="batch-textarea"
-                      rows={5}
-                    />
-                  </div>
-                  <button
-                    onClick={handleBatchRead}
-                    disabled={!isConnected || isBatchReading}
-                    className="btn btn-batch-read"
-                  >
-                    {isBatchReading ? <Activity className="spinning" size={16} /> : <Play size={16} />}
-                    {isBatchReading ? 'Reading...' : 'Execute Batch Read'}
-                  </button>
-                </div>
-
-                {/* Batch Read Results */}
-                {batchReadResult && (
-                  <div className="batch-results">
-                    <h4>📊 Batch Read Results</h4>
-                    {batchReadResult.success ? (
-                      <>
-                        <div className="performance-summary">
-                          <span className="perf-metric">
-                            ✅ Success: {batchReadResult.performance?.successCount}/{Object.keys(batchReadResult.results || {}).length}
-                          </span>
-                          <span className="perf-metric">
-                            ⏱️ Time: {batchReadResult.performance?.totalTimeMs}ms
-                          </span>
-                          <span className="perf-metric">
-                            🚀 Rate: {batchReadResult.performance?.tagsPerSecond.toFixed(1)} tags/sec
-                          </span>
-                        </div>
-                        <div className="results-table">
-                          <table className="batch-results-table">
-                            <thead>
-                              <tr>
-                                <th>Tag Name</th>
-                                <th>Value</th>
-                                <th>Type</th>
-                                <th>Status</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {Object.entries(batchReadResult.results || {}).map(([tagName, result]) => (
-                                <tr key={tagName} className={result.success ? 'success-row' : 'error-row'}>
-                                  <td>{tagName}</td>
-                                  <td>{result.success ? String(result.value) : '-'}</td>
-                                  <td>{result.dataType || '-'}</td>
-                                  <td>
-                                    {result.success ? (
-                                      <span className="status-success">✅ Success</span>
-                                    ) : (
-                                      <span className="status-error">❌ {result.errorMessage}</span>
-                                    )}
-                                  </td>
+                  {/* Batch Write Results */}
+                  {batchWriteResult && (
+                    <div className="batch-results">
+                      <h4>📊 Batch Write Results</h4>
+                      {batchWriteResult.success ? (
+                        <>
+                          <div className="performance-summary">
+                            <span className="perf-metric">
+                              ✅ Success: {batchWriteResult.performance?.successCount}/{Object.keys(batchWriteResult.results || {}).length}
+                            </span>
+                            <span className="perf-metric">
+                              ⏱️ Time: {batchWriteResult.performance?.totalTimeMs}ms
+                            </span>
+                            <span className="perf-metric">
+                              🚀 Rate: {batchWriteResult.performance?.tagsPerSecond.toFixed(1)} tags/sec
+                            </span>
+                          </div>
+                          <div className="results-table">
+                            <table className="batch-results-table">
+                              <thead>
+                                <tr>
+                                  <th>Tag Name</th>
+                                  <th>Status</th>
+                                  <th>Error Message</th>
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="error-message">❌ {batchReadResult.errorMessage}</div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Batch Write Section */}
-              <div className="batch-section">
-                <h3>✏️ Batch Write Operations</h3>
-                <div className="batch-controls">
-                  <div className="batch-input-section">
-                    <label>Tag=Value pairs (one per line):</label>
-                    <textarea
-                      value={batchWriteData}
-                      onChange={(e) => setBatchWriteData(e.target.value)}
-                      placeholder="TestTag=true&#10;TestBool=false&#10;TestInt=999&#10;TestReal=88.8"
-                      disabled={!isConnected}
-                      className="batch-textarea"
-                      rows={5}
-                    />
-                  </div>
-                  <button
-                    onClick={handleBatchWrite}
-                    disabled={!isConnected || isBatchWriting}
-                    className="btn btn-batch-write"
-                  >
-                    {isBatchWriting ? <Activity className="spinning" size={16} /> : <Play size={16} />}
-                    {isBatchWriting ? 'Writing...' : 'Execute Batch Write'}
-                  </button>
+                              </thead>
+                              <tbody>
+                                {Object.entries(batchWriteResult.results || {}).map(([tagName, result]) => (
+                                  <tr key={tagName} className={result.success ? 'success-row' : 'error-row'}>
+                                    <td>{tagName}</td>
+                                    <td>
+                                      {result.success ? (
+                                        <span className="status-success">✅ Success</span>
+                                      ) : (
+                                        <span className="status-error">❌ Failed</span>
+                                      )}
+                                    </td>
+                                    <td>{result.errorMessage || '-'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="error-message">❌ {batchWriteResult.errorMessage}</div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
-                {/* Batch Write Results */}
-                {batchWriteResult && (
-                  <div className="batch-results">
-                    <h4>📊 Batch Write Results</h4>
-                    {batchWriteResult.success ? (
-                      <>
-                        <div className="performance-summary">
-                          <span className="perf-metric">
-                            ✅ Success: {batchWriteResult.performance?.successCount}/{Object.keys(batchWriteResult.results || {}).length}
-                          </span>
-                          <span className="perf-metric">
-                            ⏱️ Time: {batchWriteResult.performance?.totalTimeMs}ms
-                          </span>
-                          <span className="perf-metric">
-                            🚀 Rate: {batchWriteResult.performance?.tagsPerSecond.toFixed(1)} tags/sec
-                          </span>
-                        </div>
-                        <div className="results-table">
-                          <table className="batch-results-table">
-                            <thead>
-                              <tr>
-                                <th>Tag Name</th>
-                                <th>Status</th>
-                                <th>Error Message</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {Object.entries(batchWriteResult.results || {}).map(([tagName, result]) => (
-                                <tr key={tagName} className={result.success ? 'success-row' : 'error-row'}>
-                                  <td>{tagName}</td>
-                                  <td>
-                                    {result.success ? (
-                                      <span className="status-success">✅ Success</span>
-                                    ) : (
-                                      <span className="status-error">❌ Failed</span>
-                                    )}
-                                  </td>
-                                  <td>{result.errorMessage || '-'}</td>
+                {/* Mixed Operations Section */}
+                <div className="batch-section">
+                  <h3>🔄 Mixed Batch Operations</h3>
+                  <div className="batch-controls">
+                    <div className="batch-input-section">
+                      <label>Mixed operations (read:TagName or write:TagName=Value):</label>
+                      <textarea
+                        value={mixedOperations}
+                        onChange={(e) => setMixedOperations(e.target.value)}
+                        placeholder="read:TestTag&#10;read:TestBool&#10;write:TestInt=777&#10;write:TestReal=99.9"
+                        disabled={!isConnected}
+                        className="batch-textarea"
+                        rows={5}
+                      />
+                    </div>
+                    <button
+                      onClick={handleMixedOperations}
+                      disabled={!isConnected || isMixedExecuting}
+                      className="btn btn-batch-mixed"
+                    >
+                      {isMixedExecuting ? <Activity className="spinning" size={16} /> : <Play size={16} />}
+                      {isMixedExecuting ? 'Executing...' : 'Execute Mixed Batch'}
+                    </button>
+                  </div>
+
+                  {/* Mixed Operations Results */}
+                  {mixedResult && (
+                    <div className="batch-results">
+                      <h4>📊 Mixed Batch Results</h4>
+                      {mixedResult.success ? (
+                        <>
+                          <div className="performance-summary">
+                            <span className="perf-metric">
+                              ✅ Success: {mixedResult.performance?.successCount}/{mixedResult.results?.length || 0}
+                            </span>
+                            <span className="perf-metric">
+                              ⏱️ Time: {mixedResult.performance?.totalTimeMs}ms
+                            </span>
+                            <span className="perf-metric">
+                              🚀 Rate: {mixedResult.performance?.operationsPerSecond.toFixed(1)} ops/sec
+                            </span>
+                          </div>
+                          <div className="results-table">
+                            <table className="batch-results-table">
+                              <thead>
+                                <tr>
+                                  <th>Tag Name</th>
+                                  <th>Operation</th>
+                                  <th>Value</th>
+                                  <th>Time (ms)</th>
+                                  <th>Status</th>
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="error-message">❌ {batchWriteResult.errorMessage}</div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Mixed Operations Section */}
-              <div className="batch-section">
-                <h3>🔄 Mixed Batch Operations</h3>
-                <div className="batch-controls">
-                  <div className="batch-input-section">
-                    <label>Mixed operations (read:TagName or write:TagName=Value):</label>
-                    <textarea
-                      value={mixedOperations}
-                      onChange={(e) => setMixedOperations(e.target.value)}
-                      placeholder="read:TestTag&#10;read:TestBool&#10;write:TestInt=777&#10;write:TestReal=99.9"
-                      disabled={!isConnected}
-                      className="batch-textarea"
-                      rows={5}
-                    />
-                  </div>
-                  <button
-                    onClick={handleMixedOperations}
-                    disabled={!isConnected || isMixedExecuting}
-                    className="btn btn-batch-mixed"
-                  >
-                    {isMixedExecuting ? <Activity className="spinning" size={16} /> : <Play size={16} />}
-                    {isMixedExecuting ? 'Executing...' : 'Execute Mixed Batch'}
-                  </button>
+                              </thead>
+                              <tbody>
+                                {mixedResult.results?.map((result, index) => (
+                                  <tr key={index} className={result.success ? 'success-row' : 'error-row'}>
+                                    <td>{result.tagName}</td>
+                                    <td>{result.isWrite ? '✏️ Write' : '📖 Read'}</td>
+                                    <td>{result.value !== undefined ? String(result.value) : '-'}</td>
+                                    <td>{result.executionTimeMs.toFixed(2)}</td>
+                                    <td>
+                                      {result.success ? (
+                                        <span className="status-success">✅ Success</span>
+                                      ) : (
+                                        <span className="status-error">❌ {result.errorMessage}</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="error-message">❌ {mixedResult.errorMessage}</div>
+                      )}
+                    </div>
+                  )}
                 </div>
+              </section>
+            )}
 
-                {/* Mixed Operations Results */}
-                {mixedResult && (
-                  <div className="batch-results">
-                    <h4>📊 Mixed Batch Results</h4>
-                    {mixedResult.success ? (
-                      <>
-                        <div className="performance-summary">
-                          <span className="perf-metric">
-                            ✅ Success: {mixedResult.performance?.successCount}/{mixedResult.results?.length || 0}
-                          </span>
-                          <span className="perf-metric">
-                            ⏱️ Time: {mixedResult.performance?.totalTimeMs}ms
-                          </span>
-                          <span className="perf-metric">
-                            🚀 Rate: {mixedResult.performance?.operationsPerSecond.toFixed(1)} ops/sec
-                          </span>
-                        </div>
-                        <div className="results-table">
-                          <table className="batch-results-table">
-                            <thead>
-                              <tr>
-                                <th>Tag Name</th>
-                                <th>Operation</th>
-                                <th>Value</th>
-                                <th>Time (ms)</th>
-                                <th>Status</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {mixedResult.results?.map((result, index) => (
-                                <tr key={index} className={result.success ? 'success-row' : 'error-row'}>
-                                  <td>{result.tagName}</td>
-                                  <td>{result.isWrite ? '✏️ Write' : '📖 Read'}</td>
-                                  <td>{result.value !== undefined ? String(result.value) : '-'}</td>
-                                  <td>{result.executionTimeMs.toFixed(2)}</td>
-                                  <td>
-                                    {result.success ? (
-                                      <span className="status-success">✅ Success</span>
-                                    ) : (
-                                      <span className="status-error">❌ {result.errorMessage}</span>
-                                    )}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="error-message">❌ {mixedResult.errorMessage}</div>
-                    )}
+            {/* Performance Tab */}
+            {activeTab === 'performance' && (
+              <section className="panel performance-panel">
+                <h2>📈 Performance Testing & Statistics</h2>
+
+                {/* Batch Benchmark Section */}
+                <div className="performance-section">
+                  <h3>🏁 Batch vs Individual Performance Benchmark</h3>
+                  <div className="benchmark-controls">
+                    <button
+                      onClick={handleBatchBenchmark}
+                      disabled={!isConnected || isBatchBenchmarking}
+                      className="btn btn-benchmark-batch"
+                    >
+                      {isBatchBenchmarking ? <Activity className="spinning" size={16} /> : <BarChart3 size={16} />}
+                      {isBatchBenchmarking ? 'Running Benchmark...' : 'Run Batch Benchmark'}
+                    </button>
+                    <p className="benchmark-description">
+                      Compares performance of 10 mixed operations using individual vs batch methods.
+                    </p>
                   </div>
-                )}
-              </div>
-            </section>
-          )}
 
-          {/* Performance Tab */}
-          {activeTab === 'performance' && (
-            <section className="panel performance-panel">
-              <h2>📈 Performance Testing & Statistics</h2>
-
-              {/* Batch Benchmark Section */}
-              <div className="performance-section">
-                <h3>🏁 Batch vs Individual Performance Benchmark</h3>
-                <div className="benchmark-controls">
-                  <button
-                    onClick={handleBatchBenchmark}
-                    disabled={!isConnected || isBatchBenchmarking}
-                    className="btn btn-benchmark-batch"
-                  >
-                    {isBatchBenchmarking ? <Activity className="spinning" size={16} /> : <BarChart3 size={16} />}
-                    {isBatchBenchmarking ? 'Running Benchmark...' : 'Run Batch Benchmark'}
-                  </button>
-                  <p className="benchmark-description">
-                    Compares performance of 10 mixed operations using individual vs batch methods.
-                  </p>
-                </div>
-
-                {/* Benchmark Results */}
-                {batchBenchmarkResult && (
-                  <div className="benchmark-results">
-                    <h4>🏆 Benchmark Results</h4>
-                    <div className="benchmark-comparison">
-                      <div className="comparison-card">
-                        <h5>Individual Operations</h5>
-                        <div className="metric-large">{batchBenchmarkResult.individualTotalTimeMs}ms</div>
-                        <div className="metric-small">{batchBenchmarkResult.individualAverageTimeMs.toFixed(2)}ms avg</div>
-                        <div className="metric-small">{batchBenchmarkResult.individualSuccessCount} successful</div>
-                      </div>
-                      <div className="comparison-arrow">
-                        <div className="speedup-factor">
-                          {batchBenchmarkResult.speedupFactor.toFixed(1)}x faster
+                  {/* Benchmark Results */}
+                  {batchBenchmarkResult && (
+                    <div className="benchmark-results">
+                      <h4>🏆 Benchmark Results</h4>
+                      <div className="benchmark-comparison">
+                        <div className="comparison-card">
+                          <h5>Individual Operations</h5>
+                          <div className="metric-large">{batchBenchmarkResult.individualTotalTimeMs}ms</div>
+                          <div className="metric-small">{batchBenchmarkResult.individualAverageTimeMs.toFixed(2)}ms avg</div>
+                          <div className="metric-small">{batchBenchmarkResult.individualSuccessCount} successful</div>
                         </div>
-                        <div className="time-saved">
-                          Saved {batchBenchmarkResult.timeSavedMs}ms ({batchBenchmarkResult.timeSavedPercentage.toFixed(1)}%)
+                        <div className="comparison-arrow">
+                          <div className="speedup-factor">
+                            {batchBenchmarkResult.speedupFactor.toFixed(1)}x faster
+                          </div>
+                          <div className="time-saved">
+                            Saved {batchBenchmarkResult.timeSavedMs}ms ({batchBenchmarkResult.timeSavedPercentage.toFixed(1)}%)
+                          </div>
+                        </div>
+                        <div className="comparison-card batch-card">
+                          <h5>Batch Operations</h5>
+                          <div className="metric-large">{batchBenchmarkResult.batchTotalTimeMs}ms</div>
+                          <div className="metric-small">{batchBenchmarkResult.batchAverageTimeMs.toFixed(2)}ms avg</div>
+                          <div className="metric-small">{batchBenchmarkResult.batchSuccessCount} successful</div>
                         </div>
                       </div>
-                      <div className="comparison-card batch-card">
-                        <h5>Batch Operations</h5>
-                        <div className="metric-large">{batchBenchmarkResult.batchTotalTimeMs}ms</div>
-                        <div className="metric-small">{batchBenchmarkResult.batchAverageTimeMs.toFixed(2)}ms avg</div>
-                        <div className="metric-small">{batchBenchmarkResult.batchSuccessCount} successful</div>
+                      <div className="network-efficiency">
+                        <strong>Network Efficiency:</strong> {batchBenchmarkResult.networkEfficiencyFactor}x fewer packets
                       </div>
                     </div>
-                    <div className="network-efficiency">
-                      <strong>Network Efficiency:</strong> {batchBenchmarkResult.networkEfficiencyFactor}x fewer packets
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Batch Statistics Section */}
-              <div className="performance-section">
-                <h3>📊 Batch Operation Statistics</h3>
-                <div className="stats-controls">
-                  <button
-                    onClick={handleGetBatchStats}
-                    disabled={!isConnected}
-                    className="btn btn-get-stats"
-                  >
-                    📊 Get Statistics
-                  </button>
-                  <button
-                    onClick={handleResetBatchStats}
-                    disabled={!isConnected}
-                    className="btn btn-reset-stats"
-                  >
-                    <RotateCcw size={16} />
-                    Reset Statistics
-                  </button>
+                  )}
                 </div>
 
-                {/* Statistics Display */}
-                {batchStats && (
-                  <div className="stats-display">
-                    <h4>📈 Operation Statistics</h4>
-                    <div className="stats-table">
-                      <table className="performance-table">
-                        <thead>
-                          <tr>
-                            <th>Operation Type</th>
-                            <th>Total Ops</th>
-                            <th>Success Rate</th>
-                            <th>Avg Time/Op</th>
-                            <th>Last Executed</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {Object.entries(batchStats).map(([opType, stats]) => (
-                            <tr key={opType}>
-                              <td>{opType}</td>
-                              <td>{stats.totalOperations}</td>
-                              <td>{stats.successRate.toFixed(1)}%</td>
-                              <td>{stats.averageTimePerOperation.toFixed(2)}ms</td>
-                              <td>{new Date(stats.lastExecuted).toLocaleTimeString()}</td>
+                {/* Batch Statistics Section */}
+                <div className="performance-section">
+                  <h3>📊 Batch Operation Statistics</h3>
+                  <div className="stats-controls">
+                    <button
+                      onClick={handleGetBatchStats}
+                      disabled={!isConnected}
+                      className="btn btn-get-stats"
+                    >
+                      📊 Get Statistics
+                    </button>
+                    <button
+                      onClick={handleResetBatchStats}
+                      disabled={!isConnected}
+                      className="btn btn-reset-stats"
+                    >
+                      <RotateCcw size={16} />
+                      Reset Statistics
+                    </button>
+                  </div>
+
+                  {/* Statistics Display */}
+                  {batchStats && (
+                    <div className="stats-display">
+                      <h4>📈 Operation Statistics</h4>
+                      <div className="stats-table">
+                        <table className="performance-table">
+                          <thead>
+                            <tr>
+                              <th>Operation Type</th>
+                              <th>Total Ops</th>
+                              <th>Success Rate</th>
+                              <th>Avg Time/Op</th>
+                              <th>Last Executed</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {Object.entries(batchStats).map(([opType, stats]) => (
+                              <tr key={opType}>
+                                <td>{opType}</td>
+                                <td>{stats.totalOperations}</td>
+                                <td>{stats.successRate.toFixed(1)}%</td>
+                                <td>{stats.averageTimePerOperation.toFixed(2)}ms</td>
+                                <td>{new Date(stats.lastExecuted).toLocaleTimeString()}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
-            </section>
-          )}
-
-          {/* Configuration Tab */}
-          {activeTab === 'config' && (
-            <section className="panel config-panel">
-              <h2>⚙️ Batch Operation Configuration</h2>
-
-              {/* Configuration Presets */}
-              <div className="config-section">
-                <h3>🎛️ Configuration Presets</h3>
-                <div className="preset-buttons">
-                  <button
-                    onClick={() => handleConfigureBatch('default')}
-                    disabled={!isConnected || isConfiguring}
-                    className="btn btn-preset-default"
-                  >
-                    📊 Default
-                    <small>20 ops/packet, 504 bytes</small>
-                  </button>
-                  <button
-                    onClick={() => handleConfigureBatch('highPerformance')}
-                    disabled={!isConnected || isConfiguring}
-                    className="btn btn-preset-performance"
-                  >
-                    🚀 High Performance
-                    <small>50 ops/packet, 4000 bytes</small>
-                  </button>
-                  <button
-                    onClick={() => handleConfigureBatch('conservative')}
-                    disabled={!isConnected || isConfiguring}
-                    className="btn btn-preset-conservative"
-                  >
-                    🛡️ Conservative
-                    <small>10 ops/packet, 504 bytes</small>
-                  </button>
+                  )}
                 </div>
-              </div>
+              </section>
+            )}
 
-              {/* Current Configuration Display */}
-              <div className="config-section">
-                <h3>📋 Current Configuration</h3>
-                <div className="config-display">
-                  <div className="config-grid">
-                    <div className="config-item">
-                      <label>Max Operations per Packet:</label>
-                      <span className="config-value">{batchConfig.maxOperationsPerPacket}</span>
-                    </div>
-                    <div className="config-item">
-                      <label>Max Packet Size:</label>
-                      <span className="config-value">{batchConfig.maxPacketSize} bytes</span>
-                    </div>
-                    <div className="config-item">
-                      <label>Packet Timeout:</label>
-                      <span className="config-value">{batchConfig.packetTimeoutMs}ms</span>
-                    </div>
-                    <div className="config-item">
-                      <label>Continue on Error:</label>
-                      <span className="config-value">{batchConfig.continueOnError ? '✅ Yes' : '❌ No'}</span>
-                    </div>
-                    <div className="config-item">
-                      <label>Optimize Packet Packing:</label>
-                      <span className="config-value">{batchConfig.optimizePacketPacking ? '✅ Yes' : '❌ No'}</span>
-                    </div>
+            {/* Configuration Tab */}
+            {activeTab === 'config' && (
+              <section className="panel config-panel">
+                <h2>⚙️ Batch Operation Configuration</h2>
+
+                {/* Configuration Presets */}
+                <div className="config-section">
+                  <h3>🎛️ Configuration Presets</h3>
+                  <div className="preset-buttons">
+                    <button
+                      onClick={() => handleConfigureBatch('default')}
+                      disabled={!isConnected || isConfiguring}
+                      className="btn btn-preset-default"
+                    >
+                      📊 Default
+                      <small>20 ops/packet, 504 bytes</small>
+                    </button>
+                    <button
+                      onClick={() => handleConfigureBatch('highPerformance')}
+                      disabled={!isConnected || isConfiguring}
+                      className="btn btn-preset-performance"
+                    >
+                      🚀 High Performance
+                      <small>50 ops/packet, 4000 bytes</small>
+                    </button>
+                    <button
+                      onClick={() => handleConfigureBatch('conservative')}
+                      disabled={!isConnected || isConfiguring}
+                      className="btn btn-preset-conservative"
+                    >
+                      🛡️ Conservative
+                      <small>10 ops/packet, 504 bytes</small>
+                    </button>
                   </div>
                 </div>
-              </div>
 
-              {/* Configuration Guidelines */}
-              <div className="config-section">
-                <h3>💡 Configuration Guidelines</h3>
-                <div className="guidelines">
-                  <div className="guideline-item">
-                    <h4>🚀 High Performance</h4>
-                    <p>Use for modern PLCs with fast networks. Maximizes throughput with larger packets.</p>
-                    <ul>
-                      <li>CompactLogix L3x series and newer</li>
-                      <li>Gigabit Ethernet networks</li>
-                      <li>Low network latency environments</li>
-                    </ul>
-                  </div>
-                  <div className="guideline-item">
-                    <h4>📊 Default</h4>
-                    <p>Balanced configuration suitable for most industrial applications.</p>
-                    <ul>
-                      <li>CompactLogix L2x/L3x series</li>
-                      <li>Standard 100Mbps networks</li>
-                      <li>Mixed PLC environments</li>
-                    </ul>
-                  </div>
-                  <div className="guideline-item">
-                    <h4>🛡️ Conservative</h4>
-                    <p>Use for older PLCs or unreliable networks. Prioritizes reliability over speed.</p>
-                    <ul>
-                      <li>MicroLogix and older CompactLogix</li>
-                      <li>Wireless or high-latency networks</li>
-                      <li>Critical safety applications</li>
-                    </ul>
+                {/* Current Configuration Display */}
+                <div className="config-section">
+                  <h3>📋 Current Configuration</h3>
+                  <div className="config-display">
+                    <div className="config-grid">
+                      <div className="config-item">
+                        <label>Max Operations per Packet:</label>
+                        <span className="config-value">{batchConfig.maxOperationsPerPacket}</span>
+                      </div>
+                      <div className="config-item">
+                        <label>Max Packet Size:</label>
+                        <span className="config-value">{batchConfig.maxPacketSize} bytes</span>
+                      </div>
+                      <div className="config-item">
+                        <label>Packet Timeout:</label>
+                        <span className="config-value">{batchConfig.packetTimeoutMs}ms</span>
+                      </div>
+                      <div className="config-item">
+                        <label>Continue on Error:</label>
+                        <span className="config-value">{batchConfig.continueOnError ? '✅ Yes' : '❌ No'}</span>
+                      </div>
+                      <div className="config-item">
+                        <label>Optimize Packet Packing:</label>
+                        <span className="config-value">{batchConfig.optimizePacketPacking ? '✅ Yes' : '❌ No'}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </section>
-          )}
 
-          {/* Activity Log Panel - Always visible */}
-          <section className="panel activity-log-panel">
-            <h2>📋 Activity Log</h2>
-            <div className="log-container">
-              {logs.map((log) => (
-                <div key={log.id} className={`log-entry log-${log.level}`}>
-                  <span className="log-timestamp">[{log.timestamp}]</span>
-                  <span className="log-level-icon">
-                    {log.level === 'success' && '✅'}
-                    {log.level === 'info' && '📘'}
-                    {log.level === 'warning' && '⚠️'}
-                    {log.level === 'error' && '❌'}
-                  </span>
-                  <span className="log-message">{log.message}</span>
+                {/* Configuration Guidelines */}
+                <div className="config-section">
+                  <h3>💡 Configuration Guidelines</h3>
+                  <div className="guidelines">
+                    <div className="guideline-item">
+                      <h4>🚀 High Performance</h4>
+                      <p>Use for modern PLCs with fast networks. Maximizes throughput with larger packets.</p>
+                      <ul>
+                        <li>CompactLogix L3x series and newer</li>
+                        <li>Gigabit Ethernet networks</li>
+                        <li>Low network latency environments</li>
+                      </ul>
+                    </div>
+                    <div className="guideline-item">
+                      <h4>📊 Default</h4>
+                      <p>Balanced configuration suitable for most industrial applications.</p>
+                      <ul>
+                        <li>CompactLogix L2x/L3x series</li>
+                        <li>Standard 100Mbps networks</li>
+                        <li>Mixed PLC environments</li>
+                      </ul>
+                    </div>
+                    <div className="guideline-item">
+                      <h4>🛡️ Conservative</h4>
+                      <p>Use for older PLCs or unreliable networks. Prioritizes reliability over speed.</p>
+                      <ul>
+                        <li>MicroLogix and older CompactLogix</li>
+                        <li>Wireless or high-latency networks</li>
+                        <li>Critical safety applications</li>
+                      </ul>
+                    </div>
+                  </div>
                 </div>
-              ))}
-              {logs.length === 0 && (
-                <div className="no-logs">
-                  Activity will be logged here when you interact with the PLC.
-                </div>
-              )}
-            </div>
-          </section>
+              </section>
+            )}
+          </div>
         </div>
       </main>
     </div>
