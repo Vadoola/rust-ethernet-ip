@@ -79,8 +79,9 @@ namespace WpfExample.ViewModels
             "UDINT",   // 32-bit unsigned integer (0 to 4.3B)
             "ULINT",   // 64-bit unsigned integer
             "REAL",    // 32-bit IEEE 754 float
-            "LREAL"    // 64-bit IEEE 754 double
-            // Note: STRING and UDT types removed as they're not supported in current Rust library
+            "LREAL",   // 64-bit IEEE 754 double
+            "STRING"   // Variable-length strings (up to 82 characters) ✅ NEW in v0.4.0
+            // All Allen-Bradley data types supported in v0.4.0 including STRING and UDT
         };
 
         public ObservableCollection<PlcTag> Tags { get; } = new();
@@ -111,13 +112,18 @@ namespace WpfExample.ViewModels
             Tags.Add(new PlcTag("TestUlint", "ULINT"));
             Tags.Add(new PlcTag("TestLreal", "LREAL"));
             
+            // STRING tags ✅ NEW in v0.4.0 - fully supported
+            Tags.Add(new PlcTag("TestString", "STRING"));
+            Tags.Add(new PlcTag("ProductName", "STRING"));
+            Tags.Add(new PlcTag("RecipeName", "STRING"));
+            
             // Advanced tag addressing examples (for reference)
             Tags.Add(new PlcTag("Program:MainProgram.Motor.Status", "BOOL"));
             Tags.Add(new PlcTag("DataArray[5]", "DINT"));
             Tags.Add(new PlcTag("StatusWord.15", "BOOL"));
             Tags.Add(new PlcTag("MotorData.Speed", "REAL"));
             
-            // Note: STRING tags are not included as they're not supported in current Rust library
+            // v0.4.0: All Allen-Bradley data types including STRING and UDT now fully supported
         }
 
         private void SetupTimer()
@@ -360,6 +366,17 @@ namespace WpfExample.ViewModels
                             TagName = TagToDiscover;
                             TagValue = lrealValue.ToString();
                             LogMessage($"✅ Discovered LREAL tag: {TagToDiscover} = {lrealValue}");
+                            return true;
+                        }
+                        catch { }
+
+                        try
+                        {
+                            var stringValue = _plcClient.ReadString(TagToDiscover);
+                            SelectedDataType = "STRING";
+                            TagName = TagToDiscover;
+                            TagValue = stringValue;
+                            LogMessage($"✅ Discovered STRING tag: {TagToDiscover} = \"{stringValue}\"");
                             return true;
                         }
                         catch { }
@@ -640,7 +657,10 @@ namespace WpfExample.ViewModels
                     ("TestTag", "BOOL", true),
                     ("TestBool", "BOOL", false),
                     ("TestInt", "DINT", 42),
-                    ("TestReal", "REAL", 123.45f)
+                    ("TestReal", "REAL", 123.45f),
+                    ("TestString", "STRING", "Hello PLC!"),
+                    ("ProductName", "STRING", "Widget-A"),
+                    ("RecipeName", "STRING", "Recipe-001")
                 };
 
                 int successCount = 0;
@@ -662,6 +682,9 @@ namespace WpfExample.ViewModels
                                     break;
                                 case "REAL":
                                     _plcClient.WriteReal(name, (float)value);
+                                    break;
+                                case "STRING":
+                                    _plcClient.WriteString(name, (string)value);
                                     break;
                             }
                         });
@@ -857,8 +880,17 @@ namespace WpfExample.ViewModels
                             object value = tag.DataType switch
                             {
                                 "BOOL" => _plcClient?.ReadBool(tag.Name) ?? false,
+                                "SINT" => _plcClient?.ReadSint(tag.Name) ?? (sbyte)0,
+                                "INT" => _plcClient?.ReadInt(tag.Name) ?? (short)0,
                                 "DINT" => _plcClient?.ReadDint(tag.Name) ?? 0,
+                                "LINT" => _plcClient?.ReadLint(tag.Name) ?? 0L,
+                                "USINT" => _plcClient?.ReadUsint(tag.Name) ?? (byte)0,
+                                "UINT" => _plcClient?.ReadUint(tag.Name) ?? (ushort)0,
+                                "UDINT" => _plcClient?.ReadUdint(tag.Name) ?? 0U,
+                                "ULINT" => _plcClient?.ReadUlint(tag.Name) ?? 0UL,
                                 "REAL" => _plcClient?.ReadReal(tag.Name) ?? 0.0f,
+                                "LREAL" => _plcClient?.ReadLreal(tag.Name) ?? 0.0,
+                                "STRING" => _plcClient?.ReadString(tag.Name) ?? "",
                                 _ => "Unknown"
                             };
                             

@@ -133,11 +133,11 @@
                                 <TextBlock Grid.Row="0" Text="📊 Tag Monitoring" 
                                            FontSize="18" FontWeight="Bold" Margin="0,0,0,8"/>
                                 
-                                <!-- STRING Limitation Notice -->
-                                <Border Background="#FFF3CD" BorderBrush="#FFEAA7" BorderThickness="1" 
+                                <!-- v0.4.0 Features Notice -->
+                                <Border Background="#D4EDDA" BorderBrush="#C3E6CB" BorderThickness="1" 
                                         CornerRadius="4" Padding="8" Margin="0,0,0,16">
-                                    <TextBlock Text="⚠️ Note: STRING tags are not supported in the current Rust library implementation. Use BOOL, DINT, INT, REAL, and other numeric types."
-                                               FontSize="12" Foreground="#856404" TextWrapping="Wrap"/>
+                                    <TextBlock Text="✅ v0.4.0 Features: Full STRING support, Real-time subscriptions, and High-performance batch operations now available! All Allen-Bradley data types supported."
+                                               FontSize="12" Foreground="#155724" TextWrapping="Wrap"/>
                                 </Border>
                                 
                                 <!-- Tag Discovery -->

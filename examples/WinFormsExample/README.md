@@ -37,7 +37,7 @@ TestReal
 ```
 Read multiple sensor values simultaneously for real-time monitoring.
 
-⚠️ **Note**: STRING tags are not supported in the current Rust library implementation.
+✅ **v0.4.0 Update**: STRING tags are now fully supported with complete Allen-Bradley format compliance!
 
 ### 2. **Recipe Management**
 ```
