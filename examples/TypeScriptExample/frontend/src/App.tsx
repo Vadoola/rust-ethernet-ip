@@ -833,7 +833,7 @@ function App() {
         addLog('info', '🔍 Checking if connection is still active...');
         updateStatus(); // Force status check on error
       }
-    }, 1000); // Update every second
+    }, 5000); // Update every 5 seconds to reduce load
 
     return () => clearInterval(interval);
   }, [isConnected, isMonitoring, monitoredTags]);
@@ -842,7 +842,7 @@ function App() {
   useEffect(() => {
     if (!isConnected) return;
 
-    const interval = setInterval(updateStatus, 2000); // Update every 2 seconds for better responsiveness
+    const interval = setInterval(updateStatus, 10000); // Update every 10 seconds to reduce load
     return () => clearInterval(interval);
   }, [isConnected]);
 
@@ -859,7 +859,7 @@ function App() {
         addLog('warning', '⚠️ Backend connectivity issues detected');
         addLog('info', '💡 If problems persist, try disconnecting and reconnecting');
       }
-    }, 10000); // Every 10 seconds
+    }, 30000); // Every 30 seconds to reduce load
 
     return () => clearInterval(healthCheckInterval);
   }, [isConnected]);
@@ -875,16 +875,11 @@ function App() {
       inputDisabled: isConnected || isConnecting 
     });
     
-    // Prevent corruption by validating the input and debouncing
+    // Simple validation without aggressive cleanup
     if (newAddress.length <= 100) { // Reasonable length limit
-      // Clear any special characters that might cause issues
-      const cleanAddress = newAddress.replace(/[^\w\d\.\:\-]/g, '');
-      console.log('Cleaned address:', cleanAddress);
-      setPlcAddress(cleanAddress);
+      setPlcAddress(newAddress);
     } else {
       console.warn('Address input too long, ignoring');
-      // Reset to a clean default if input becomes corrupted
-      setPlcAddress('192.168.0.1:44818');
     }
   };
 

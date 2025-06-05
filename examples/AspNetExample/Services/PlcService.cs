@@ -522,11 +522,11 @@ public class PlcService : IDisposable
         _lastHealthCheck = DateTime.UtcNow;
         _isHealthy = true;
         
-        // Run health checks every 30 seconds
+        // Run health checks every 60 seconds (reduced frequency)
         _healthCheckTimer = new Timer(async _ => await CheckConnectionHealth(), null, 
-            TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+            TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60));
         
-        _logger.LogInformation("Health monitoring started - checks every 30 seconds");
+        _logger.LogInformation("Health monitoring started - checks every 60 seconds");
     }
     
     private void StopHealthMonitoring()
@@ -542,8 +542,8 @@ public class PlcService : IDisposable
         {
             _logger.LogDebug("Performing connection health check...");
             
-            // Use the detailed health check from the Rust library
-            var isHealthy = _plcClient.CheckHealthDetailed();
+            // Use the simple health check to reduce load
+            var isHealthy = _plcClient.CheckHealth();
             
             _lastHealthCheck = DateTime.UtcNow;
             var wasHealthy = _isHealthy;
@@ -556,20 +556,9 @@ public class PlcService : IDisposable
             else if (wasHealthy && !isHealthy)
             {
                 _logger.LogWarning("Connection health degraded - session may have timed out");
-                
-                // Try to reconnect automatically
-                _logger.LogInformation("Attempting automatic reconnection...");
-                var reconnected = _plcClient.Connect(_currentAddress);
-                if (reconnected)
-                {
-                    _logger.LogInformation("Automatic reconnection successful");
-                    _isHealthy = true;
-                }
-                else
-                {
-                    _logger.LogError("Automatic reconnection failed");
-                    _isConnected = false;
-                }
+                _logger.LogInformation("Automatic reconnection disabled - manual reconnection required");
+                // Note: Automatic reconnection can cause conflicts with active sessions
+                // Users should manually disconnect and reconnect when needed
             }
             else if (isHealthy)
             {
@@ -724,10 +713,10 @@ public class PlcService : IDisposable
             var result = new BatchMixedResult
             {
                 Success = true,
-                Results = results.Select(r => new ApiMixedOperationResult
+                Results = results.Select((r, index) => new ApiMixedOperationResult
                 {
-                    TagName = GetTagNameFromResult(r, operations),
-                    IsWrite = IsWriteOperation(r, operations),
+                    TagName = GetTagNameFromResult(r, operations, index),
+                    IsWrite = IsWriteOperation(r, operations, index),
                     Success = r.Success,
                     Value = r.Value,
                     ExecutionTimeMs = r.ExecutionTimeMs,
@@ -827,19 +816,16 @@ public class PlcService : IDisposable
             });
     }
 
-    private string GetTagNameFromResult(BatchOperationResult result, BatchOperation[] operations)
+    private string GetTagNameFromResult(BatchOperationResult result, BatchOperation[] operations, int index)
     {
-        // In a real implementation, you'd need to match results to operations
-        // For now, return a placeholder
-        var index = Array.FindIndex(operations, o => true); // This is simplified
-        return index >= 0 ? operations[index].TagName : "Unknown";
+        // Match result to operation by index (assuming results are returned in same order as operations)
+        return index < operations.Length ? operations[index].TagName : "Unknown";
     }
 
-    private bool IsWriteOperation(BatchOperationResult result, BatchOperation[] operations)
+    private bool IsWriteOperation(BatchOperationResult result, BatchOperation[] operations, int index)
     {
-        // In a real implementation, you'd need to match results to operations
-        // For now, return false as placeholder
-        return false;
+        // Match result to operation by index (assuming results are returned in same order as operations)
+        return index < operations.Length ? operations[index].IsWrite : false;
     }
 }
 

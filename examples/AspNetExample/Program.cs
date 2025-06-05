@@ -37,7 +37,7 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-app.UseHttpsRedirection();
+// app.UseHttpsRedirection(); // Disabled for local development on HTTP
 app.UseCors("AllowAll");
 app.UseAuthorization();
 

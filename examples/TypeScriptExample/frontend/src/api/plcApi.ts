@@ -3,13 +3,13 @@ import axios, { type AxiosResponse } from 'axios';
 // Base URL for the ASP.NET Core API - try both HTTP and HTTPS
 const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const API_BASE_URL = isDevelopment 
-  ? 'http://localhost:5000/api'  // Use HTTP since backend only listens on HTTP
+  ? 'http://localhost:5000/api'  // Use HTTP on port 5000 where backend is actually running
   : 'http://localhost:5000/api';
 
 // Create axios instance with default config
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 30000, // Increased to 30 seconds for stability
   headers: {
     'Content-Type': 'application/json',
   },
@@ -254,10 +254,10 @@ export class PlcApiClient {
       // If using HTTPS fails, try HTTP as fallback
       if (API_BASE_URL.includes('https://')) {
         try {
-          const httpUrl = API_BASE_URL.replace('https://', 'http://').replace(':5001', ':5000');
+          const httpUrl = API_BASE_URL.replace('https://', 'http://'); // Keep same port since we're already on 5001
           const httpClient = axios.create({
             baseURL: httpUrl,
-            timeout: 10000,
+            timeout: 30000, // Increased to 30 seconds for stability
             headers: { 'Content-Type': 'application/json' },
           });
           
