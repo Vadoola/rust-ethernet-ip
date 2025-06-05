@@ -2208,16 +2208,33 @@ impl EipClient {
 
         let mut results = Vec::new();
 
-        // Parse Multiple Service Response header:
+        println!("🔧 [DEBUG] Raw Multiple Service Response ({} bytes): {:02X?}", response.len(), response);
+
+        // First, extract the CIP data from the EtherNet/IP response
+        let cip_data = match self.extract_cip_from_response(response) {
+            Ok(data) => data,
+            Err(e) => {
+                println!("🔧 [DEBUG] Failed to extract CIP data: {}", e);
+                return Err(e);
+            }
+        };
+
+        println!("🔧 [DEBUG] Extracted CIP data ({} bytes): {:02X?}", cip_data.len(), cip_data);
+
+        if cip_data.len() < 6 {
+            return Err(crate::error::EtherNetIpError::Protocol("CIP data too short for Multiple Service Response".to_string()));
+        }
+
+        // Parse Multiple Service Response header from CIP data:
         // [0] = Service Code (0x8A)
         // [1] = Reserved (0x00)  
         // [2] = General Status (0x00 for success)
         // [3] = Additional Status Size (0x00)
         // [4-5] = Number of replies (little endian)
         
-        let service_code = response[0];
-        let general_status = response[2];
-        let num_replies = u16::from_le_bytes([response[4], response[5]]) as usize;
+        let service_code = cip_data[0];
+        let general_status = cip_data[2];
+        let num_replies = u16::from_le_bytes([cip_data[4], cip_data[5]]) as usize;
 
         println!("🔧 [DEBUG] Multiple Service Response: service=0x{:02X}, status=0x{:02X}, replies={}", 
                 service_code, general_status, num_replies);
@@ -2235,10 +2252,10 @@ impl EipClient {
         let mut offset = 6; // Skip header
         
         for _i in 0..num_replies {
-            if offset + 2 > response.len() {
-                return Err(crate::error::EtherNetIpError::Protocol("Response too short for reply offsets".to_string()));
+            if offset + 2 > cip_data.len() {
+                return Err(crate::error::EtherNetIpError::Protocol("CIP data too short for reply offsets".to_string()));
             }
-            let reply_offset = u16::from_le_bytes([response[offset], response[offset + 1]]) as usize;
+            let reply_offset = u16::from_le_bytes([cip_data[offset], cip_data[offset + 1]]) as usize;
             reply_offsets.push(reply_offset);
             offset += 2;
         }
@@ -2255,8 +2272,8 @@ impl EipClient {
             // Reply offset is relative to position 4 (after service code, reserved, status, additional status size)
             let reply_start = 4 + reply_offset;
             
-            if reply_start >= response.len() {
-                results.push(Err(BatchError::Other("Reply offset beyond response".to_string())));
+            if reply_start >= cip_data.len() {
+                results.push(Err(BatchError::Other("Reply offset beyond CIP data".to_string())));
                 continue;
             }
 
@@ -2265,16 +2282,16 @@ impl EipClient {
                 // Not the last reply - use next reply's offset as boundary
                 4 + reply_offsets[i + 1]
             } else {
-                // Last reply - goes to end of response
-                response.len()
+                // Last reply - goes to end of CIP data
+                cip_data.len()
             };
 
-            if reply_end > response.len() || reply_start >= reply_end {
+            if reply_end > cip_data.len() || reply_start >= reply_end {
                 results.push(Err(BatchError::Other("Invalid reply boundaries".to_string())));
                 continue;
             }
 
-            let reply_data = &response[reply_start..reply_end];
+            let reply_data = &cip_data[reply_start..reply_end];
             
             println!("🔧 [DEBUG] Reply {} at offset {}: start={}, end={}, len={}", 
                     i, reply_offset, reply_start, reply_end, reply_data.len());

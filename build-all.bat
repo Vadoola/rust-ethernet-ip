@@ -10,7 +10,7 @@ echo   • 🔧 Complete Allen-Bradley STRING support
 echo   • 🔧 Real-time subscription support
 echo.
 
-echo [1/7] 🦀 Building Rust library (release)...
+echo [1/9] 🦀 Building Rust library (release)...
 echo ============================================
 cargo build --release --lib
 if %errorlevel% neq 0 (
@@ -20,7 +20,7 @@ if %errorlevel% neq 0 (
 echo ✅ Rust library built successfully
 
 echo.
-echo [2/7] 📦 Copying DLL to projects...
+echo [2/9] 📦 Copying DLL to projects...
 echo =================================
 copy target\release\rust_ethernet_ip.dll csharp\RustEtherNetIp\ >nul
 copy target\release\rust_ethernet_ip.dll examples\ >nul
@@ -31,7 +31,7 @@ if %errorlevel% neq 0 (
 echo ✅ DLL copied to all projects
 
 echo.
-echo [3/7] 🔷 Building C# wrapper...
+echo [3/9] 🔷 Building C# wrapper...
 echo ==============================
 cd csharp\RustEtherNetIp
 dotnet build --configuration Release --verbosity minimal
@@ -43,7 +43,7 @@ echo ✅ C# wrapper built successfully
 cd ..\..
 
 echo.
-echo [4/7] 🧪 Running C# tests...
+echo [4/9] 🧪 Running C# tests...
 echo ==========================
 cd csharp\RustEtherNetIp.Tests
 dotnet test --configuration Release --verbosity minimal
@@ -55,7 +55,19 @@ echo ✅ All C# tests passed
 cd ..\..
 
 echo.
-echo [5/7] 🖥️ Building WPF Example...
+echo [5/9] 🔍 Building C# FFI Connection Test...
+echo =========================================
+cd examples\CSharpFFITest
+dotnet build --configuration Release --verbosity minimal
+if %errorlevel% neq 0 (
+    echo ❌ C# FFI Connection Test build failed!
+    exit /b %errorlevel%
+)
+echo ✅ C# FFI Connection Test built successfully
+cd ..\..
+
+echo.
+echo [6/9] 🖥️ Building WPF Example...
 echo ===============================
 cd examples\WpfExample
 dotnet build --configuration Release --verbosity minimal
@@ -67,7 +79,7 @@ echo ✅ WPF example built successfully
 cd ..\..
 
 echo.
-echo [6/7] 📋 Building WinForms Example...
+echo [7/9] 📋 Building WinForms Example...
 echo ===================================
 cd examples\WinFormsExample
 dotnet build --configuration Release --verbosity minimal
@@ -79,7 +91,7 @@ echo ✅ WinForms example built successfully
 cd ..\..
 
 echo.
-echo [7/7] 🌐 Building ASP.NET Example...
+echo [8/9] 🌐 Building ASP.NET Example...
 echo =================================
 cd examples\AspNetExample
 dotnet build --configuration Release --verbosity minimal
@@ -91,7 +103,7 @@ echo ✅ ASP.NET example built successfully
 cd ..\..
 
 echo.
-echo [8/8] ⚛️ Building React Frontend...
+echo [9/9] ⚛️ Building React Frontend...
 echo ===============================
 cd examples\TypeScriptExample\frontend
 call npm install --silent
@@ -109,7 +121,8 @@ echo =========================
 echo.
 echo 📦 Built Components:
 echo   ✅ Rust Library (v0.3.0) - with hanging fixes
-echo   ✅ C# Wrapper - tested and verified
+echo   ✅ C# Wrapper - tested and verified  
+echo   ✅ C# FFI Connection Test - diagnostic tool
 echo   ✅ WPF Example - production ready
 echo   ✅ WinForms Example - production ready
 echo   ✅ ASP.NET Example - web API ready
@@ -126,8 +139,9 @@ echo   ASP.NET Web:  examples\AspNetExample\bin\Release\net9.0\AspNetExample.dll
 echo   React Web:    examples\TypeScriptExample\frontend\dist\
 echo.
 echo 💡 Next Steps:
-echo   1. Test PLC connectivity using: cargo run --example connection_test
-echo   2. Test string operations: cargo run --example test_string_direct
-echo   3. Run WPF example: examples\WpfExample\bin\Release\net9.0-windows\WpfExample.exe
-echo   4. Run ASP.NET: dotnet run --project examples\AspNetExample
+echo   1. Test C# FFI connection: dotnet run --project examples\CSharpFFITest
+echo   2. Test Rust connectivity: cargo run --example connection_test
+echo   3. Test string operations: cargo run --example test_string_direct
+echo   4. Run WPF example: examples\WpfExample\bin\Release\net9.0-windows\WpfExample.exe
+echo   5. Run ASP.NET: dotnet run --project examples\AspNetExample
 echo. 
