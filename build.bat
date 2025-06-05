@@ -1,5 +1,5 @@
 @echo off
-echo Building Rust EtherNet/IP Library v0.3.0...
+echo Building Rust EtherNet/IP Library v0.4.0...
 echo =============================================
 
 echo.

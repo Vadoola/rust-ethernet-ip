@@ -1,5 +1,5 @@
 @echo off
-echo 🎉 Building Complete Rust EtherNet/IP Solution v0.3.0
+echo 🎉 Building Complete Rust EtherNet/IP Solution v0.4.0
 echo ====================================================
 echo.
 echo ✨ This build includes the latest fixes:
@@ -120,7 +120,7 @@ echo 🎉 COMPLETE BUILD SUCCESS!
 echo =========================
 echo.
 echo 📦 Built Components:
-echo   ✅ Rust Library (v0.3.0) - with hanging fixes
+echo   ✅ Rust Library (v0.4.0) - with real-time subscriptions & batch operations
 echo   ✅ C# Wrapper - tested and verified  
 echo   ✅ C# FFI Connection Test - diagnostic tool
 echo   ✅ WPF Example - production ready

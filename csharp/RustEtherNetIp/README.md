@@ -386,7 +386,7 @@ For issues and questions:
 
 ## Version History
 
-### v0.3.0 (Current)
+### v0.4.0 (Current)
 - ✅ **NEW: Batch Operations** - 3-10x performance improvement
 - ✅ Complete data type support
 - ✅ Advanced tag addressing

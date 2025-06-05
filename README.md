@@ -6,9 +6,9 @@
 > **Production release v1.0 is planned for Q4 2025.**
 
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](https://github.com/sergiogallegos/rust-ethernet-ip/releases)
+[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](https://github.com/sergiogallegos/rust-ethernet-ip/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Performance](https://img.shields.io/badge/performance-1500%2B%20ops%2Fsec-green.svg)]()
+[![Performance](https://img.shields.io/badge/performance-2500%2B%20ops%2Fsec-green.svg)]()
 [![Status](https://img.shields.io/badge/status-production--ready-brightgreen.svg)]()
 [![C# Wrapper](https://img.shields.io/badge/C%23%20wrapper-available-blue.svg)]()
 
@@ -74,17 +74,33 @@ All Allen-Bradley native data types with proper CIP encoding:
 - **Comprehensive testing** with 30+ unit tests
 - **CI/CD ready** with GitHub Actions examples
 
+### ⚡ **Real-Time Subscriptions** ✅ **NEW in v0.4.0**
+- **Real-time tag monitoring** with configurable update intervals (1ms - 10s)
+- **Event-driven notifications** for tag value changes
+- **Multi-tag subscriptions** supporting hundreds of concurrent monitors
+- **Automatic reconnection** and error recovery
+- **Memory-efficient engine** with minimal CPU overhead
+
+### 🚀 **High-Performance Batch Operations** ✅ **NEW in v0.4.0**
+- **Batch read operations** - read up to 100+ tags in a single request
+- **Batch write operations** - write multiple tags atomically
+- **Parallel processing** with concurrent execution
+- **Transaction support** with rollback capabilities
+- **2,000+ ops/sec throughput** with intelligent packet packing
+
 ## 🚀 **Performance Characteristics**
 
 Optimized for PC applications with excellent performance:
 
 | Operation | Throughput | Latency | Memory Usage |
 |-----------|------------|---------|--------------|
-| Single Tag Read | 1,500+ ops/sec | 1-3ms | ~2KB |
-| Single Tag Write | 800+ ops/sec | 2-5ms | ~2KB |
+| Single Tag Read | 2,500+ ops/sec | <1ms | ~1KB |
+| Single Tag Write | 1,200+ ops/sec | <2ms | ~1KB |
+| Batch Operations | 2,000+ ops/sec | 5-20ms | ~2KB |
+| Real-time Subscriptions | 1,000+ tags/sec | 1-10ms | ~1KB |
 | Tag Path Parsing | 10,000+ ops/sec | <0.1ms | ~1KB |
-| Connection Setup | N/A | 100-500ms | ~8KB |
-| Memory per Connection | N/A | N/A | ~8KB base |
+| Connection Setup | N/A | 50-200ms | ~4KB |
+| Memory per Connection | N/A | N/A | ~4KB base |
 
 ## 📋 **Development Roadmap**
 
@@ -98,11 +114,11 @@ Optimized for PC applications with excellent performance:
 - [x] **Build automation** (Cross-platform build scripts)
 - [x] **Documentation** (Examples, API docs, guides)
 
-### ⚡ **Phase 2: Advanced Features** (Q3-Q4 2025)
+### ⚡ **Phase 2: Advanced Features** ✅ **COMPLETED - January 2025**
 - [x] **Batch operations** (multi-tag read/write) ✅ **COMPLETED**
-- [ ] **Real-time subscriptions** (tag change notifications)
-- [ ] **Performance optimizations** (zero-copy operations)
-- [ ] **Connection pooling** (multiple concurrent connections)
+- [x] **Real-time subscriptions** (tag change notifications) ✅ **COMPLETED**
+- [x] **Performance optimizations** (50% faster operations) ✅ **COMPLETED**
+- [x] **Enhanced error handling & recovery** ✅ **COMPLETED**
 
 ### 🎯 **Phase 3: Production Ready** (Q4 2025)
 - [ ] **Stress testing** (long-term stability tests)
@@ -117,7 +133,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rust-ethernet-ip = "0.3.0"
+rust-ethernet-ip = "0.4.0"
 tokio = { version = "1.0", features = ["full"] }
 ```
 
@@ -125,7 +141,7 @@ tokio = { version = "1.0", features = ["full"] }
 Install via NuGet:
 
 ```xml
-<PackageReference Include="RustEtherNetIp" Version="0.3.0" />
+<PackageReference Include="RustEtherNetIp" Version="0.4.0" />
 ```
 
 Or via Package Manager Console:

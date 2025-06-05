@@ -1,9 +1,9 @@
 {
   "name": "rust-ethernet-ip-typescript-example",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
-  "description": "React + TypeScript dashboard demonstrating Rust EtherNet/IP library v0.3.0 capabilities",
+  "description": "React + TypeScript dashboard demonstrating Rust EtherNet/IP library v0.4.0 with real-time subscriptions",
   "keywords": ["rust", "ethernet-ip", "plc", "typescript", "react", "industrial-automation", "allen-bradley"],
   "scripts": {
     "dev": "vite",

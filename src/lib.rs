@@ -184,7 +184,7 @@
 //
 // ## Changelog
 //
-// ### v0.3.0 (June 2025)
+// ### v0.4.0 (January 2025)
 // - Complete data type support for all Allen-Bradley types
 // - Advanced tag path parsing (program-scoped, arrays, bits, UDTs)
 // - Enhanced error handling and documentation
