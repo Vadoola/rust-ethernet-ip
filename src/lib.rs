@@ -1033,7 +1033,8 @@ impl EipClient {
 
         // Standard tag reading
         let response = self.send_cip_request(&self.build_read_request(tag_name)).await?;
-        self.parse_cip_response(&response)
+        let cip_data = self.extract_cip_from_response(&response)?;
+        self.parse_cip_response(&cip_data)
     }
     
     /// Writes a value to a PLC tag
@@ -1477,127 +1478,130 @@ impl EipClient {
 
     /// Sends a CIP request wrapped in EtherNet/IP SendRRData command
     pub async fn send_cip_request(&self, cip_request: &[u8]) -> Result<Vec<u8>> {
+        println!("🔧 [DEBUG] Sending CIP request ({} bytes): {:02X?}", cip_request.len(), cip_request);
+        
+        // Calculate total packet size
+        let cip_data_size = cip_request.len();
+        let total_data_len = 4 + 2 + 2 + 8 + cip_data_size; // Interface + Timeout + Count + Items + CIP
+        
         let mut packet = Vec::new();
         
-        // Add EtherNet/IP header
-        packet.extend_from_slice(&[0x00, 0x00]); // Command: SendRRData
-        packet.extend_from_slice(&[0x00, 0x00]); // Length placeholder
-        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // Session handle
+        // EtherNet/IP header (24 bytes)
+        packet.extend_from_slice(&[0x6F, 0x00]); // Command: Send RR Data (0x006F)
+        packet.extend_from_slice(&(total_data_len as u16).to_le_bytes()); // Length
+        packet.extend_from_slice(&self.session_handle.to_le_bytes()); // Session handle
         packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // Status
-        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // Context
+        packet.extend_from_slice(&[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]); // Context
         packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // Options
-        packet.extend_from_slice(&[0x00, 0x00]); // Interface handle
-        packet.extend_from_slice(&[0x00, 0x00]); // Timeout
-        packet.extend_from_slice(&[0x02, 0x00]); // Item count
-        packet.extend_from_slice(&[0x00, 0x00]); // Item 1: Null address
-        packet.extend_from_slice(&[0x00, 0x00]); // Item 1: Length
-        packet.extend_from_slice(&[0xB2, 0x00]); // Item 2: Connected data
-        packet.extend_from_slice(&(cip_request.len() as u16).to_le_bytes()); // Item 2: Length
         
-        // Add CIP request
+        // CPF (Common Packet Format) data
+        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // Interface handle
+        packet.extend_from_slice(&[0x05, 0x00]); // Timeout (5 seconds)
+        packet.extend_from_slice(&[0x02, 0x00]); // Item count: 2
+        
+        // Item 1: Null Address Item (0x0000)
+        packet.extend_from_slice(&[0x00, 0x00]); // Type: Null Address
+        packet.extend_from_slice(&[0x00, 0x00]); // Length: 0
+        
+        // Item 2: Unconnected Data Item (0x00B2)
+        packet.extend_from_slice(&[0xB2, 0x00]); // Type: Unconnected Data
+        packet.extend_from_slice(&(cip_data_size as u16).to_le_bytes()); // Length
+        
+        // Add CIP request data
         packet.extend_from_slice(cip_request);
         
-        // Update length field
-        let length = (packet.len() - 24) as u16;
-        packet[2..4].copy_from_slice(&length.to_le_bytes());
+        println!("🔧 [DEBUG] Built packet ({} bytes): {:02X?}", packet.len(), &packet[..std::cmp::min(64, packet.len())]);
         
-        // Send packet
+        // Send packet with timeout
         let mut stream = self.stream.lock().await;
         stream.write_all(&packet).await
             .map_err(|e| EtherNetIpError::Io(e))?;
         
-        // Read response header
+        // Read response header with timeout
         let mut header = [0u8; 24];
-        stream.read_exact(&mut header).await
-            .map_err(|e| EtherNetIpError::Io(e))?;
+        match timeout(Duration::from_secs(10), stream.read_exact(&mut header)).await {
+            Ok(Ok(_)) => {},
+            Ok(Err(e)) => return Err(EtherNetIpError::Io(e)),
+            Err(_) => return Err(EtherNetIpError::Timeout(Duration::from_secs(10))),
+        }
+        
+        // Check EtherNet/IP command status
+        let cmd_status = u32::from_le_bytes([header[8], header[9], header[10], header[11]]);
+        if cmd_status != 0 {
+            return Err(EtherNetIpError::Protocol(format!("EIP Command failed. Status: 0x{:08X}", cmd_status)));
+        }
         
         // Parse response length
         let response_length = u16::from_le_bytes([header[2], header[3]]) as usize;
+        if response_length == 0 {
+            return Ok(Vec::new());
+        }
+        
+        // Read response data with timeout
         let mut response_data = vec![0u8; response_length];
-        stream.read_exact(&mut response_data).await
-            .map_err(|e| EtherNetIpError::Io(e))?;
+        match timeout(Duration::from_secs(10), stream.read_exact(&mut response_data)).await {
+            Ok(Ok(_)) => {},
+            Ok(Err(e)) => return Err(EtherNetIpError::Io(e)),
+            Err(_) => return Err(EtherNetIpError::Timeout(Duration::from_secs(10))),
+        }
+        
+        // Update last activity time
+        *self.last_activity.lock().await = Instant::now();
+        
+        println!("🔧 [DEBUG] Received response ({} bytes): {:02X?}", 
+                 response_data.len(), &response_data[..std::cmp::min(32, response_data.len())]);
         
         Ok(response_data)
     }
 
     /// Extracts CIP data from EtherNet/IP response packet
     fn extract_cip_from_response(&self, response: &[u8]) -> crate::error::Result<Vec<u8>> {
-        println!("🔧 [DEBUG] Extracting CIP from response ({} bytes)", response.len());
+        println!("🔧 [DEBUG] Extracting CIP from response ({} bytes): {:02X?}", 
+                 response.len(), &response[..std::cmp::min(32, response.len())]);
         
-        // EtherNet/IP header is 24 bytes minimum
-        if response.len() < 24 {
-            return Err(EtherNetIpError::Protocol("Response too short for EtherNet/IP header".to_string()));
-        }
-
-        // Skip to CPF (Common Packet Format) data
-        let mut pos = 24; // Skip EtherNet/IP header
-        println!("🔧 [DEBUG] Starting CPF parsing at position {}", pos);
-
-        // Check if we have enough data for CPF header
-        if response.len() < pos + 4 {
+        // Parse CPF (Common Packet Format) structure directly from response data
+        // Response format: [Interface(4)] [Timeout(2)] [ItemCount(2)] [Items...]
+        
+        if response.len() < 8 {
             return Err(EtherNetIpError::Protocol("Response too short for CPF header".to_string()));
         }
 
+        // Skip interface handle (4 bytes) and timeout (2 bytes)
+        let mut pos = 6;
+        
         // Read item count
         let item_count = u16::from_le_bytes([response[pos], response[pos+1]]);
         pos += 2;
         println!("🔧 [DEBUG] CPF item count: {}", item_count);
 
-        // Skip additional padding/header bytes that appear in some responses
-        // Look for the Connected Data Item marker (0x00B2) in the next few bytes
-        let search_limit = std::cmp::min(response.len(), pos + 20); // Search up to 20 bytes ahead
-        
-        for search_pos in pos..search_limit-3 {
-            if search_pos + 3 < response.len() {
-                let potential_type = u16::from_le_bytes([response[search_pos], response[search_pos+1]]);
-                if potential_type == 0x00B2 { // Connected Data Item
-                    let item_length = u16::from_le_bytes([response[search_pos+2], response[search_pos+3]]);
-                    let data_start = search_pos + 4;
-                    
-                    if response.len() >= data_start + item_length as usize {
-                        let cip_data = response[data_start..data_start + item_length as usize].to_vec();
-                        println!("🔧 [DEBUG] Found Connected Data Item at position {}, extracted CIP data ({} bytes): {:02X?}", 
-                                 search_pos, cip_data.len(), cip_data);
-                        return Ok(cip_data);
-                    }
+        // Process items
+        for i in 0..item_count {
+            if pos + 4 > response.len() {
+                return Err(EtherNetIpError::Protocol("Response truncated while parsing items".to_string()));
+            }
+
+            let item_type = u16::from_le_bytes([response[pos], response[pos + 1]]);
+            let item_length = u16::from_le_bytes([response[pos + 2], response[pos + 3]]) as usize;
+            pos += 4; // Skip item header
+
+            println!("🔧 [DEBUG] Item {}: type=0x{:04X}, length={}", i, item_type, item_length);
+
+            if item_type == 0x00B2 { // Unconnected Data Item
+                if pos + item_length > response.len() {
+                    return Err(EtherNetIpError::Protocol("Data item truncated".to_string()));
                 }
+
+                let cip_data = response[pos..pos + item_length].to_vec();
+                println!("🔧 [DEBUG] Found Unconnected Data Item, extracted CIP data ({} bytes)", cip_data.len());
+                println!("🔧 [DEBUG] CIP data bytes: {:02X?}", &cip_data[..std::cmp::min(16, cip_data.len())]);
+                return Ok(cip_data);
+            } else {
+                // Skip this item's data
+                pos += item_length;
             }
         }
 
-        // Fallback: Traditional CPF parsing if no Connected Data Item found
-        if item_count == 2 {
-            // Traditional CPF structure with address and data items
-            // Skip first item (address item - should be null address)
-            let item_type = u16::from_le_bytes([response[pos], response[pos+1]]);
-            pos += 2;
-            let item_length = u16::from_le_bytes([response[pos], response[pos+1]]);
-            pos += 2;
-            println!("🔧 [DEBUG] First item: type=0x{:04X}, length={}", item_type, item_length);
-            pos += item_length as usize; // Skip address data
-
-            // Read second item (data item)
-            if response.len() < pos + 4 {
-                return Err(EtherNetIpError::Protocol("Response too short for data item".to_string()));
-            }
-
-            let data_type = u16::from_le_bytes([response[pos], response[pos+1]]);
-            pos += 2;
-            let data_length = u16::from_le_bytes([response[pos], response[pos+1]]);
-            pos += 2;
-            println!("🔧 [DEBUG] Data item: type=0x{:04X}, length={}", data_type, data_length);
-
-            // Extract CIP data
-            if response.len() < pos + data_length as usize {
-                return Err(EtherNetIpError::Protocol("Response too short for CIP data".to_string()));
-            }
-
-            let cip_data = response[pos..pos + data_length as usize].to_vec();
-            println!("🔧 [DEBUG] Extracted CIP data from dual items ({} bytes): {:02X?}", 
-                     cip_data.len(), cip_data);
-            return Ok(cip_data);
-        }
-
-        Err(EtherNetIpError::Protocol("Could not find CIP data in response".to_string()))
+        Err(EtherNetIpError::Protocol("No Unconnected Data Item (0x00B2) found in response".to_string()))
     }
 
     /// Parses CIP response and converts to PlcValue
