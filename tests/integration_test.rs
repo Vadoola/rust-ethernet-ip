@@ -25,11 +25,11 @@ async fn test_tag_discovery() {
     client.discover_tags().await.unwrap();
     
     // Verify some common tags exist
-    let metadata = client.get_tag_metadata("_IO_EM_DI00").unwrap();
+    let metadata = client.get_tag_metadata("_IO_EM_DI00").await.unwrap();
     assert_eq!(metadata.data_type, 0x00C1); // BOOL type
     assert_eq!(metadata.scope, TagScope::Controller);
     
-    let metadata = client.get_tag_metadata("_IO_EM_DI01").unwrap();
+    let metadata = client.get_tag_metadata("_IO_EM_DI01").await.unwrap();
     assert_eq!(metadata.data_type, 0x00C1); // BOOL type
     assert_eq!(metadata.scope, TagScope::Controller);
 }
@@ -207,4 +207,83 @@ async fn test_large_packet_support() {
     } else {
         panic!("Expected string value");
     }
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_string_operations() {
+    let address = "127.0.0.1:44818";
+    if !is_plc_available(address).await {
+        println!("Skipping test_string_operations: No PLC available at {}", address);
+        return;
+    }
+
+    let mut client = EipClient::connect(address).await.unwrap();
+    
+    // Test basic string operations
+    let test_string = "Hello, PLC!".to_string();
+    client.write_tag("TestString", PlcValue::String(test_string.clone())).await.unwrap();
+    let string_value = client.read_tag("TestString").await.unwrap();
+    assert_eq!(string_value, PlcValue::String(test_string));
+    
+    // Test empty string
+    let empty_string = "".to_string();
+    client.write_tag("EmptyString", PlcValue::String(empty_string.clone())).await.unwrap();
+    let empty_value = client.read_tag("EmptyString").await.unwrap();
+    assert_eq!(empty_value, PlcValue::String(empty_string));
+    
+    // Test string with special characters
+    let special_string = "!@#$%^&*()_+-=[]{}|;:,.<>?".to_string();
+    client.write_tag("SpecialString", PlcValue::String(special_string.clone())).await.unwrap();
+    let special_value = client.read_tag("SpecialString").await.unwrap();
+    assert_eq!(special_value, PlcValue::String(special_string));
+    
+    // Test string with spaces
+    let spaced_string = "Hello World with Spaces".to_string();
+    client.write_tag("SpacedString", PlcValue::String(spaced_string.clone())).await.unwrap();
+    let spaced_value = client.read_tag("SpacedString").await.unwrap();
+    assert_eq!(spaced_value, PlcValue::String(spaced_string));
+    
+    // Test string with numbers
+    let number_string = "12345".to_string();
+    client.write_tag("NumberString", PlcValue::String(number_string.clone())).await.unwrap();
+    let number_value = client.read_tag("NumberString").await.unwrap();
+    assert_eq!(number_value, PlcValue::String(number_string));
+    
+    // Test string with mixed content
+    let mixed_string = "Hello123!@# World".to_string();
+    client.write_tag("MixedString", PlcValue::String(mixed_string.clone())).await.unwrap();
+    let mixed_value = client.read_tag("MixedString").await.unwrap();
+    assert_eq!(mixed_value, PlcValue::String(mixed_string));
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_string_error_handling() {
+    let address = "127.0.0.1:44818";
+    if !is_plc_available(address).await {
+        println!("Skipping test_string_error_handling: No PLC available at {}", address);
+        return;
+    }
+
+    let mut client = EipClient::connect(address).await.unwrap();
+    
+    // Test string too long
+    let long_string = "X".repeat(100); // Longer than 82 characters
+    let result = client.write_tag("LongString", PlcValue::String(long_string)).await;
+    assert!(result.is_err());
+    
+    // Test non-ASCII characters
+    let non_ascii_string = "Hello 世界".to_string();
+    let result = client.write_tag("NonAsciiString", PlcValue::String(non_ascii_string)).await;
+    assert!(result.is_err());
+    
+    // Test string with null bytes
+    let null_string = "Hello\0World".to_string();
+    let result = client.write_tag("NullString", PlcValue::String(null_string)).await;
+    assert!(result.is_err());
+    
+    // Test non-existent string tag
+    let result = client.read_tag("NonExistentString").await;
+    assert!(result.is_err());
 } 

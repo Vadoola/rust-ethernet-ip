@@ -197,12 +197,13 @@ use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::{timeout, Duration, Instant};
 use std::collections::HashMap;
-use std::ffi::{CStr, c_char, c_int, c_double};
-use std::cmp;
 use tokio::runtime::Runtime;
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 use lazy_static::lazy_static;
 use crate::udt::UdtManager;
+use std::sync::Arc;
+use std::net::SocketAddr;
+use std::sync::atomic::AtomicBool;
 
 pub mod version;
 pub mod plc_manager;
@@ -211,6 +212,7 @@ pub mod tag_path;
 pub mod udt;
 pub mod error;
 pub mod ffi;
+pub mod subscription;
 
 // Re-export commonly used items
 pub use plc_manager::{PlcManager, PlcConfig, PlcConnection};
@@ -218,20 +220,14 @@ pub use tag_manager::{TagManager, TagCache, TagMetadata, TagScope, TagPermission
 pub use tag_path::TagPath;
 pub use udt::{UdtDefinition, UdtMember};
 pub use error::{EtherNetIpError, Result};
+pub use subscription::{TagSubscription, SubscriptionOptions, SubscriptionManager};
 
 // Static runtime and client management for FFI
 lazy_static! {
     /// Global Tokio runtime for handling async operations in FFI context
-    /// 
-    /// This is necessary because C FFI functions cannot be async, but our
-    /// core implementation uses async I/O for performance. The runtime
-    /// allows us to block on async operations when called from C.
     static ref RUNTIME: Runtime = Runtime::new().unwrap();
     
     /// Global storage for EipClient instances, indexed by client ID
-    /// 
-    /// The FFI interface uses integer client IDs instead of direct
-    /// pointers for safety and to prevent use-after-free bugs.
     static ref CLIENTS: Mutex<HashMap<i32, EipClient>> = Mutex::new(HashMap::new());
     
     /// Counter for generating unique client IDs
@@ -832,100 +828,63 @@ impl PlcValue {
 ///     Err(EtherNetIpError::Protocol("Max retries exceeded".to_string()))
 /// }
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EipClient {
     /// TCP stream for network communication
-    /// 
-    /// This is the underlying socket connection to the PLC. All EtherNet/IP
-    /// communication flows through this stream.
-    stream: TcpStream,
-    
-    /// EtherNet/IP session handle assigned by the PLC
-    /// 
-    /// This 32-bit value is assigned by the PLC during session registration
-    /// and must be included in all subsequent requests. It allows the PLC
-    /// to track multiple client connections.
+    stream: Arc<Mutex<TcpStream>>,
+    /// Session handle for the connection
     session_handle: u32,
-    /// Tag manager for tag discovery and caching
-    tag_manager: TagManager,
-    /// UDT manager for handling user defined types
-    udt_manager: UdtManager,
+    /// Connection ID for the session
+    _connection_id: u32,
+    /// Tag manager for handling tag operations
+    tag_manager: Arc<Mutex<TagManager>>,
+    /// UDT manager for handling UDT operations
+    udt_manager: Arc<Mutex<UdtManager>>,
+    /// Whether the client is connected
+    _connected: Arc<AtomicBool>,
     /// Maximum packet size for communication
     max_packet_size: u32,
-    last_activity: Instant,
-    session_timeout: Duration,
+    /// Last activity timestamp
+    last_activity: Arc<Mutex<Instant>>,
+    /// Session timeout duration
+    _session_timeout: Duration,
     /// Configuration for batch operations
-    /// 
-    /// Controls behavior of batch read/write operations including packet
-    /// optimization, error handling, and performance tuning.
     batch_config: BatchConfig,
-    
     /// Connected session management for Class 3 operations
-    /// 
-    /// Some operations (like STRING writes) require connected messaging
-    /// instead of unconnected messaging for proper operation.
-    connected_sessions: HashMap<String, ConnectedSession>,
-    
-    /// Connection sequence counter for generating unique connection IDs
-    connection_sequence: u32,
+    connected_sessions: Arc<Mutex<HashMap<String, ConnectedSession>>>,
+    /// Connection sequence counter
+    connection_sequence: Arc<Mutex<u32>>,
+    /// Active tag subscriptions
+    subscriptions: Arc<Mutex<Vec<TagSubscription>>>,
 }
 
 impl EipClient {
-    /// Establishes a connection to a PLC
-    /// 
-    /// This function performs the following steps:
-    /// 1. Opens a TCP connection to the PLC
-    /// 2. Registers an EtherNet/IP session
-    /// 3. Configures the connection parameters
-    /// 
-    /// # Arguments
-    /// 
-    /// * `addr` - The PLC's IP address and port (e.g., "192.168.1.100:44818")
-    /// 
-    /// # Returns
-    /// 
-    /// A new `EipClient` instance if successful
-    /// 
-    /// # Examples
-    /// 
-    /// ```rust,no_run
-    /// use rust_ethernet_ip::EipClient;
-    /// 
-    /// #[tokio::main]
-    /// async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    ///     let mut client = EipClient::connect("192.168.1.100:44818").await?;
-    ///     Ok(())
-    /// }
-    /// ```
-    /// 
-    /// # Performance
-    /// 
-    /// - Connection time: 100-500ms typical
-    /// - Memory usage: ~8KB per connection
-    /// - Network: 1 TCP connection
-    /// 
-    /// # Error Handling
-    /// 
-    /// Common errors:
-    /// - `Connection`: PLC not reachable
-    /// - `Timeout`: PLC not responding
-    /// - `Protocol`: Invalid address format
-    pub async fn connect(addr: &str) -> crate::error::Result<Self> {
+    pub async fn new(addr: &str) -> Result<Self> {
+        let addr = addr.parse::<SocketAddr>()
+            .map_err(|e| EtherNetIpError::Protocol(format!("Invalid address format: {}", e)))?;
         let stream = TcpStream::connect(addr).await?;
         let mut client = Self {
-            stream,
+            stream: Arc::new(Mutex::new(stream)),
             session_handle: 0,
-            tag_manager: TagManager::new(),
-            udt_manager: UdtManager::new(),
+            _connection_id: 0,
+            tag_manager: Arc::new(Mutex::new(TagManager::new())),
+            udt_manager: Arc::new(Mutex::new(UdtManager::new())),
+            _connected: Arc::new(AtomicBool::new(false)),
             max_packet_size: 4000,
-            last_activity: Instant::now(),
-            session_timeout: Duration::from_secs(120), // Increased to 2 minutes
+            last_activity: Arc::new(Mutex::new(Instant::now())),
+            _session_timeout: Duration::from_secs(120),
             batch_config: BatchConfig::default(),
-            connected_sessions: HashMap::new(),
-            connection_sequence: 0,
+            connected_sessions: Arc::new(Mutex::new(HashMap::new())),
+            connection_sequence: Arc::new(Mutex::new(1)),
+            subscriptions: Arc::new(Mutex::new(Vec::new())),
         };
         client.register_session().await?;
         Ok(client)
+    }
+
+    /// Public async connect function for EipClient
+    pub async fn connect(addr: &str) -> Result<Self> {
+        Self::new(addr).await
     }
     
     /// Registers an EtherNet/IP session with the PLC
@@ -961,11 +920,11 @@ impl EipClient {
             0x00, 0x00,             // Option Flags: 0
         ];
 
-        self.stream.write_all(&packet).await
+        self.stream.lock().await.write_all(&packet).await
             .map_err(|e| EtherNetIpError::Io(e))?;
 
         let mut buf = [0u8; 1024];
-        let n = match timeout(Duration::from_secs(5), self.stream.read(&mut buf)).await {
+        let n = match timeout(Duration::from_secs(5), self.stream.lock().await.read(&mut buf)).await {
             Ok(Ok(n)) => n,
             Ok(Err(e)) => return Err(EtherNetIpError::Io(e)),
             Err(_) => return Err(EtherNetIpError::Timeout(Duration::from_secs(5))),
@@ -995,8 +954,9 @@ impl EipClient {
     /// Discovers all tags in the PLC
     pub async fn discover_tags(&mut self) -> crate::error::Result<()> {
         let response = self.send_cip_request(&self.build_list_tags_request()).await?;
-        let tags = self.tag_manager.parse_tag_list(&response)?;
-        let mut cache = self.tag_manager.cache.write().unwrap();
+        let tags = self.tag_manager.lock().await.parse_tag_list(&response)?;
+        let tag_manager = self.tag_manager.lock().await;
+        let mut cache = tag_manager.cache.write().unwrap();
         for (name, metadata) in tags {
             cache.insert(name, metadata);
         }
@@ -1004,8 +964,11 @@ impl EipClient {
     }
     
     /// Gets metadata for a tag
-    pub fn get_tag_metadata(&self, tag_name: &str) -> Option<TagMetadata> {
-        self.tag_manager.cache.read().unwrap().get(tag_name).cloned()
+    pub async fn get_tag_metadata(&self, tag_name: &str) -> Option<TagMetadata> {
+        let tag_manager = self.tag_manager.lock().await;
+        let cache = tag_manager.cache.read().unwrap();
+        let result = cache.get(tag_name).cloned();
+        result
     }
     
     /// Reads a tag value from the PLC
@@ -1060,11 +1023,11 @@ impl EipClient {
     pub async fn read_tag(&mut self, tag_name: &str) -> crate::error::Result<PlcValue> {
         self.validate_session().await?;
         // Check if we have metadata for this tag
-        if let Some(metadata) = self.get_tag_metadata(tag_name) {
+        if let Some(metadata) = self.get_tag_metadata(tag_name).await {
             // Handle UDT tags
             if metadata.data_type == 0x00A0 {
                 let data = self.read_tag_raw(tag_name).await?;
-                return self.udt_manager.parse_udt_instance(tag_name, &data);
+                return self.udt_manager.lock().await.parse_udt_instance(tag_name, &data);
             }
         }
 
@@ -1132,7 +1095,7 @@ impl EipClient {
     }
 
     /// Builds a write request specifically for Allen-Bradley string format 
-    fn build_ab_string_write_request(&self, tag_name: &str, value: &PlcValue) -> crate::error::Result<Vec<u8>> {
+    fn _build_ab_string_write_request(&self, tag_name: &str, value: &PlcValue) -> crate::error::Result<Vec<u8>> {
         if let PlcValue::String(string_value) = value {
             println!("🔧 [DEBUG] Building correct Allen-Bradley string write request for tag: '{}'", tag_name);
             
@@ -1451,46 +1414,32 @@ impl EipClient {
     }
 
     async fn validate_session(&mut self) -> crate::error::Result<()> {
-        let time_since_activity = self.last_activity.elapsed();
+        let time_since_activity = self.last_activity.lock().await.elapsed();
         
         // Send keep-alive if it's been more than 30 seconds since last activity
         if time_since_activity > Duration::from_secs(30) {
-            println!("🔄 [DEBUG] Sending keep-alive ({}s since last activity)", time_since_activity.as_secs());
-            if let Err(e) = self.send_keep_alive().await {
-                println!("⚠️ [DEBUG] Keep-alive failed: {}, re-registering session", e);
-                self.register_session().await?;
-            }
-        }
-        
-        // Re-register session if it's been too long since any activity
-        if time_since_activity > self.session_timeout {
-            println!("🔄 [DEBUG] Session timeout ({}s), re-registering", time_since_activity.as_secs());
-            self.register_session().await?;
+            self.send_keep_alive().await?;
         }
         
         Ok(())
     }
 
     async fn send_keep_alive(&mut self) -> crate::error::Result<()> {
-        let packet: [u8; 24] = [
-            0x6F, 0x00,             // Command: SendRRData
-            0x00, 0x00,             // Length: 0
-            self.session_handle.to_le_bytes()[0], self.session_handle.to_le_bytes()[1],
-            self.session_handle.to_le_bytes()[2], self.session_handle.to_le_bytes()[3],
-            0x00, 0x00, 0x00, 0x00, // Status: 0
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Sender Context
-            0x00, 0x00, 0x00, 0x00, // Options: 0
+        let packet = vec![
+            0x6F, 0x00, // Command: SendRRData
+            0x00, 0x00, // Length: 0
         ];
-
-        self.stream.write_all(&packet).await?;
-        self.last_activity = Instant::now();
+        
+        let mut stream = self.stream.lock().await;
+        stream.write_all(&packet).await?;
+        *self.last_activity.lock().await = Instant::now();
         Ok(())
     }
 
     /// Checks the health of the connection
-    pub fn check_health(&self) -> bool {
+    pub async fn check_health(&self) -> bool {
         // Check if we have a valid session handle and recent activity
-        self.session_handle != 0 && self.last_activity.elapsed() < Duration::from_secs(150)
+        self.session_handle != 0 && self.last_activity.lock().await.elapsed() < Duration::from_secs(150)
     }
     
     /// Performs a more thorough health check by actually communicating with the PLC
@@ -1527,71 +1476,48 @@ impl EipClient {
     }
 
     /// Sends a CIP request wrapped in EtherNet/IP SendRRData command
-    pub async fn send_cip_request(&mut self, cip_request: &[u8]) -> crate::error::Result<Vec<u8>> {
-        println!("🔧 [DEBUG] Sending CIP request: {:02X?}", cip_request);
+    pub async fn send_cip_request(&self, cip_request: &[u8]) -> Result<Vec<u8>> {
+        let mut packet = Vec::new();
         
-        // Update activity timestamp for successful communication
-        self.last_activity = Instant::now();
+        // Add EtherNet/IP header
+        packet.extend_from_slice(&[0x00, 0x00]); // Command: SendRRData
+        packet.extend_from_slice(&[0x00, 0x00]); // Length placeholder
+        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // Session handle
+        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // Status
+        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // Context
+        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // Options
+        packet.extend_from_slice(&[0x00, 0x00]); // Interface handle
+        packet.extend_from_slice(&[0x00, 0x00]); // Timeout
+        packet.extend_from_slice(&[0x02, 0x00]); // Item count
+        packet.extend_from_slice(&[0x00, 0x00]); // Item 1: Null address
+        packet.extend_from_slice(&[0x00, 0x00]); // Item 1: Length
+        packet.extend_from_slice(&[0xB2, 0x00]); // Item 2: Connected data
+        packet.extend_from_slice(&(cip_request.len() as u16).to_le_bytes()); // Item 2: Length
         
-        let cip_len = cip_request.len();
-        // CPF data includes: Interface Handle(4) + Timeout(2) + ItemCount(2) + NullItem(4) + DataItem(4+cip_len)
-        let cpf_data_len = 4 + 2 + 2 + 4 + 4 + cip_len;
+        // Add CIP request
+        packet.extend_from_slice(cip_request);
         
-        // Build EtherNet/IP SendRRData packet
-        let mut packet = vec![
-            0x6F, 0x00, // Command: SendRRData (0x006F)
-        ];
-        packet.extend_from_slice(&(cpf_data_len as u16).to_le_bytes()); // Length
-        packet.extend_from_slice(&self.session_handle.to_le_bytes());     // Session Handle
-        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);             // Status
-        packet.extend_from_slice(&[0x01, 0x02, 0x03, 0x04]);             // Sender Context
-        packet.extend_from_slice(&[0x05, 0x06, 0x07, 0x08]);             // Sender Context
-        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);             // Options
-        
-        // CPF (Common Packet Format) data
-        packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]); // Interface Handle
-        packet.extend_from_slice(&[0x05, 0x00]);             // Timeout (5 seconds)
-        packet.extend_from_slice(&[0x02, 0x00]);             // Item Count: 2
-        
-        // Item 1: Null Address Item (required for unconnected messaging)
-        packet.extend_from_slice(&[0x00, 0x00]); // Type ID: Null Address
-        packet.extend_from_slice(&[0x00, 0x00]); // Length: 0
-        
-        // Item 2: Unconnected Data Item (contains our CIP request)
-        packet.extend_from_slice(&[0xB2, 0x00]); // Type ID: Unconnected Data
-        packet.extend_from_slice(&(cip_len as u16).to_le_bytes()); // Length
-        packet.extend_from_slice(cip_request);   // CIP request data
-        
-        println!("🔧 [DEBUG] Complete EtherNet/IP packet ({} bytes): {:02X?}", packet.len(), packet);
+        // Update length field
+        let length = (packet.len() - 24) as u16;
+        packet[2..4].copy_from_slice(&length.to_le_bytes());
         
         // Send packet
-        self.stream.write_all(&packet).await
+        let mut stream = self.stream.lock().await;
+        stream.write_all(&packet).await
             .map_err(|e| EtherNetIpError::Io(e))?;
         
-        println!("🔧 [DEBUG] Packet sent, waiting for response...");
+        // Read response header
+        let mut header = [0u8; 24];
+        stream.read_exact(&mut header).await
+            .map_err(|e| EtherNetIpError::Io(e))?;
         
-        // Read response
-        let mut buf = [0u8; 1024];
-        let n = match timeout(Duration::from_secs(10), self.stream.read(&mut buf)).await {
-            Ok(Ok(n)) => n,
-            Ok(Err(e)) => return Err(EtherNetIpError::Io(e)),
-            Err(_) => return Err(EtherNetIpError::Timeout(Duration::from_secs(10))),
-        };
-
-        println!("🔧 [DEBUG] Received {} bytes: {:02X?}", n, &buf[..n]);
-
-        if n < 24 {
-            return Err(EtherNetIpError::Protocol("Response too short".to_string()));
-        }
-
-        // Check command status
-        let cmd_status = u32::from_le_bytes([buf[8], buf[9], buf[10], buf[11]]);
-        if cmd_status != 0 {
-            return Err(EtherNetIpError::Protocol(format!("Command failed with status: 0x{:08X}", cmd_status)));
-        }
-
-        // Extract CIP response from EtherNet/IP packet
-        self.extract_cip_from_response(&buf[..n])
+        // Parse response length
+        let response_length = u16::from_le_bytes([header[2], header[3]]) as usize;
+        let mut response_data = vec![0u8; response_length];
+        stream.read_exact(&mut response_data).await
+            .map_err(|e| EtherNetIpError::Io(e))?;
+        
+        Ok(response_data)
     }
 
     /// Extracts CIP data from EtherNet/IP response packet
@@ -1819,7 +1745,7 @@ impl EipClient {
         // Protocol version for unregister session
         packet.extend_from_slice(&[0x01, 0x00, 0x00, 0x00]); // Protocol version 1
         
-        self.stream.write_all(&packet).await.map_err(EtherNetIpError::Io)?;
+        self.stream.lock().await.write_all(&packet).await.map_err(EtherNetIpError::Io)?;
         
         println!("✅ Session unregistered and all connections closed");
         Ok(())
@@ -2551,217 +2477,6 @@ impl EipClient {
         }
     }
 
-    /// Experimental function to try different string writing approaches
-    /// This bypasses the normal string writing logic to test various formats
-    pub async fn write_string_experimental(&mut self, tag_name: &str, value: &str, approach: &str) -> crate::error::Result<()> {
-        self.validate_session().await?;
-        
-        println!("🧪 [EXPERIMENTAL] Trying approach: {}", approach);
-        
-        let cip_request = match approach {
-            "standard_cip" => self.build_standard_cip_string_write(tag_name, value)?,
-            "raw_bytes" => self.build_raw_bytes_write(tag_name, value)?,
-            "simple_ab" => self.build_simple_ab_string_write(tag_name, value)?,
-            "alt_service" => self.build_alt_service_write(tag_name, value)?,
-            "minimal" => self.build_minimal_string_write(tag_name, value)?,
-            _ => return Err(EtherNetIpError::Protocol(format!("Unknown experimental approach: {}", approach))),
-        };
-        
-        println!("🔧 [DEBUG] Built experimental request ({} bytes)", cip_request.len());
-        
-        match self.send_cip_request(&cip_request).await {
-            Ok(_response) => {
-                println!("✅ [EXPERIMENTAL] {} write succeeded!", approach);
-                Ok(())
-            }
-            Err(e) => {
-                println!("❌ [EXPERIMENTAL] {} write failed: {}", approach, e);
-                Err(e)
-            }
-        }
-    }
-    
-    /// Build standard CIP STRING format (0x00DA)
-    fn build_standard_cip_string_write(&self, tag_name: &str, value: &str) -> crate::error::Result<Vec<u8>> {
-        let mut cip_request = Vec::new();
-        
-        // Service: Write Tag Service (0x4D)
-        cip_request.push(0x4D);
-        
-        // Request Path
-        let tag_bytes = tag_name.as_bytes();
-        let path_len = if tag_bytes.len() % 2 == 0 { 
-            tag_bytes.len() + 2 
-        } else { 
-            tag_bytes.len() + 3 
-        };
-        
-        cip_request.push((path_len / 2) as u8);
-        cip_request.push(0x91);
-        cip_request.push(tag_bytes.len() as u8);
-        cip_request.extend_from_slice(tag_bytes);
-        
-        if tag_bytes.len() % 2 != 0 {
-            cip_request.push(0x00);
-        }
-        
-        // Data Type: Standard STRING (0x00DA)
-        cip_request.extend_from_slice(&[0xDA, 0x00]);
-        
-        // Element Count
-        cip_request.extend_from_slice(&[0x01, 0x00]);
-        
-        // Standard STRING format: [length][data]
-        let string_len = value.len() as u16;
-        cip_request.extend_from_slice(&string_len.to_le_bytes());
-        cip_request.extend_from_slice(value.as_bytes());
-        
-        Ok(cip_request)
-    }
-    
-    /// Build raw bytes approach (minimal formatting)
-    fn build_raw_bytes_write(&self, tag_name: &str, value: &str) -> crate::error::Result<Vec<u8>> {
-        let mut cip_request = Vec::new();
-        
-        // Service: Write Tag Service (0x4D)
-        cip_request.push(0x4D);
-        
-        // Request Path
-        let tag_bytes = tag_name.as_bytes();
-        let path_len = if tag_bytes.len() % 2 == 0 { 
-            tag_bytes.len() + 2 
-        } else { 
-            tag_bytes.len() + 3 
-        };
-        
-        cip_request.push((path_len / 2) as u8);
-        cip_request.push(0x91);
-        cip_request.push(tag_bytes.len() as u8);
-        cip_request.extend_from_slice(tag_bytes);
-        
-        if tag_bytes.len() % 2 != 0 {
-            cip_request.push(0x00);
-        }
-        
-        // Just the string bytes
-        cip_request.extend_from_slice(value.as_bytes());
-        
-        Ok(cip_request)
-    }
-    
-    /// Build simplified Allen-Bradley format
-    fn build_simple_ab_string_write(&self, tag_name: &str, value: &str) -> crate::error::Result<Vec<u8>> {
-        let mut cip_request = Vec::new();
-        
-        // Service: Write Tag Service (0x4D)
-        cip_request.push(0x4D);
-        
-        // Request Path
-        let tag_bytes = tag_name.as_bytes();
-        let path_len = if tag_bytes.len() % 2 == 0 { 
-            tag_bytes.len() + 2 
-        } else { 
-            tag_bytes.len() + 3 
-        };
-        
-        cip_request.push((path_len / 2) as u8);
-        cip_request.push(0x91);
-        cip_request.push(tag_bytes.len() as u8);
-        cip_request.extend_from_slice(tag_bytes);
-        
-        if tag_bytes.len() % 2 != 0 {
-            cip_request.push(0x00);
-        }
-        
-        // Data Type: Allen-Bradley STRING (0x02A0)
-        cip_request.extend_from_slice(&[0xA0, 0x02]);
-        
-        // Element Count
-        cip_request.extend_from_slice(&[0x01, 0x00]);
-        
-        // Simplified: Just [current_length][string_data]
-        let string_len = value.len() as u32;
-        cip_request.extend_from_slice(&string_len.to_le_bytes());
-        cip_request.extend_from_slice(value.as_bytes());
-        
-        Ok(cip_request)
-    }
-    
-    /// Build alternative service approach
-    fn build_alt_service_write(&self, tag_name: &str, value: &str) -> crate::error::Result<Vec<u8>> {
-        let mut cip_request = Vec::new();
-        
-        // Service: Set Attribute Single (0x10)
-        cip_request.push(0x10);
-        
-        // Request Path
-        let tag_bytes = tag_name.as_bytes();
-        let path_len = if tag_bytes.len() % 2 == 0 { 
-            tag_bytes.len() + 2 
-        } else { 
-            tag_bytes.len() + 3 
-        };
-        
-        cip_request.push((path_len / 2) as u8);
-        cip_request.push(0x91);
-        cip_request.push(tag_bytes.len() as u8);
-        cip_request.extend_from_slice(tag_bytes);
-        
-        if tag_bytes.len() % 2 != 0 {
-            cip_request.push(0x00);
-        }
-        
-        // Standard format
-        let string_len = value.len() as u16;
-        cip_request.extend_from_slice(&string_len.to_le_bytes());
-        cip_request.extend_from_slice(value.as_bytes());
-        
-        Ok(cip_request)
-    }
-    
-    /// Build absolutely minimal approach
-    fn build_minimal_string_write(&self, tag_name: &str, value: &str) -> crate::error::Result<Vec<u8>> {
-        let mut cip_request = Vec::new();
-        
-        // Service: Write Tag Service (0x4D)
-        cip_request.push(0x4D);
-        
-        // Request Path
-        let tag_bytes = tag_name.as_bytes();
-        let path_len = if tag_bytes.len() % 2 == 0 { 
-            tag_bytes.len() + 2 
-        } else { 
-            tag_bytes.len() + 3 
-        };
-        
-        cip_request.push((path_len / 2) as u8);
-        cip_request.push(0x91);
-        cip_request.push(tag_bytes.len() as u8);
-        cip_request.extend_from_slice(tag_bytes);
-        
-        if tag_bytes.len() % 2 != 0 {
-            cip_request.push(0x00);
-        }
-        
-        // Data Type: Allen-Bradley STRING (0x02A0)
-        cip_request.extend_from_slice(&[0xA0, 0x02]);
-        
-        // Element Count
-        cip_request.extend_from_slice(&[0x01, 0x00]);
-        
-        // Minimal: Match the read format exactly
-        // Based on our debug: [CE, 0F, 00, 00, ...]
-        // But use actual string length instead of mysterious 4046
-        let actual_capacity = 82u16; // Your declared capacity
-        let string_len = value.len() as u16;
-        
-        cip_request.extend_from_slice(&actual_capacity.to_le_bytes()); // max length
-        cip_request.extend_from_slice(&string_len.to_le_bytes());      // current length
-        cip_request.extend_from_slice(value.as_bytes());               // string data
-        
-        Ok(cip_request)
-    }
-    
     /// Writes a string value using Allen-Bradley UDT component access
     /// This writes to TestString.LEN and TestString.DATA separately
     pub async fn write_ab_string_components(&mut self, tag_name: &str, value: &str) -> crate::error::Result<()> {
@@ -2872,13 +2587,13 @@ impl EipClient {
     /// Connected sessions are required for certain operations like STRING writes
     /// in Allen-Bradley PLCs. This implements the Forward Open CIP service.
     /// Will try multiple connection parameter configurations until one succeeds.
-    async fn establish_connected_session(&mut self, session_name: &str) -> crate::error::Result<()> {
+    async fn establish_connected_session(&mut self, session_name: &str) -> crate::error::Result<ConnectedSession> {
         println!("🔗 [CONNECTED] Establishing connected session: '{}'", session_name);
         println!("🔗 [CONNECTED] Will try multiple parameter configurations...");
         
         // Generate unique connection parameters
-        self.connection_sequence += 1;
-        let connection_serial = (self.connection_sequence & 0xFFFF) as u16;
+        *self.connection_sequence.lock().await += 1;
+        let connection_serial = (*self.connection_sequence.lock().await & 0xFFFF) as u16;
         
         // Try different configurations until one works
         for config_id in 0..=5 {
@@ -2891,8 +2606,8 @@ impl EipClient {
             };
             
             // Generate unique connection IDs for this attempt
-            session.o_to_t_connection_id = 0x20000000 + self.connection_sequence + (config_id as u32 * 0x1000);
-            session.t_to_o_connection_id = 0x30000000 + self.connection_sequence + (config_id as u32 * 0x1000);
+            session.o_to_t_connection_id = 0x20000000 + *self.connection_sequence.lock().await + (config_id as u32 * 0x1000);
+            session.t_to_o_connection_id = 0x30000000 + *self.connection_sequence.lock().await + (config_id as u32 * 0x1000);
             
             // Build Forward Open request with this configuration
             let forward_open_request = self.build_forward_open_request(&session)?;
@@ -2913,8 +2628,9 @@ impl EipClient {
                             println!("   Using Connection ID: 0x{:08X} for messaging", session.connection_id);
                             
                             session.is_active = true;
-                            self.connected_sessions.insert(session_name.to_string(), session);
-                            return Ok(());
+                            let mut sessions = self.connected_sessions.lock().await;
+                            sessions.insert(session_name.to_string(), session.clone());
+                            return Ok(session);
                         },
                         Err(e) => {
                             println!("❌ [ATTEMPT {}] Configuration {} failed: {}", config_id + 1, config_id, e);
@@ -3091,27 +2807,33 @@ impl EipClient {
     
     /// Writes a string using connected explicit messaging
     pub async fn write_string_connected(&mut self, tag_name: &str, value: &str) -> crate::error::Result<()> {
-        let session_name = format!("string_session_{}", tag_name);
+        let session_name = format!("string_write_{}", tag_name);
+        let mut sessions = self.connected_sessions.lock().await;
         
-        // Establish connected session if not already connected
-        if !self.connected_sessions.contains_key(&session_name) {
+        if !sessions.contains_key(&session_name) {
+            drop(sessions); // Release the lock before calling establish_connected_session
             self.establish_connected_session(&session_name).await?;
+            sessions = self.connected_sessions.lock().await;
         }
         
-        // Get the connected session
-        let session = self.connected_sessions.get(&session_name)
-            .ok_or_else(|| EtherNetIpError::Protocol("Connected session not found".to_string()))?
-            .clone();
-        
-        // Build connected string write request
+        let session = sessions.get(&session_name).unwrap().clone();
         let request = self.build_connected_string_write_request(tag_name, value, &session)?;
         
-        // Send via connected messaging
-        let _response = self.send_connected_cip_request(&request, &session, &session_name).await?;
+        drop(sessions); // Release the lock before sending the request
+        let response = self.send_connected_cip_request(&request, &session, &session_name).await?;
         
-        println!("✅ [CONNECTED WRITE] String write successful");
-        
-        Ok(())
+        // Check if write was successful
+        if response.len() >= 2 {
+            let status = response[1];
+            if status == 0x00 {
+                Ok(())
+            } else {
+                let error_msg = self.get_cip_error_message(status);
+                Err(EtherNetIpError::Protocol(format!("CIP Error 0x{:02X}: {}", status, error_msg)))
+            }
+        } else {
+            Err(EtherNetIpError::Protocol("Invalid connected string write response".to_string()))
+        }
     }
     
     /// Builds a string write request for connected messaging
@@ -3207,13 +2929,21 @@ impl EipClient {
         let data_length = cip_request.len() + 2; // +2 for sequence count
         packet.extend_from_slice(&(data_length as u16).to_le_bytes()); // Length
         
+        // Clone session_name and session before acquiring the lock
+        let session_name_clone = session_name.to_string();
+        let _session_clone = session.clone();
+        
         // Get the current session mutably to increment sequence counter
-        let current_sequence = if let Some(session_mut) = self.connected_sessions.get_mut(&session_name.to_string()) {
+        let mut sessions = self.connected_sessions.lock().await;
+        let current_sequence = if let Some(session_mut) = sessions.get_mut(&session_name_clone) {
             session_mut.sequence_count += 1;
             session_mut.sequence_count
         } else {
             1 // Fallback if session not found
         };
+        
+        // Drop the lock before sending the request
+        drop(sessions);
         
         // Sequence count (2 bytes) - incremental counter for this connection
         packet.extend_from_slice(&current_sequence.to_le_bytes());
@@ -3228,12 +2958,13 @@ impl EipClient {
         println!("🔗 [CONNECTED] Sending packet ({} bytes) with sequence {}", packet.len(), current_sequence);
         
         // Send packet
-        self.stream.write_all(&packet).await
+        let mut stream = self.stream.lock().await;
+        stream.write_all(&packet).await
             .map_err(|e| EtherNetIpError::Io(e))?;
         
         // Read response header
         let mut header = [0u8; 24];
-        self.stream.read_exact(&mut header).await
+        stream.read_exact(&mut header).await
             .map_err(|e| EtherNetIpError::Io(e))?;
         
         // Check EtherNet/IP command status
@@ -3245,10 +2976,11 @@ impl EipClient {
         // Read response data
         let response_length = u16::from_le_bytes([header[2], header[3]]) as usize;
         let mut response_data = vec![0u8; response_length];
-        self.stream.read_exact(&mut response_data).await
+        stream.read_exact(&mut response_data).await
             .map_err(|e| EtherNetIpError::Io(e))?;
         
-        self.last_activity = Instant::now();
+        let mut last_activity = self.last_activity.lock().await;
+        *last_activity = Instant::now();
         
         println!("🔗 [CONNECTED] Received response ({} bytes)", response_data.len());
         
@@ -3316,7 +3048,7 @@ impl EipClient {
     
     /// Closes a specific connected session
     async fn close_connected_session(&mut self, session_name: &str) -> crate::error::Result<()> {
-        if let Some(session) = self.connected_sessions.get(session_name) {
+        if let Some(session) = self.connected_sessions.lock().await.get(session_name) {
             let session = session.clone(); // Clone to avoid borrowing issues
             
             // Build Forward Close request
@@ -3329,7 +3061,8 @@ impl EipClient {
         }
         
         // Remove session from our tracking
-        self.connected_sessions.remove(session_name);
+        let mut sessions = self.connected_sessions.lock().await;
+        sessions.remove(session_name);
         
         Ok(())
     }
@@ -3381,7 +3114,7 @@ impl EipClient {
      
     /// Closes all connected sessions (called during disconnect)
     async fn close_all_connected_sessions(&mut self) -> crate::error::Result<()> {
-        let session_names: Vec<String> = self.connected_sessions.keys().cloned().collect();
+        let session_names: Vec<String> = self.connected_sessions.lock().await.keys().cloned().collect();
         
         for session_name in session_names {
             let _ = self.close_connected_session(&session_name).await; // Ignore errors during cleanup
@@ -3479,6 +3212,156 @@ impl EipClient {
         } else {
             Err(EtherNetIpError::Protocol("Invalid unconnected string write response".to_string()))
         }
+    }
+
+    /// Write a string value to a PLC tag using unconnected messaging
+    /// 
+    /// # Arguments
+    /// 
+    /// * `tag_name` - The name of the tag to write to
+    /// * `value` - The string value to write (max 82 characters)
+    /// 
+    /// # Returns
+    /// 
+    /// * `Ok(())` if the write was successful
+    /// * `Err(EtherNetIpError)` if the write failed
+    /// 
+    /// # Errors
+    /// 
+    /// * `StringTooLong` - If the string is longer than 82 characters
+    /// * `InvalidString` - If the string contains invalid characters
+    /// * `TagNotFound` - If the tag doesn't exist
+    /// * `WriteError` - If the write operation fails
+    pub async fn write_string(&mut self, tag_name: &str, value: &str) -> crate::error::Result<()> {
+        // Validate string length
+        if value.len() > 82 {
+            return Err(crate::error::EtherNetIpError::StringTooLong {
+                max_length: 82,
+                actual_length: value.len(),
+            });
+        }
+
+        // Validate string content (ASCII only)
+        if !value.is_ascii() {
+            return Err(crate::error::EtherNetIpError::InvalidString {
+                reason: "String contains non-ASCII characters".to_string(),
+            });
+        }
+
+        // Build the string write request
+        let request = self.build_string_write_request(tag_name, value)?;
+        
+        // Send the request and get the response
+        let response = self.send_cip_request(&request).await?;
+        
+        // Parse the response
+        let cip_response = self.extract_cip_from_response(&response)?;
+        
+        // Check for errors in the response
+        if cip_response.len() < 2 {
+            return Err(crate::error::EtherNetIpError::InvalidResponse {
+                reason: "Response too short".to_string(),
+            });
+        }
+
+        let status = cip_response[0];
+        if status != 0 {
+            return Err(crate::error::EtherNetIpError::WriteError {
+                status,
+                message: self.get_cip_error_message(status),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Build a string write request packet
+    fn build_string_write_request(&self, tag_name: &str, value: &str) -> crate::error::Result<Vec<u8>> {
+        let mut request = Vec::new();
+        
+        // CIP Write Service (0x4D)
+        request.push(0x4D);
+        
+        // Tag path
+        let tag_path = self.build_tag_path(tag_name);
+        request.extend_from_slice(&tag_path);
+        
+        // AB STRING data structure
+        request.extend_from_slice(&(value.len() as u16).to_le_bytes()); // Len
+        request.extend_from_slice(&82u16.to_le_bytes());                // MaxLen
+        
+        // Data[82] with padding
+        let mut data = [0u8; 82];
+        let bytes = value.as_bytes();
+        data[..bytes.len()].copy_from_slice(bytes);
+        request.extend_from_slice(&data);
+        
+        Ok(request)
+    }
+
+    /// Subscribes to a tag for real-time updates
+    pub async fn subscribe_to_tag(&self, tag_path: &str, options: SubscriptionOptions) -> Result<()> {
+        let mut subscriptions = self.subscriptions.lock().await;
+        let subscription = TagSubscription::new(tag_path.to_string(), options);
+        subscriptions.push(subscription);
+        drop(subscriptions); // Release the lock before starting the monitoring thread
+        
+        let tag_path = tag_path.to_string();
+        let mut client = self.clone();
+        tokio::spawn(async move {
+            loop {
+                match client.read_tag(&tag_path).await {
+                    Ok(value) => {
+                        if let Err(e) = client.update_subscription(&tag_path, &value).await {
+                            eprintln!("Error updating subscription: {}", e);
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error reading tag {}: {}", tag_path, e);
+                        break;
+                    }
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            }
+        });
+        Ok(())
+    }
+
+    pub async fn subscribe_to_tags(&self, tags: &[(&str, SubscriptionOptions)]) -> Result<()> {
+        for (tag_name, options) in tags {
+            self.subscribe_to_tag(tag_name, options.clone()).await?;
+        }
+        Ok(())
+    }
+
+    async fn update_subscription(&self, tag_name: &str, value: &PlcValue) -> Result<()> {
+        let subscriptions = self.subscriptions.lock().await;
+        for subscription in subscriptions.iter() {
+            if subscription.tag_path == tag_name && subscription.is_active() {
+                subscription.update_value(value).await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn _get_connected_session(&mut self, session_name: &str) -> crate::error::Result<ConnectedSession> {
+        // First check if we already have a session
+        {
+            let sessions = self.connected_sessions.lock().await;
+            if let Some(session) = sessions.get(session_name) {
+                return Ok(session.clone());
+            }
+        }
+
+        // If we don't have a session, establish a new one
+        let session = self.establish_connected_session(session_name).await?;
+        
+        // Store the new session
+        let mut sessions = self.connected_sessions.lock().await;
+        sessions.insert(session_name.to_string(), session.clone());
+        
+        Ok(session)
     }
 }
 

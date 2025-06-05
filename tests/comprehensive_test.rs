@@ -22,6 +22,18 @@ impl MockEipClient {
     }
 
     async fn write_tag(&mut self, tag_name: &str, value: PlcValue) -> Result<(), Box<dyn Error>> {
+        // String validation logic for mock
+        if let PlcValue::String(ref s) = value {
+            if s.len() > 82 {
+                return Err("String too long (max 82 chars)".into());
+            }
+            if !s.is_ascii() {
+                return Err("String contains non-ASCII characters".into());
+            }
+            if s.contains('\0') {
+                return Err("String contains null byte".into());
+            }
+        }
         let mut state = MOCK_PLC_STATE.lock().unwrap();
         state.insert(tag_name.to_string(), value);
         Ok(())
@@ -206,11 +218,10 @@ async fn test_large_data_operations() -> Result<(), Box<dyn Error>> {
     // Set maximum packet size
     client.set_max_packet_size(4000);
     
-    // Test large string
+    // Test large string (should fail)
     let large_string = "X".repeat(2000);
-    client.write_tag("LargeString", PlcValue::String(large_string.clone())).await?;
-    let value = client.read_tag("LargeString").await?;
-    assert_eq!(value, PlcValue::String(large_string));
+    let result = client.write_tag("LargeString", PlcValue::String(large_string.clone())).await;
+    assert!(result.is_err(), "Expected error for string > 82 chars");
     
     // Test large UDT
     let mut members = HashMap::new();
@@ -251,6 +262,71 @@ async fn test_session_management() -> Result<(), Box<dyn Error>> {
     client.write_tag("TestTag", PlcValue::Bool(true)).await?;
     let value = client.read_tag("TestTag").await?;
     assert_eq!(value, PlcValue::Bool(true));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_string_operations() -> Result<(), Box<dyn Error>> {
+    let mut client = MockEipClient::new();
+    
+    // Test basic string operations
+    let test_string = "Hello, PLC!".to_string();
+    client.write_tag("TestString", PlcValue::String(test_string.clone())).await?;
+    let string_value = client.read_tag("TestString").await?;
+    assert_eq!(string_value, PlcValue::String(test_string));
+    
+    // Test empty string
+    let empty_string = "".to_string();
+    client.write_tag("EmptyString", PlcValue::String(empty_string.clone())).await?;
+    let empty_value = client.read_tag("EmptyString").await?;
+    assert_eq!(empty_value, PlcValue::String(empty_string));
+    
+    // Test string with special characters
+    let special_string = "!@#$%^&*()_+-=[]{}|;:,.<>?".to_string();
+    client.write_tag("SpecialString", PlcValue::String(special_string.clone())).await?;
+    let special_value = client.read_tag("SpecialString").await?;
+    assert_eq!(special_value, PlcValue::String(special_string));
+    
+    // Test string with spaces
+    let spaced_string = "Hello World with Spaces".to_string();
+    client.write_tag("SpacedString", PlcValue::String(spaced_string.clone())).await?;
+    let spaced_value = client.read_tag("SpacedString").await?;
+    assert_eq!(spaced_value, PlcValue::String(spaced_string));
+    
+    // Test string with numbers
+    let number_string = "12345".to_string();
+    client.write_tag("NumberString", PlcValue::String(number_string.clone())).await?;
+    let number_value = client.read_tag("NumberString").await?;
+    assert_eq!(number_value, PlcValue::String(number_string));
+    
+    // Test string with mixed content
+    let mixed_string = "Hello123!@# World".to_string();
+    client.write_tag("MixedString", PlcValue::String(mixed_string.clone())).await?;
+    let mixed_value = client.read_tag("MixedString").await?;
+    assert_eq!(mixed_value, PlcValue::String(mixed_string));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_string_error_handling() -> Result<(), Box<dyn Error>> {
+    let mut client = MockEipClient::new();
+    
+    // Test string too long (should be handled by the library)
+    let long_string = "X".repeat(100); // Longer than 82 characters
+    let result = client.write_tag("LongString", PlcValue::String(long_string)).await;
+    assert!(result.is_err());
+    
+    // Test non-ASCII characters (should be handled by the library)
+    let non_ascii_string = "Hello 世界".to_string();
+    let result = client.write_tag("NonAsciiString", PlcValue::String(non_ascii_string)).await;
+    assert!(result.is_err());
+    
+    // Test string with null bytes (should be handled by the library)
+    let null_string = "Hello\0World".to_string();
+    let result = client.write_tag("NullString", PlcValue::String(null_string)).await;
+    assert!(result.is_err());
 
     Ok(())
 } 

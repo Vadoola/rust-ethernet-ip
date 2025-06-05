@@ -55,6 +55,9 @@ namespace RustEtherNetIp
         private readonly SemaphoreSlim _operationLock = new(1, 1);
         private CancellationTokenSource _keepAliveCts = new();
         private Task? _keepAliveTask;
+        private readonly Dictionary<string, TagSubscription> _subscriptions = new();
+        private readonly Dictionary<string, CancellationTokenSource> _subscriptionTokens = new();
+        private readonly object _subscriptionLock = new();
 
         #region DLL Imports
         // These are the low-level FFI calls to the Rust library
@@ -1634,6 +1637,137 @@ namespace RustEtherNetIp
 
         #endregion
 
+        #region Subscription Operations
+
+        /// <summary>
+        /// Subscribes to a tag for real-time updates
+        /// </summary>
+        /// <param name="tagName">Name of the tag to subscribe to</param>
+        /// <param name="options">Optional subscription configuration</param>
+        /// <returns>The subscription object that can be used to handle value changes</returns>
+        public TagSubscription SubscribeToTag(string tagName, SubscriptionOptions options = null)
+        {
+            if (_isDisposed)
+                throw new ObjectDisposedException(nameof(EtherNetIpClient));
+
+            options ??= new SubscriptionOptions();
+
+            lock (_subscriptionLock)
+            {
+                if (_subscriptions.ContainsKey(tagName))
+                    return _subscriptions[tagName];
+
+                var subscription = new TagSubscription(tagName);
+                _subscriptions[tagName] = subscription;
+
+                var cts = new CancellationTokenSource();
+                _subscriptionTokens[tagName] = cts;
+
+                Task.Run(async () =>
+                {
+                    int reconnectAttempts = 0;
+                    while (!cts.Token.IsCancellationRequested)
+                    {
+                        try
+                        {
+                            var value = await ReadTagValueAsync(tagName);
+                            subscription.UpdateValue(value);
+
+                            if (reconnectAttempts > 0)
+                                reconnectAttempts = 0;
+
+                            await Task.Delay(options.PollIntervalMs, cts.Token);
+                        }
+                        catch (Exception)
+                        {
+                            if (!options.AutoReconnect || reconnectAttempts >= options.MaxReconnectAttempts)
+                            {
+                                break;
+                            }
+
+                            reconnectAttempts++;
+                            await Task.Delay(options.ReconnectDelayMs, cts.Token);
+                        }
+                    }
+                }, cts.Token);
+
+                return subscription;
+            }
+        }
+
+        /// <summary>
+        /// Unsubscribes from a tag
+        /// </summary>
+        /// <param name="tagName">Name of the tag to unsubscribe from</param>
+        public void UnsubscribeFromTag(string tagName)
+        {
+            if (_isDisposed)
+                throw new ObjectDisposedException(nameof(EtherNetIpClient));
+
+            lock (_subscriptionLock)
+            {
+                if (_subscriptionTokens.TryGetValue(tagName, out var cts))
+                {
+                    cts.Cancel();
+                    cts.Dispose();
+                    _subscriptionTokens.Remove(tagName);
+                }
+
+                _subscriptions.Remove(tagName);
+            }
+        }
+
+        /// <summary>
+        /// Unsubscribes from all tags
+        /// </summary>
+        public void UnsubscribeFromAllTags()
+        {
+            if (_isDisposed)
+                throw new ObjectDisposedException(nameof(EtherNetIpClient));
+
+            lock (_subscriptionLock)
+            {
+                foreach (var cts in _subscriptionTokens.Values)
+                {
+                    cts.Cancel();
+                    cts.Dispose();
+                }
+
+                _subscriptionTokens.Clear();
+                _subscriptions.Clear();
+            }
+        }
+
+        private async Task<object> ReadTagValueAsync(string tagName)
+        {
+            // This is a simplified version - you'll need to implement proper type detection
+            // and conversion based on your needs
+            try
+            {
+                return ReadBool(tagName);
+            }
+            catch
+            {
+                try
+                {
+                    return ReadDint(tagName);
+                }
+                catch
+                {
+                    try
+                    {
+                        return ReadReal(tagName);
+                    }
+                    catch
+                    {
+                        return ReadString(tagName);
+                    }
+                }
+            }
+        }
+
+        #endregion
+
         #region Private Methods
 
         private void CheckConnection()
@@ -1678,9 +1812,13 @@ namespace RustEtherNetIp
         {
             if (!_isDisposed)
             {
-                Disconnect();
-                _operationLock.Dispose();
-                _keepAliveCts.Dispose();
+                UnsubscribeFromAllTags();
+                StopKeepAlive();
+                if (_clientId >= 0)
+                {
+                    eip_disconnect(_clientId);
+                    _clientId = -1;
+                }
                 _isDisposed = true;
             }
         }

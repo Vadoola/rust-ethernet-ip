@@ -1,49 +1,58 @@
-use std::ffi::{CStr, CString, c_char, c_int};
+use std::ffi::{CStr, CString};
+use std::os::raw::{c_char, c_int};
 use std::ptr;
-use crate::{EipClient, PlcValue, RUNTIME, CLIENTS, NEXT_ID};
+use std::sync::Mutex;
+use std::collections::HashMap;
+use lazy_static::lazy_static;
+use crate::EipClient;
+use crate::PlcValue;
+use crate::RUNTIME;
+
+// FFI-specific client manager using synchronous mutex
+lazy_static! {
+    static ref FFI_CLIENTS: Mutex<HashMap<i32, EipClient>> = Mutex::new(HashMap::new());
+    static ref FFI_NEXT_ID: Mutex<i32> = Mutex::new(1);
+}
 
 /// Connect to a PLC and return a client ID
 #[no_mangle]
-pub extern "C" fn eip_connect(address: *const c_char) -> c_int {
-    if address.is_null() {
+pub extern "C" fn eip_connect(ip_address: *const c_char) -> c_int {
+    if ip_address.is_null() {
         return -1;
     }
     
-    let address_str = match unsafe { CStr::from_ptr(address) }.to_str() {
+    let ip_str = match unsafe { CStr::from_ptr(ip_address) }.to_str() {
         Ok(s) => s,
         Err(_) => return -1,
     };
     
-    // Use the global runtime to handle the async connection
-    match RUNTIME.block_on(EipClient::connect(address_str)) {
-        Ok(client) => {
-            // Generate new client ID
-            let client_id = {
-                let mut next_id = NEXT_ID.lock().unwrap();
-                let id = *next_id;
-                *next_id += 1;
-                id
-            };
-            
-            // Store the client
-            {
-                let mut clients = CLIENTS.lock().unwrap();
-                clients.insert(client_id, client);
-            }
-            
-            client_id
-        }
-        Err(_) => -1,
+    let client = match RUNTIME.block_on(EipClient::new(ip_str)) {
+        Ok(client) => client,
+        Err(_) => return -1,
+    };
+    
+    let client_id = {
+        let mut next_id = FFI_NEXT_ID.lock().unwrap();
+        let id = *next_id;
+        *next_id += 1;
+        id
+    };
+    
+    {
+        let mut clients = FFI_CLIENTS.lock().unwrap();
+        clients.insert(client_id, client);
     }
+    
+    client_id
 }
 
 /// Disconnect from a PLC
 #[no_mangle]
 pub extern "C" fn eip_disconnect(client_id: c_int) -> c_int {
-    let mut clients = CLIENTS.lock().unwrap();
+    let mut clients = FFI_CLIENTS.lock().unwrap();
     match clients.remove(&client_id) {
-        Some(_) => 0, // Success
-        None => -1,   // Client not found
+        Some(_) => 0,
+        None => -1,
     }
 }
 
@@ -59,7 +68,7 @@ pub extern "C" fn eip_read_bool(client_id: c_int, tag_name: *const c_char, resul
         Err(_) => return -1,
     };
     
-    let mut clients = CLIENTS.lock().unwrap();
+    let mut clients = FFI_CLIENTS.lock().unwrap();
     match clients.get_mut(&client_id) {
         Some(client) => {
             match RUNTIME.block_on(client.read_tag(tag_name_str)) {
@@ -86,7 +95,7 @@ pub extern "C" fn eip_write_bool(client_id: c_int, tag_name: *const c_char, valu
         Err(_) => return -1,
     };
     
-    let mut clients = CLIENTS.lock().unwrap();
+    let mut clients = FFI_CLIENTS.lock().unwrap();
     match clients.get_mut(&client_id) {
         Some(client) => {
             let bool_value = value != 0;
@@ -111,7 +120,7 @@ pub extern "C" fn eip_read_dint(client_id: c_int, tag_name: *const c_char, resul
         Err(_) => return -1,
     };
     
-    let mut clients = CLIENTS.lock().unwrap();
+    let mut clients = FFI_CLIENTS.lock().unwrap();
     match clients.get_mut(&client_id) {
         Some(client) => {
             match RUNTIME.block_on(client.read_tag(tag_name_str)) {
@@ -138,7 +147,7 @@ pub extern "C" fn eip_write_dint(client_id: c_int, tag_name: *const c_char, valu
         Err(_) => return -1,
     };
     
-    let mut clients = CLIENTS.lock().unwrap();
+    let mut clients = FFI_CLIENTS.lock().unwrap();
     match clients.get_mut(&client_id) {
         Some(client) => {
             match RUNTIME.block_on(client.write_tag(tag_name_str, PlcValue::Dint(value))) {
@@ -162,7 +171,7 @@ pub extern "C" fn eip_read_real(client_id: c_int, tag_name: *const c_char, resul
         Err(_) => return -1,
     };
     
-    let mut clients = CLIENTS.lock().unwrap();
+    let mut clients = FFI_CLIENTS.lock().unwrap();
     match clients.get_mut(&client_id) {
         Some(client) => {
             match RUNTIME.block_on(client.read_tag(tag_name_str)) {
@@ -189,7 +198,7 @@ pub extern "C" fn eip_write_real(client_id: c_int, tag_name: *const c_char, valu
         Err(_) => return -1,
     };
     
-    let mut clients = CLIENTS.lock().unwrap();
+    let mut clients = FFI_CLIENTS.lock().unwrap();
     match clients.get_mut(&client_id) {
         Some(client) => {
             match RUNTIME.block_on(client.write_tag(tag_name_str, PlcValue::Real(value as f32))) {
@@ -213,31 +222,32 @@ pub extern "C" fn eip_read_string(client_id: c_int, tag_name: *const c_char, res
         Err(_) => return -1,
     };
     
-    let mut clients = CLIENTS.lock().unwrap();
-    match clients.get_mut(&client_id) {
-        Some(client) => {
-            match RUNTIME.block_on(client.read_tag(tag_name_str)) {
-                Ok(PlcValue::String(value)) => {
-                    let c_string = match CString::new(value) {
-                        Ok(s) => s,
-                        Err(_) => return -1,
-                    };
-                    
-                    let bytes = c_string.as_bytes_with_nul();
-                    if bytes.len() > max_length as usize {
-                        return -1; // String too long
-                    }
-                    
-                    unsafe {
-                        ptr::copy_nonoverlapping(bytes.as_ptr(), result as *mut u8, bytes.len());
-                    }
-                    0
-                }
-                _ => -1,
-            }
-        }
-        None => -1,
+    let mut clients = FFI_CLIENTS.lock().unwrap();
+    let client = match clients.get_mut(&client_id) {
+        Some(client) => client,
+        None => return -1,
+    };
+    
+    let value = match RUNTIME.block_on(client.read_tag(tag_name_str)) {
+        Ok(PlcValue::String(value)) => value,
+        Ok(_) => return -1, // Wrong data type
+        Err(_) => return -1, // Error reading tag
+    };
+    
+    let c_string = match CString::new(value) {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+    
+    let bytes = c_string.as_bytes_with_nul();
+    if bytes.len() > max_length as usize {
+        return -1; // String too long
     }
+    
+    unsafe {
+        ptr::copy_nonoverlapping(bytes.as_ptr(), result as *mut u8, bytes.len());
+    }
+    0
 }
 
 /// Write a STRING tag
@@ -257,14 +267,14 @@ pub extern "C" fn eip_write_string(client_id: c_int, tag_name: *const c_char, va
         Err(_) => return -1,
     };
     
-    let mut clients = CLIENTS.lock().unwrap();
-    match clients.get_mut(&client_id) {
-        Some(client) => {
-            match RUNTIME.block_on(client.write_tag(tag_name_str, PlcValue::String(value_str.to_string()))) {
-                Ok(_) => 0,
-                Err(_) => -1,
-            }
-        }
-        None => -1,
+    let mut clients = FFI_CLIENTS.lock().unwrap();
+    let client = match clients.get_mut(&client_id) {
+        Some(client) => client,
+        None => return -1,
+    };
+    
+    match RUNTIME.block_on(client.write_tag(tag_name_str, PlcValue::String(value_str.to_string()))) {
+        Ok(_) => 0,
+        Err(_) => -1,
     }
 } 

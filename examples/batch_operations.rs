@@ -243,7 +243,7 @@ async fn demo_performance_comparison() -> Result<(), Box<dyn std::error::Error +
     println!("====================================");
     
     let tag_count = 50;
-    let tags: Vec<String> = (1..=tag_count)
+    let _tags: Vec<String> = (1..=tag_count)
         .map(|i| format!("Sensor_{:03}", i))
         .collect();
     

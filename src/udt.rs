@@ -21,13 +21,13 @@ pub struct UdtMember {
 /// Manager for UDT operations
 #[derive(Debug)]
 pub struct UdtManager {
-    definitions: HashMap<String, UdtDefinition>,
+    _definitions: HashMap<String, UdtDefinition>,
 }
 
 impl UdtManager {
     pub fn new() -> Self {
         Self {
-            definitions: HashMap::new(),
+            _definitions: HashMap::new(),
         }
     }
 

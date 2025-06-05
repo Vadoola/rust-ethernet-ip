@@ -119,7 +119,7 @@ impl PlcManager {
         // First check if we have any connections for this address
         if !self.connections.contains_key(&address) {
             // No connections exist, create a new one
-            let mut client = EipClient::connect(&address.to_string()).await?;
+            let mut client = EipClient::new(&address.to_string()).await?;
             client.set_max_packet_size(config.max_packet_size as u32);
             let mut new_conn = PlcConnection::new(client);
             new_conn.last_used = Instant::now();
@@ -133,7 +133,7 @@ impl PlcManager {
         // First try to find an inactive connection
         for i in 0..connections.len() {
             if !connections[i].health.is_active {
-                let mut client = EipClient::connect(&address.to_string()).await?;
+                let mut client = EipClient::new(&address.to_string()).await?;
                 client.set_max_packet_size(config.max_packet_size as u32);
                 connections[i].client = client;
                 connections[i].health.is_active = true;
@@ -147,7 +147,7 @@ impl PlcManager {
 
         // If we have room for more connections, create a new one
         if connections.len() < config.max_connections as usize {
-            let mut client = EipClient::connect(&address.to_string()).await?;
+            let mut client = EipClient::new(&address.to_string()).await?;
             client.set_max_packet_size(config.max_packet_size as u32);
             let mut new_conn = PlcConnection::new(client);
             new_conn.last_used = Instant::now();
@@ -163,7 +163,7 @@ impl PlcManager {
             .unwrap();
 
         // Update the LRU connection
-        let mut client = EipClient::connect(&address.to_string()).await?;
+        let mut client = EipClient::new(&address.to_string()).await?;
         client.set_max_packet_size(config.max_packet_size as u32);
         connections[lru_index].client = client;
         connections[lru_index].health.is_active = true;
@@ -181,7 +181,7 @@ impl PlcManager {
             
             for conn in connections.iter_mut() {
                 if !conn.health.is_active {
-                    if let Ok(new_client) = EipClient::connect(&address.to_string()).await {
+                    if let Ok(new_client) = EipClient::new(&address.to_string()).await {
                         conn.client = new_client;
                         conn.health.is_active = true;
                         conn.health.last_success = Instant::now();
@@ -205,6 +205,54 @@ impl PlcManager {
         let addr = address.parse::<SocketAddr>()
             .map_err(|_| EtherNetIpError::Connection("Invalid address format".to_string()))?;
         self.get_connection(addr).await
+    }
+
+    async fn _get_or_create_connection(&mut self, address: &SocketAddr) -> Result<&mut EipClient> {
+        let config = self.configs.get(address).cloned().unwrap();
+        let connections = self.connections.entry(*address).or_insert_with(Vec::new);
+
+        // Try to find an existing inactive connection
+        for i in 0..connections.len() {
+            if !connections[i].health.is_active {
+                let mut client = EipClient::new(&address.to_string()).await?;
+                client.set_max_packet_size(config.max_packet_size as u32);
+                connections[i].client = client;
+                connections[i].health.is_active = true;
+                connections[i].health.last_success = Instant::now();
+                connections[i].health.failed_attempts = 0;
+                connections[i].health.latency = Duration::from_millis(0);
+                connections[i].last_used = Instant::now();
+                return Ok(&mut connections[i].client);
+            }
+        }
+
+        // If we have room for more connections, create a new one
+        if connections.len() < config.max_connections as usize {
+            let mut client = EipClient::new(&address.to_string()).await?;
+            client.set_max_packet_size(config.max_packet_size as u32);
+            let mut new_conn = PlcConnection::new(client);
+            new_conn.last_used = Instant::now();
+            connections.push(new_conn);
+            return Ok(&mut connections.last_mut().unwrap().client);
+        }
+
+        // Find the least recently used connection
+        let lru_index = connections.iter()
+            .enumerate()
+            .min_by_key(|(_, conn)| conn.last_used)
+            .map(|(i, _)| i)
+            .unwrap();
+
+        // Update the LRU connection
+        let mut client = EipClient::new(&address.to_string()).await?;
+        client.set_max_packet_size(config.max_packet_size as u32);
+        connections[lru_index].client = client;
+        connections[lru_index].health.is_active = true;
+        connections[lru_index].health.last_success = Instant::now();
+        connections[lru_index].health.failed_attempts = 0;
+        connections[lru_index].health.latency = Duration::from_millis(0);
+        connections[lru_index].last_used = Instant::now();
+        Ok(&mut connections[lru_index].client)
     }
 }
 

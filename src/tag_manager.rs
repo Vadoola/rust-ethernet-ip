@@ -111,7 +111,7 @@ impl TagManager {
         }
     }
 
-    pub fn get_metadata(&self, tag_name: &str) -> Option<TagMetadata> {
+    pub async fn get_metadata(&self, tag_name: &str) -> Option<TagMetadata> {
         let cache = self.cache.read().unwrap();
         cache.get(tag_name).and_then(|metadata| {
             if metadata.last_updated.elapsed() < self.cache_duration {
@@ -122,12 +122,12 @@ impl TagManager {
         })
     }
 
-    pub fn update_metadata(&mut self, tag_name: String, metadata: TagMetadata) {
+    pub async fn update_metadata(&self, tag_name: String, metadata: TagMetadata) {
         self.cache.write().unwrap().insert(tag_name, metadata);
     }
 
-    pub fn validate_tag(&self, tag_name: &str, required_permissions: &TagPermissions) -> Result<()> {
-        if let Some(metadata) = self.get_metadata(tag_name) {
+    pub async fn validate_tag(&self, tag_name: &str, required_permissions: &TagPermissions) -> Result<()> {
+        if let Some(metadata) = self.get_metadata(tag_name).await {
             if !metadata.permissions.readable && required_permissions.readable {
                 return Err(EtherNetIpError::Permission(format!(
                     "Tag '{}' is not readable",
@@ -146,11 +146,11 @@ impl TagManager {
         }
     }
 
-    pub fn clear_cache(&mut self) {
+    pub async fn clear_cache(&self) {
         self.cache.write().unwrap().clear();
     }
 
-    pub fn remove_stale_entries(&mut self) {
+    pub async fn remove_stale_entries(&self) {
         self.cache.write().unwrap().retain(|_, metadata| {
             metadata.last_updated.elapsed() < self.cache_duration
         });
