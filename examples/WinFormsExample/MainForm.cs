@@ -323,9 +323,9 @@ namespace WinFormsExample
             
             var instructionText = new Label
             {
-                Text = "1. Create test tags in your PLC: TestTag (BOOL), TestBool (BOOL), TestInt (DINT), TestReal (REAL)\n" +
+                Text = "1. Create test tags in your PLC: TestTag (BOOL), TestBool (BOOL), TestInt (DINT), TestReal (REAL), TestString (STRING)\n" +
                        "2. Or modify the tag names below to match existing tags in your PLC\n" +
-                       "⚠️ Note: STRING tags are not supported in the current Rust library implementation",
+                       "✅ Full STRING support available! Supports all Allen-Bradley data types including proper AB STRING format.",
                 Location = new Point(5, 25),
                 Size = new Size(800, 50),
                 ForeColor = Color.FromArgb(75, 85, 99)
@@ -349,7 +349,7 @@ namespace WinFormsExample
                 Size = new Size(300, 150),
                 Multiline = true,
                 ScrollBars = ScrollBars.Vertical,
-                Text = "TestTag\nTestBool\nTestInt\nTestReal"
+                Text = "TestTag\nTestBool\nTestInt\nTestReal\nTestString\nTestString1"
             };
             panel.Controls.Add(tagListTextBox);
 
@@ -436,7 +436,7 @@ namespace WinFormsExample
                 Size = new Size(300, 150),
                 Multiline = true,
                 ScrollBars = ScrollBars.Vertical,
-                Text = "TestTag=true\nTestBool=false\nTestInt=999\nTestReal=88.8"
+                Text = "TestTag=true\nTestBool=false\nTestInt=999\nTestReal=88.8\nTestString=Batch Write Test\nTestString1=Production Status"
             };
             panel.Controls.Add(tagValueTextBox);
 
@@ -1151,13 +1151,16 @@ namespace WinFormsExample
             {
                 Log("🔍 Initializing test tags...");
 
-                // Updated test tags to match TypeScript frontend (remove STRING examples)
+                // Updated test tags to include STRING examples (now fully supported!)
                 var testTags = new(string name, string type, object value)[]
                 {
                     ("TestTag", "BOOL", true),
                     ("TestBool", "BOOL", false),
                     ("TestInt", "DINT", 42),
-                    ("TestReal", "REAL", 123.45f)
+                    ("TestReal", "REAL", 123.45f),
+                    ("TestString", "STRING", "WinForms Demo"),
+                    ("TestString1", "STRING", "Hello World!"),
+                    ("TestString2", "STRING", "Production Line Status")
                 };
 
                 foreach (var (name, type, value) in testTags)
@@ -1176,6 +1179,9 @@ namespace WinFormsExample
                                     break;
                                 case "REAL":
                                     _plcClient.WriteReal(name, (float)value);
+                                    break;
+                                case "STRING":
+                                    _plcClient.WriteString(name, (string)value);
                                     break;
                             }
                         });
@@ -1198,8 +1204,8 @@ namespace WinFormsExample
                 }
 
                 Log("✅ Test tag initialization complete");
-                Log("📝 Note: STRING tags are not supported in the current Rust library implementation");
-                Log("🚀 Ready for batch operations testing!");
+                Log("🚀 STRING operations fully supported with proper Allen-Bradley format!");
+                Log("🚀 Ready for batch operations testing including STRING read/write!");
             }
             catch (Exception ex)
             {

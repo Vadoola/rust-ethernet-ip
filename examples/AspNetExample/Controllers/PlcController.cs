@@ -488,7 +488,234 @@ public class PlcController : ControllerBase
     }
 
     // ================================================================================
-    // INDIVIDUAL OPERATIONS (Existing)
+    // STRING OPERATIONS - Dedicated endpoints for Allen-Bradley STRING support
+    // ================================================================================
+
+    /// <summary>
+    /// Read a STRING tag from the PLC.
+    /// Supports Allen-Bradley STRING format with proper Len, MaxLen, and Data structure.
+    /// </summary>
+    [HttpGet("string/{tagName}")]
+    public IActionResult ReadString(string tagName)
+    {
+        if (!_plcService.IsConnected)
+            return StatusCode(503, new { success = false, message = "Not connected to PLC" });
+
+        try
+        {
+            _logger.LogInformation("Reading STRING tag: {TagName}", tagName);
+            var value = _plcService.ReadString(tagName);
+            
+            return Ok(new 
+            { 
+                success = true, 
+                value = value,
+                type = "STRING",
+                length = value.Length,
+                maxLength = 82, // Allen-Bradley STRING max length
+                message = $"Successfully read STRING tag '{tagName}'"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error reading STRING tag {TagName}", tagName);
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Write a STRING tag to the PLC.
+    /// Supports Allen-Bradley STRING format with automatic length validation.
+    /// </summary>
+    [HttpPost("string/{tagName}")]
+    public IActionResult WriteString(string tagName, [FromBody] StringWriteRequest request)
+    {
+        if (!_plcService.IsConnected)
+            return StatusCode(503, new { success = false, message = "Not connected to PLC" });
+
+        if (request?.Value == null)
+            return BadRequest(new { success = false, message = "String value is required" });
+
+        if (request.Value.Length > 82)
+            return BadRequest(new { success = false, message = "String too long. Maximum length is 82 characters for Allen-Bradley STRING." });
+
+        try
+        {
+            _logger.LogInformation("Writing STRING tag {TagName} with value: '{Value}'", tagName, request.Value);
+            _plcService.WriteString(tagName, request.Value);
+            
+            return Ok(new 
+            { 
+                success = true, 
+                message = $"Successfully wrote STRING '{request.Value}' to tag '{tagName}'",
+                value = request.Value,
+                length = request.Value.Length,
+                maxLength = 82
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error writing STRING tag {TagName}", tagName);
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Batch read multiple STRING tags for efficient string data collection.
+    /// </summary>
+    [HttpPost("string/batch/read")]
+    public async Task<IActionResult> BatchReadStrings([FromBody] StringBatchReadRequest request)
+    {
+        if (!_plcService.IsConnected)
+            return StatusCode(503, new { success = false, message = "Not connected to PLC" });
+
+        if (request?.TagNames == null || request.TagNames.Length == 0)
+            return BadRequest(new { success = false, message = "Tag names are required" });
+
+        try
+        {
+            _logger.LogInformation("Batch STRING read request for {TagCount} tags", request.TagNames.Length);
+            
+            var stopwatch = Stopwatch.StartNew();
+            var results = new List<object>();
+            int successCount = 0;
+            
+            foreach (var tagName in request.TagNames)
+            {
+                try
+                {
+                    var value = _plcService.ReadString(tagName);
+                    results.Add(new 
+                    { 
+                        tagName = tagName,
+                        success = true,
+                        value = value,
+                        length = value.Length,
+                        type = "STRING"
+                    });
+                    successCount++;
+                }
+                catch (Exception ex)
+                {
+                    results.Add(new 
+                    { 
+                        tagName = tagName,
+                        success = false,
+                        error = ex.Message,
+                        type = "STRING"
+                    });
+                }
+            }
+            
+            stopwatch.Stop();
+            
+            return Ok(new 
+            { 
+                success = successCount > 0,
+                results = results,
+                performance = new
+                {
+                    totalTimeMs = stopwatch.ElapsedMilliseconds,
+                    successCount = successCount,
+                    errorCount = request.TagNames.Length - successCount,
+                    averageTimePerTagMs = (double)stopwatch.ElapsedMilliseconds / request.TagNames.Length,
+                    tagsPerSecond = stopwatch.ElapsedMilliseconds > 0 ? (request.TagNames.Length * 1000.0 / stopwatch.ElapsedMilliseconds) : 0
+                },
+                message = $"Batch STRING read completed: {successCount}/{request.TagNames.Length} successful in {stopwatch.ElapsedMilliseconds}ms"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in batch STRING read operation");
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Batch write multiple STRING tags for efficient string data updates.
+    /// </summary>
+    [HttpPost("string/batch/write")]
+    public async Task<IActionResult> BatchWriteStrings([FromBody] StringBatchWriteRequest request)
+    {
+        if (!_plcService.IsConnected)
+            return StatusCode(503, new { success = false, message = "Not connected to PLC" });
+
+        if (request?.TagValues == null || request.TagValues.Count == 0)
+            return BadRequest(new { success = false, message = "Tag values are required" });
+
+        // Validate string lengths
+        var invalidTags = request.TagValues.Where(kvp => kvp.Value.Length > 82).ToList();
+        if (invalidTags.Any())
+        {
+            return BadRequest(new 
+            { 
+                success = false, 
+                message = "Some strings are too long. Maximum length is 82 characters.",
+                invalidTags = invalidTags.Select(kvp => new { tag = kvp.Key, length = kvp.Value.Length }).ToArray()
+            });
+        }
+
+        try
+        {
+            _logger.LogInformation("Batch STRING write request for {TagCount} tags", request.TagValues.Count);
+            
+            var stopwatch = Stopwatch.StartNew();
+            var results = new List<object>();
+            int successCount = 0;
+            
+            foreach (var kvp in request.TagValues)
+            {
+                try
+                {
+                    _plcService.WriteString(kvp.Key, kvp.Value);
+                    results.Add(new 
+                    { 
+                        tagName = kvp.Key,
+                        success = true,
+                        value = kvp.Value,
+                        length = kvp.Value.Length,
+                        type = "STRING"
+                    });
+                    successCount++;
+                }
+                catch (Exception ex)
+                {
+                    results.Add(new 
+                    { 
+                        tagName = kvp.Key,
+                        success = false,
+                        error = ex.Message,
+                        type = "STRING"
+                    });
+                }
+            }
+            
+            stopwatch.Stop();
+            
+            return Ok(new 
+            { 
+                success = successCount > 0,
+                results = results,
+                performance = new
+                {
+                    totalTimeMs = stopwatch.ElapsedMilliseconds,
+                    successCount = successCount,
+                    errorCount = request.TagValues.Count - successCount,
+                    averageTimePerTagMs = (double)stopwatch.ElapsedMilliseconds / request.TagValues.Count,
+                    tagsPerSecond = stopwatch.ElapsedMilliseconds > 0 ? (request.TagValues.Count * 1000.0 / stopwatch.ElapsedMilliseconds) : 0
+                },
+                message = $"Batch STRING write completed: {successCount}/{request.TagValues.Count} successful in {stopwatch.ElapsedMilliseconds}ms"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in batch STRING write operation");
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    // ================================================================================
+    // INDIVIDUAL TAG OPERATIONS
     // ================================================================================
 
     [HttpGet("tag/{tagName}")]
@@ -926,4 +1153,32 @@ public class BatchWriteRequest
 public class BatchMixedRequest
 {
     public BatchOperation[] Operations { get; set; } = Array.Empty<BatchOperation>();
+}
+
+// ================================================================================
+// STRING OPERATION REQUEST MODELS
+// ================================================================================
+
+/// <summary>
+/// Request model for string write operations
+/// </summary>
+public class StringWriteRequest
+{
+    public string Value { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Request model for batch read operations
+/// </summary>
+public class StringBatchReadRequest
+{
+    public string[] TagNames { get; set; } = Array.Empty<string>();
+}
+
+/// <summary>
+/// Request model for batch write operations
+/// </summary>
+public class StringBatchWriteRequest
+{
+    public Dictionary<string, string> TagValues { get; set; } = new();
 } 

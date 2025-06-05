@@ -1,6 +1,6 @@
 # 🚀 Rust EtherNet/IP ASP.NET Core Example with Batch Operations
 
-A comprehensive ASP.NET Core Web API demonstrating the power of **batch operations** in the Rust EtherNet/IP library. This example showcases how batch operations can provide **3-10x performance improvements** over individual tag operations through optimized REST API endpoints.
+A comprehensive ASP.NET Core Web API demonstrating the power of **batch operations** and **STRING support** in the Rust EtherNet/IP library. This example showcases how batch operations can provide **3-10x performance improvements** over individual tag operations through optimized REST API endpoints.
 
 ## 🎯 Features
 
@@ -8,6 +8,7 @@ A comprehensive ASP.NET Core Web API demonstrating the power of **batch operatio
 - **RESTful API**: Complete HTTP endpoints for PLC communication
 - **Individual Operations**: Traditional single-tag read/write endpoints
 - **Batch Operations**: High-performance multi-tag API endpoints
+- **STRING Support**: Full Allen-Bradley STRING read/write with proper AB format
 - **Performance Benchmarking**: Built-in comparison tools
 - **Configuration Management**: Flexible batch operation tuning
 - **Statistics Tracking**: Real-time performance monitoring
@@ -18,6 +19,13 @@ A comprehensive ASP.NET Core Web API demonstrating the power of **batch operatio
 - **🔄 Mixed Operations API**: `/api/plc/batch/execute` - Combine reads and writes
 - **📊 Performance Testing**: `/api/plc/batch/benchmark` - Compare individual vs batch
 - **⚙️ Configuration API**: `/api/plc/batch/config` - Tune for your PLC
+
+### STRING Operations Highlights
+- **📝 STRING Read API**: `/api/plc/string/{tagName}` - Read Allen-Bradley STRING tags
+- **✏️ STRING Write API**: `/api/plc/string/{tagName}` - Write STRING with validation
+- **🚀 Batch STRING Read**: `/api/plc/string/batch/read` - Read multiple STRINGs efficiently
+- **📝 Batch STRING Write**: `/api/plc/string/batch/write` - Write multiple STRINGs atomically
+- **✅ Full AB Support**: Proper Len, MaxLen, and Data[82] structure handling
 
 ## 📊 Performance Benefits
 
@@ -49,6 +57,12 @@ A comprehensive ASP.NET Core Web API demonstrating the power of **batch operatio
 - `POST /api/plc/batch/config` - Update batch configuration
 - `GET /api/plc/batch/stats` - Get performance statistics
 - `DELETE /api/plc/batch/stats` - Reset statistics
+
+### 📝 STRING Operations (Allen-Bradley Format)
+- `GET /api/plc/string/{tagName}` - Read single STRING tag
+- `POST /api/plc/string/{tagName}` - Write single STRING tag
+- `POST /api/plc/string/batch/read` - Read multiple STRING tags
+- `POST /api/plc/string/batch/write` - Write multiple STRING tags
 
 ## 🚀 Getting Started
 
@@ -215,7 +229,103 @@ curl -X POST http://localhost:5000/api/plc/batch/execute \
   }'
 ```
 
-### 5. Performance Benchmark
+### 5. STRING Operations
+
+#### Read STRING Tag
+```bash
+curl http://localhost:5000/api/plc/string/StatusMessage
+```
+
+Response:
+```json
+{
+  "success": true,
+  "value": "Production Running",
+  "type": "STRING",
+  "length": 17,
+  "maxLength": 82,
+  "message": "Successfully read STRING tag 'StatusMessage'"
+}
+```
+
+#### Write STRING Tag
+```bash
+curl -X POST http://localhost:5000/api/plc/string/StatusMessage \
+  -H "Content-Type: application/json" \
+  -d '{"value": "Maintenance Mode"}'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "message": "Successfully wrote STRING 'Maintenance Mode' to tag 'StatusMessage'",
+  "value": "Maintenance Mode",
+  "length": 16,
+  "maxLength": 82
+}
+```
+
+#### Batch STRING Read
+```bash
+curl -X POST http://localhost:5000/api/plc/string/batch/read \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tagNames": [
+      "StatusMessage",
+      "ProductCode", 
+      "OperatorName",
+      "RecipeName"
+    ]
+  }'
+```
+
+Response:
+```json
+{
+  "success": true,
+  "results": [
+    {
+      "tagName": "StatusMessage",
+      "success": true,
+      "value": "Production Running",
+      "length": 17,
+      "type": "STRING"
+    },
+    {
+      "tagName": "ProductCode",
+      "success": true,
+      "value": "ABC-123-XYZ",
+      "length": 11,
+      "type": "STRING"
+    }
+  ],
+  "performance": {
+    "totalTimeMs": 6,
+    "successCount": 4,
+    "errorCount": 0,
+    "averageTimePerTagMs": 1.5,
+    "tagsPerSecond": 666.7
+  },
+  "message": "Batch STRING read completed: 4/4 successful in 6ms"
+}
+```
+
+#### Batch STRING Write
+```bash
+curl -X POST http://localhost:5000/api/plc/string/batch/write \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tagValues": {
+      "StatusMessage": "Quality Check",
+      "ProductCode": "DEF-456-ABC",
+      "OperatorName": "John Smith",
+      "RecipeName": "Recipe_v2.1"
+    }
+  }'
+```
+
+### 6. Performance Benchmark
 
 ```bash
 curl -X POST http://localhost:5000/api/plc/batch/benchmark \
@@ -248,7 +358,7 @@ Response:
 }
 ```
 
-### 6. Configuration Management
+### 7. Configuration Management
 
 ```bash
 # Get current configuration

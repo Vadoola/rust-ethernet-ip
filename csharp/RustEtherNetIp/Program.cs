@@ -8,7 +8,7 @@ using RustEtherNetIp;
 namespace RustEtherNetIp
 {
     /// <summary>
-    /// Example program demonstrating EtherNet/IP client usage including new batch operations.
+    /// Example program demonstrating EtherNet/IP client usage including STRING operations and batch operations.
     /// </summary>
     internal class Program
     {
@@ -19,6 +19,7 @@ namespace RustEtherNetIp
 
             // For demonstration, we'll show API usage without requiring actual PLC connection
             await DemonstrateIndividualOperations();
+            await DemonstrateStringOperations();
             await DemonstrateBatchOperations();
             
             Console.WriteLine("\n✅ Demo completed successfully!");
@@ -87,11 +88,127 @@ namespace RustEtherNetIp
         }
 
         /// <summary>
+        /// Demonstrates STRING operations with Allen-Bradley PLCs.
+        /// Shows the complete STRING read/write functionality that works with proper AB STRING format.
+        /// </summary>
+        private static async Task DemonstrateStringOperations()
+        {
+            Console.WriteLine("📝 Demo 2: STRING Operations (Allen-Bradley Format)");
+            Console.WriteLine("--------------------------------------------------");
+
+            try
+            {
+                using var client = new EtherNetIpClient();
+                
+                Console.WriteLine("🔗 Attempting to connect to PLC for STRING demo...");
+                bool connected = client.Connect("192.168.0.1:44818"); // Use the working IP from our tests
+                
+                if (connected)
+                {
+                    Console.WriteLine("✅ Connected to PLC successfully!");
+                    
+                    var stopwatch = Stopwatch.StartNew();
+                    
+                    try
+                    {
+                        // Demonstrate STRING read operations
+                        Console.WriteLine("\n📖 STRING Read Operations:");
+                        var currentString1 = client.ReadString("TestString");
+                        var currentString2 = client.ReadString("TestString1");
+                        var currentString3 = client.ReadString("TestString2");
+                        
+                        Console.WriteLine($"  📊 TestString = \"{currentString1}\"");
+                        Console.WriteLine($"  📊 TestString1 = \"{currentString2}\"");
+                        Console.WriteLine($"  📊 TestString2 = \"{currentString3}\"");
+                        
+                        // Demonstrate STRING write operations
+                        Console.WriteLine("\n✏️  STRING Write Operations:");
+                        
+                        // Test various string lengths and content
+                        var testStrings = new Dictionary<string, string>
+                        {
+                            { "TestString", "C# API Test" },
+                            { "TestString1", "Hello from C#!" },
+                            { "TestString2", "Production_Line_01_Status_OK" }
+                        };
+                        
+                        foreach (var kvp in testStrings)
+                        {
+                            Console.WriteLine($"  ✏️  Writing \"{kvp.Value}\" to {kvp.Key}...");
+                            client.WriteString(kvp.Key, kvp.Value);
+                            Console.WriteLine($"  ✅ Write successful");
+                        }
+                        
+                        // Verify writes by reading back
+                        Console.WriteLine("\n🔍 Verification Reads:");
+                        foreach (var kvp in testStrings)
+                        {
+                            var readBack = client.ReadString(kvp.Key);
+                            bool matches = readBack == kvp.Value;
+                            var status = matches ? "✅" : "❌";
+                            Console.WriteLine($"  {status} {kvp.Key} = \"{readBack}\" (Expected: \"{kvp.Value}\")");
+                        }
+                        
+                        // Test edge cases
+                        Console.WriteLine("\n🧪 Edge Case Testing:");
+                        
+                        // Empty string
+                        Console.WriteLine("  Testing empty string...");
+                        client.WriteString("TestString", "");
+                        var emptyResult = client.ReadString("TestString");
+                        Console.WriteLine($"  ✅ Empty string: \"{emptyResult}\" (length: {emptyResult.Length})");
+                        
+                        // Single character
+                        Console.WriteLine("  Testing single character...");
+                        client.WriteString("TestString1", "X");
+                        var singleResult = client.ReadString("TestString1");
+                        Console.WriteLine($"  ✅ Single char: \"{singleResult}\"");
+                        
+                        // Maximum length (82 characters for AB STRING)
+                        Console.WriteLine("  Testing maximum length string (82 chars)...");
+                        var maxString = new string('A', 82);
+                        client.WriteString("TestString2", maxString);
+                        var maxResult = client.ReadString("TestString2");
+                        Console.WriteLine($"  ✅ Max length: \"{maxResult.Substring(0, Math.Min(20, maxResult.Length))}...\" (length: {maxResult.Length})");
+                        
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"❌ STRING operations failed: {ex.Message}");
+                    }
+                    
+                    stopwatch.Stop();
+                    Console.WriteLine($"\n⏱️  STRING operations took: {stopwatch.ElapsedMilliseconds}ms");
+                }
+                else
+                {
+                    Console.WriteLine("❌ Failed to connect to PLC");
+                    Console.WriteLine("📝 STRING API Usage Examples:");
+                    Console.WriteLine("   // Reading strings:");
+                    Console.WriteLine("   string value = client.ReadString(\"MessageTag\");");
+                    Console.WriteLine("   ");
+                    Console.WriteLine("   // Writing strings:");
+                    Console.WriteLine("   client.WriteString(\"StatusMessage\", \"Production Running\");");
+                    Console.WriteLine("   client.WriteString(\"ProductCode\", \"ABC-123-XYZ\");");
+                    Console.WriteLine("   ");
+                    Console.WriteLine("   // Supports up to 82 characters (Allen-Bradley STRING limit)");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ STRING demo error: {ex.Message}");
+                Console.WriteLine("📝 This demonstrates the STRING API even without PLC connection");
+            }
+
+            Console.WriteLine();
+        }
+
+        /// <summary>
         /// Demonstrates high-performance batch operations.
         /// </summary>
         private static async Task DemonstrateBatchOperations()
         {
-            Console.WriteLine("🚀 Demo 2: High-Performance Batch Operations");
+            Console.WriteLine("🚀 Demo 3: High-Performance Batch Operations");
             Console.WriteLine("--------------------------------------------");
 
             try

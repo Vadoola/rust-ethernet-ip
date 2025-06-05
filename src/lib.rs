@@ -423,6 +423,9 @@ pub struct ConnectedSession {
     
     /// Whether this connection is currently active
     pub is_active: bool,
+    
+    /// Sequence counter for connected messages (increments with each message)
+    pub sequence_count: u16,
 }
 
 /// Connection parameters for EtherNet/IP connections
@@ -468,6 +471,7 @@ impl ConnectedSession {
             t_to_o_params: ConnectionParameters::default(),
             established_at: Instant::now(),
             is_active: false,
+            sequence_count: 0,
         }
     }
     
@@ -1071,7 +1075,7 @@ impl EipClient {
     /// Writes a value to a PLC tag
     /// 
     /// This method automatically determines the best communication method based on the data type:
-    /// - STRING values use connected explicit messaging for reliable operation
+    /// - STRING values use unconnected explicit messaging with proper AB STRING format
     /// - Other data types use standard unconnected messaging
     /// 
     /// # Arguments
@@ -1099,10 +1103,10 @@ impl EipClient {
                  }, 
                  tag_name);
         
-        // Use connected messaging for STRING writes
+        // Use unconnected messaging for STRING writes (proven to work reliably)
         if let PlcValue::String(string_value) = &value {
-            println!("🔗 STRING detected - using connected explicit messaging");
-            return self.write_string_connected(tag_name, string_value).await;
+            println!("🔗 STRING detected - using unconnected explicit messaging with proper AB STRING format");
+            return self.write_string_unconnected(tag_name, string_value).await;
         }
         
         // Use standard unconnected messaging for other data types
@@ -1126,7 +1130,7 @@ impl EipClient {
         }
     }
 
-    /// Builds a write request specifically for Allen-Bradley string format (0x02A0)
+    /// Builds a write request specifically for Allen-Bradley string format 
     fn build_ab_string_write_request(&self, tag_name: &str, value: &PlcValue) -> crate::error::Result<Vec<u8>> {
         if let PlcValue::String(string_value) = value {
             println!("🔧 [DEBUG] Building correct Allen-Bradley string write request for tag: '{}'", tag_name);
@@ -1161,35 +1165,26 @@ impl EipClient {
             // Element Count (always 1 for single string)
             cip_request.extend_from_slice(&[0x01, 0x00]);
             
-            // CRITICAL FIX: Allen-Bradley STRING structure must match EXACTLY what PLC expects
-            // Based on successful reads, we see the structure is:
-            // - Max Length (2 bytes, little-endian) - USE THE EXACT VALUE FROM PLC: 4046 (0x0FCE)  
-            // - Current Length (4 bytes, little-endian) - IMPORTANT: This is 4 bytes, not 2!
-            // - String data (padded to max length with zeros)
-            
+            // Build the correct AB STRING structure
             let string_bytes = string_value.as_bytes();
-            let current_length = string_bytes.len() as u32; // 4 bytes!
-            let max_length: u16 = 4046; // Use exact value from PLC (0x0FCE)
+            let max_len: u16 = 82; // Standard AB STRING max length
+            let current_len = string_bytes.len().min(max_len as usize) as u16;
             
-            // Write max_length (2 bytes, little-endian)
-            cip_request.extend_from_slice(&max_length.to_le_bytes());
+            // AB STRING structure:
+            // - Len (2 bytes) - number of characters used
+            cip_request.extend_from_slice(&current_len.to_le_bytes());
             
-            // Write current_length (4 bytes, little-endian) - CRITICAL: 4 bytes not 2!
-            cip_request.extend_from_slice(&current_length.to_le_bytes());
+            // - MaxLen (2 bytes) - maximum characters allowed (typically 82)  
+            cip_request.extend_from_slice(&max_len.to_le_bytes());
             
-            // Write string data 
-            cip_request.extend_from_slice(string_bytes);
+            // - Data[MaxLen] (82 bytes) - the character array, zero-padded
+            let mut data_array = vec![0u8; max_len as usize];
+            data_array[..current_len as usize].copy_from_slice(&string_bytes[..current_len as usize]);
+            cip_request.extend_from_slice(&data_array);
             
-            // PAD the remaining bytes to match the full structure size
-            // The PLC expects the full 90-byte data area (86 bytes after max_len + curr_len)
-            let remaining_bytes = 86 - string_bytes.len(); // 90 total - 4 header bytes
-            if remaining_bytes > 0 {
-                cip_request.extend(vec![0x00; remaining_bytes]);
-            }
-            
-            println!("🔧 [DEBUG] Built CORRECTED AB string write request ({} bytes): max_len={}, curr_len={}, data_len={}", 
-                     cip_request.len(), max_length, current_length, string_bytes.len());
-            println!("🔧 [DEBUG] First 32 bytes: {:02X?}", &cip_request[..cmp::min(32, cip_request.len())]);
+            println!("🔧 [DEBUG] Built correct AB string write request ({} bytes): len={}, maxlen={}, data_len={}", 
+                     cip_request.len(), current_len, max_len, string_bytes.len());
+            println!("🔧 [DEBUG] First 32 bytes: {:02X?}", &cip_request[..std::cmp::min(32, cip_request.len())]);
             
             Ok(cip_request)
         } else {
@@ -3111,7 +3106,7 @@ impl EipClient {
         let request = self.build_connected_string_write_request(tag_name, value, &session)?;
         
         // Send via connected messaging
-        let _response = self.send_connected_cip_request(&request, &session).await?;
+        let _response = self.send_connected_cip_request(&request, &session, &session_name).await?;
         
         println!("✅ [CONNECTED WRITE] String write successful");
         
@@ -3133,41 +3128,47 @@ impl EipClient {
         let path_size_words = (2 + tag_bytes.len() + 1) / 2; // +1 for potential padding, /2 for word count
         request.push(path_size_words as u8);
         
-        request.push(0x91);  // ANSI Extended Symbol segment
-        request.push(tag_bytes.len() as u8);  // Length
+        request.push(0x91); // ANSI symbol segment
+        request.push(tag_bytes.len() as u8); // Length of tag name
         request.extend_from_slice(tag_bytes);
         
-        // Add padding to make the path even-length in bytes
-        if tag_bytes.len() % 2 != 0 {
+        // Add padding byte if needed to make path even length
+        if (2 + tag_bytes.len()) % 2 != 0 {
             request.push(0x00);
         }
         
-        // AB STRING format data type (0x02A0)
-        request.extend_from_slice(&0x02A0u16.to_le_bytes());
+        // Data type for AB STRING
+        request.extend_from_slice(&[0xCE, 0x0F]); // AB STRING data type (4046)
         
-        // Element count (1 element)
-        request.extend_from_slice(&1u16.to_le_bytes());
+        // Number of elements (always 1 for a single string)
+        request.extend_from_slice(&[0x01, 0x00]);
         
-        // AB STRING data
-        let value_bytes = value.as_bytes();
-        let string_len = std::cmp::min(value_bytes.len(), 82); // Max 82 characters for AB STRING
+        // Build the AB STRING structure payload
+        let string_bytes = value.as_bytes();
+        let max_len: u16 = 82; // Standard AB STRING max length
+        let current_len = string_bytes.len().min(max_len as usize) as u16;
         
-        // LEN field (4 bytes, DINT)
-        request.extend_from_slice(&(string_len as u32).to_le_bytes());
+        // STRING structure:
+        // - Len (2 bytes) - number of characters used
+        request.extend_from_slice(&current_len.to_le_bytes());
         
-        // DATA field (82 bytes, SINT array)
-        request.extend_from_slice(&value_bytes[..string_len]);
+        // - MaxLen (2 bytes) - maximum characters allowed (typically 82)  
+        request.extend_from_slice(&max_len.to_le_bytes());
         
-        // Pad remaining DATA bytes with zeros
-        for _ in string_len..82 {
-            request.push(0x00);
-        }
+        // - Data[MaxLen] (82 bytes) - the character array, zero-padded
+        let mut data_array = vec![0u8; max_len as usize];
+        data_array[..current_len as usize].copy_from_slice(&string_bytes[..current_len as usize]);
+        request.extend_from_slice(&data_array);
+        
+        println!("🔧 [DEBUG] Built connected string write request ({} bytes) for '{}' = '{}' (len={}, maxlen={})", 
+                 request.len(), tag_name, value, current_len, max_len);
+        println!("🔧 [DEBUG] Request: {:02X?}", request);
         
         Ok(request)
     }
     
     /// Sends a CIP request using connected messaging
-    async fn send_connected_cip_request(&mut self, cip_request: &[u8], session: &ConnectedSession) -> crate::error::Result<Vec<u8>> {
+    async fn send_connected_cip_request(&mut self, cip_request: &[u8], session: &ConnectedSession, session_name: &str) -> crate::error::Result<Vec<u8>> {
         println!("🔗 [CONNECTED] Sending connected CIP request ({} bytes) using T->O connection ID 0x{:08X}", 
                  cip_request.len(), session.t_to_o_connection_id);
         
@@ -3205,8 +3206,16 @@ impl EipClient {
         let data_length = cip_request.len() + 2; // +2 for sequence count
         packet.extend_from_slice(&(data_length as u16).to_le_bytes()); // Length
         
+        // Get the current session mutably to increment sequence counter
+        let current_sequence = if let Some(session_mut) = self.connected_sessions.get_mut(&session_name.to_string()) {
+            session_mut.sequence_count += 1;
+            session_mut.sequence_count
+        } else {
+            1 // Fallback if session not found
+        };
+        
         // Sequence count (2 bytes) - incremental counter for this connection
-        packet.extend_from_slice(&[0x01, 0x00]); // Simple sequence counter
+        packet.extend_from_slice(&current_sequence.to_le_bytes());
         
         // CIP request data
         packet.extend_from_slice(cip_request);
@@ -3215,7 +3224,7 @@ impl EipClient {
         let cpf_length = packet.len() - cpf_start;
         packet[2..4].copy_from_slice(&(cpf_length as u16).to_le_bytes());
         
-        println!("🔗 [CONNECTED] Sending packet ({} bytes)", packet.len());
+        println!("🔗 [CONNECTED] Sending packet ({} bytes) with sequence {}", packet.len(), current_sequence);
         
         // Send packet
         self.stream.write_all(&packet).await
@@ -3378,6 +3387,97 @@ impl EipClient {
         }
         
         Ok(())
+    }
+
+    /// Writes a string using unconnected explicit messaging with proper AB STRING format
+    /// 
+    /// This method uses standard unconnected messaging instead of connected messaging
+    /// and implements the proper Allen-Bradley STRING structure as described in the
+    /// provided information about Len, MaxLen, and Data[82] format.
+    pub async fn write_string_unconnected(&mut self, tag_name: &str, value: &str) -> crate::error::Result<()> {
+        println!("📝 [UNCONNECTED] Writing string '{}' to tag '{}' using unconnected messaging", value, tag_name);
+        
+        self.validate_session().await?;
+        
+        let string_bytes = value.as_bytes();
+        if string_bytes.len() > 82 {
+            return Err(EtherNetIpError::Protocol("String too long for Allen-Bradley STRING (max 82 chars)".to_string()));
+        }
+        
+        // Build the CIP request with proper AB STRING structure
+        let mut cip_request = Vec::new();
+        
+        // Service: Write Tag Service (0x4D)
+        cip_request.push(0x4D);
+        
+        // Request Path Size (in words)
+        let tag_bytes = tag_name.as_bytes();
+        let path_len = if tag_bytes.len() % 2 == 0 { 
+            tag_bytes.len() + 2 
+        } else { 
+            tag_bytes.len() + 3 
+        } / 2;
+        cip_request.push(path_len as u8);
+        
+        // Request Path: ANSI Extended Symbol Segment for tag name
+        cip_request.push(0x91); // ANSI Extended Symbol Segment
+        cip_request.push(tag_bytes.len() as u8); // Tag name length
+        cip_request.extend_from_slice(tag_bytes); // Tag name
+        
+        // Pad to even length if necessary
+        if tag_bytes.len() % 2 != 0 {
+            cip_request.push(0x00);
+        }
+        
+        // Data Type: Allen-Bradley STRING (0x02A0) 
+        cip_request.extend_from_slice(&[0xA0, 0x02]);
+        
+        // Element Count (always 1 for single string)
+        cip_request.extend_from_slice(&[0x01, 0x00]);
+        
+        // Build the correct AB STRING structure based on the provided information:
+        // struct STRING {
+        //     UINT Len;       // Number of characters used (2 bytes)
+        //     UINT MaxLen;    // Maximum allowed characters (2 bytes) 
+        //     SINT Data[MaxLen]; // The character array (82 bytes for AB STRING)
+        // }
+        
+        let max_len: u16 = 82; // Standard AB STRING max length
+        let current_len = string_bytes.len().min(max_len as usize) as u16;
+        
+        // Len (2 bytes) - number of characters used
+        cip_request.extend_from_slice(&current_len.to_le_bytes());
+        
+        // MaxLen (2 bytes) - maximum characters allowed (typically 82)  
+        cip_request.extend_from_slice(&max_len.to_le_bytes());
+        
+        // Data[MaxLen] (82 bytes) - the character array, zero-padded
+        let mut data_array = vec![0u8; max_len as usize];
+        data_array[..current_len as usize].copy_from_slice(&string_bytes[..current_len as usize]);
+        cip_request.extend_from_slice(&data_array);
+        
+        println!("🔧 [DEBUG] Built unconnected string write request ({} bytes) for '{}' = '{}' (len={}, maxlen={})", 
+                 cip_request.len(), tag_name, value, current_len, max_len);
+        println!("🔧 [DEBUG] Request structure: Service=0x4D, Path={} bytes, DataType=0x02A0, Len={}, MaxLen={}, Data={}bytes", 
+                 path_len * 2, current_len, max_len, max_len);
+        
+        // Send the request using standard unconnected messaging
+        let response = self.send_cip_request(&cip_request).await?;
+        
+        // Check if write was successful
+        if response.len() >= 2 {
+            let status = response[1];
+            if status == 0x00 {
+                println!("✅ [UNCONNECTED] String write completed successfully");
+                Ok(())
+            } else {
+                let error_msg = self.get_cip_error_message(status);
+                println!("❌ [UNCONNECTED] String write failed: {} (0x{:02X})", error_msg, status);
+                Err(EtherNetIpError::Protocol(format!("CIP Error 0x{:02X}: {}", status, error_msg)))
+            }
+        } else {
+            Err(EtherNetIpError::Protocol("Invalid unconnected string write response".to_string()))
+        }
     }
 }
 
