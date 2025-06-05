@@ -210,6 +210,7 @@ pub mod tag_manager;
 pub mod tag_path;
 pub mod udt;
 pub mod error;
+pub mod ffi;
 
 // Re-export commonly used items
 pub use plc_manager::{PlcManager, PlcConfig, PlcConnection};

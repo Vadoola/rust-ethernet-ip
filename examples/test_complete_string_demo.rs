@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     ];
     
     for (tag, value) in &test_values {
-        match client.write_tag(tag, &PlcValue::String(value.to_string())).await {
+        match client.write_tag(tag, PlcValue::String(value.to_string())).await {
             Ok(_) => println!("✅ Wrote '{}' to {}", value, tag),
             Err(e) => println!("❌ Write to {} failed: {}", tag, e),
         }
@@ -65,21 +65,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("---------------------");
     
     // Empty string
-    match client.write_tag("TestString", &PlcValue::String("".to_string())).await {
-        Ok(_) => println!("✅ Empty string write successful"),
-        Err(e) => println!("❌ Empty string write failed: {}", e),
+    match client.write_tag("TestString", PlcValue::String("".to_string())).await {
+        Ok(_) => println!("✅ Wrote empty string to TestString"),
+        Err(e) => println!("❌ Write empty string failed: {}", e),
     }
     
     // Long string (near limit)
     let long_string = "A".repeat(80); // Close to 82 char limit
-    match client.write_tag("TestString1", &PlcValue::String(long_string.clone())).await {
-        Ok(_) => println!("✅ Long string (80 chars) write successful"),
-        Err(e) => println!("❌ Long string write failed: {}", e),
+    match client.write_tag("TestString1", PlcValue::String(long_string.clone())).await {
+        Ok(_) => println!("✅ Wrote long string to TestString1"),
+        Err(e) => println!("❌ Write long string failed: {}", e),
     }
     
     // Special characters
     let special_string = "Test!@#$%^&*()_+-=[]{}|;':\",./<>?";
-    match client.write_tag("TestString2", &PlcValue::String(special_string.to_string())).await {
+    match client.write_tag("TestString2", PlcValue::String(special_string.to_string())).await {
         Ok(_) => println!("✅ Special characters write successful"),
         Err(e) => println!("❌ Special characters write failed: {}", e),
     }
