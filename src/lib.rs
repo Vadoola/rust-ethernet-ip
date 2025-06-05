@@ -684,8 +684,20 @@ impl PlcValue {
             PlcValue::Real(val) => val.to_le_bytes().to_vec(),
             PlcValue::Lreal(val) => val.to_le_bytes().to_vec(),
             PlcValue::String(val) => {
-                let mut bytes = vec![val.len() as u8];
-                bytes.extend_from_slice(val.as_bytes());
+                // Try minimal approach - just length + data without padding
+                // Testing if the PLC accepts a simpler format
+                
+                let mut bytes = Vec::new();
+                
+                // Length field (4 bytes as DINT) - number of characters currently used
+                let length = val.len().min(82) as u32;
+                bytes.extend_from_slice(&length.to_le_bytes());
+                
+                // String data - just the actual characters, no padding
+                let string_bytes = val.as_bytes();
+                let data_len = string_bytes.len().min(82);
+                bytes.extend_from_slice(&string_bytes[..data_len]);
+                
                 bytes
             }
             PlcValue::Udt(_) => {
@@ -705,19 +717,19 @@ impl PlcValue {
     /// The 16-bit CIP type code for this value type
     pub fn get_data_type(&self) -> u16 {
         match self {
-            PlcValue::Bool(_) => 0x00C1,   // CIP BOOL type
-            PlcValue::Sint(_) => 0x00C2,   // CIP SINT type
-            PlcValue::Int(_) => 0x00C3,    // CIP INT type
-            PlcValue::Dint(_) => 0x00C4,   // CIP DINT type
-            PlcValue::Lint(_) => 0x00C5,   // CIP LINT type
-            PlcValue::Usint(_) => 0x00C6,  // CIP USINT type
-            PlcValue::Uint(_) => 0x00C7,   // CIP UINT type
-            PlcValue::Udint(_) => 0x00C8,  // CIP UDINT type
-            PlcValue::Ulint(_) => 0x00C9,  // CIP ULINT type
-            PlcValue::Real(_) => 0x00CA,   // CIP REAL type
-            PlcValue::Lreal(_) => 0x00CB,  // CIP LREAL type
-            PlcValue::String(_) => 0x00DA, // CIP STRING type
-            PlcValue::Udt(_) => 0x00A0,    // CIP UDT type
+            PlcValue::Bool(_) => 0x00C1,  // BOOL
+            PlcValue::Sint(_) => 0x00C2,  // SINT (signed char)
+            PlcValue::Int(_) => 0x00C3,   // INT (short)
+            PlcValue::Dint(_) => 0x00C4,  // DINT (int)
+            PlcValue::Lint(_) => 0x00C5,  // LINT (long long)
+            PlcValue::Usint(_) => 0x00C6, // USINT (unsigned char)
+            PlcValue::Uint(_) => 0x00C7,  // UINT (unsigned short)
+            PlcValue::Udint(_) => 0x00C8, // UDINT (unsigned int)
+            PlcValue::Ulint(_) => 0x00C9, // ULINT (unsigned long long)
+            PlcValue::Real(_) => 0x00CA,  // REAL (float)
+            PlcValue::Lreal(_) => 0x00CB, // LREAL (double)
+            PlcValue::String(_) => 0x02A0, // Allen-Bradley STRING type (matches PLC read responses)
+            PlcValue::Udt(_) => 0x00A0,   // UDT placeholder
         }
     }
 }
@@ -1068,31 +1080,35 @@ impl EipClient {
                  }, 
                  tag_name);
         
-        // Use unconnected messaging for STRING writes (proven to work reliably)
-        if let PlcValue::String(string_value) = &value {
-            println!("🔗 STRING detected - using unconnected explicit messaging with proper AB STRING format");
-            return self.write_string_unconnected(tag_name, string_value).await;
-        }
+        // Use specialized AB STRING format for STRING writes (required for proper Allen-Bradley STRING handling)
+        // All data types including strings now use the standard write path
+        // The PlcValue::to_bytes() method handles the correct format for each type
         
         // Use standard unconnected messaging for other data types
         let cip_request = self.build_write_request(tag_name, &value)?;
         
         let response = self.send_cip_request(&cip_request).await?;
         
-        // Check if write was successful
-        if response.len() >= 2 {
-            let status = response[1];
-            if status == 0x00 {
-                println!("✅ Write completed successfully");
-                Ok(())
-            } else {
-                let error_msg = self.get_cip_error_message(status);
-                println!("❌ Write failed: {} (0x{:02X})", error_msg, status);
-                Err(EtherNetIpError::Protocol(format!("CIP Error 0x{:02X}: {}", status, error_msg)))
-            }
-        } else {
-            Err(EtherNetIpError::Protocol("Invalid write response".to_string()))
+        // Check write response for errors - need to extract CIP response first
+        let cip_response = self.extract_cip_from_response(&response)?;
+        
+        if cip_response.len() < 3 {
+            return Err(EtherNetIpError::Protocol("Write response too short".to_string()));
         }
+        
+        let service_reply = cip_response[0];  // Should be 0xCD (0x4D + 0x80) for Write Tag reply
+        let general_status = cip_response[2]; // CIP status code
+        
+        println!("🔧 [DEBUG] Write response - Service: 0x{:02X}, Status: 0x{:02X}", service_reply, general_status);
+        
+        if general_status != 0x00 {
+            let error_msg = self.get_cip_error_message(general_status);
+            println!("❌ [WRITE] CIP Error: {} (0x{:02X})", error_msg, general_status);
+            return Err(EtherNetIpError::Protocol(format!("CIP Error 0x{:02X}: {}", general_status, error_msg)));
+        }
+        
+        println!("✅ Write operation completed successfully");
+        Ok(())
     }
 
     /// Builds a write request specifically for Allen-Bradley string format 
@@ -1308,20 +1324,25 @@ impl EipClient {
                 data.extend(&v.to_le_bytes());
             }
             PlcValue::String(v) => {
-                data.extend(&0x00DAu16.to_le_bytes()); // Data type
-                let bytes = v.as_bytes();
-                data.push(bytes.len() as u8);
-                data.extend(bytes);
+                data.extend(&0x00CEu16.to_le_bytes()); // Data type - correct Allen-Bradley STRING CIP type
+                
+                // Length field (4 bytes as DINT) - number of characters currently used
+                let length = v.len().min(82) as u32;
+                data.extend_from_slice(&length.to_le_bytes());
+                
+                // String data - the actual characters (no MaxLen field)
+                let string_bytes = v.as_bytes();
+                let data_len = string_bytes.len().min(82);
+                data.extend_from_slice(&string_bytes[..data_len]);
+                
+                // Padding to make total data area exactly 82 bytes after length
+                let remaining_chars = 82 - data_len;
+                data.extend(vec![0u8; remaining_chars]);
             }
             PlcValue::Udt(_) => {
-                // For UDT, we need to serialize each member
-                let _udt_data: Vec<u8> = Vec::new();
-                // TODO: Implement UDT serialization
-                // for value in members.values() {
-                //     let member_data = self.serialize_value(value)?;
-                //     udt_data.extend(member_data);
-                // }
-                // data.extend(udt_data);
+                // UDT serialization is handled by the UdtManager
+                // For now, just add placeholder data
+                data.extend(&0x00A0u16.to_le_bytes()); // UDT type code
             }
         }
         
@@ -1472,7 +1493,27 @@ impl EipClient {
     #[allow(dead_code)]
     async fn write_tag_raw(&mut self, tag_name: &str, data: &[u8]) -> crate::error::Result<()> {
         let request = self.build_write_request_raw(tag_name, data)?;
-        self.send_cip_request(&request).await?;
+        let response = self.send_cip_request(&request).await?;
+        
+        // Check write response for errors
+        let cip_response = self.extract_cip_from_response(&response)?;
+        
+        if cip_response.len() < 3 {
+            return Err(EtherNetIpError::Protocol("Write response too short".to_string()));
+        }
+        
+        let service_reply = cip_response[0];  // Should be 0xCD (0x4D + 0x80) for Write Tag reply
+        let general_status = cip_response[2]; // CIP status code
+        
+        println!("🔧 [DEBUG] Write response - Service: 0x{:02X}, Status: 0x{:02X}", service_reply, general_status);
+        
+        if general_status != 0x00 {
+            let error_msg = self.get_cip_error_message(general_status);
+            println!("❌ [WRITE] CIP Error: {} (0x{:02X})", error_msg, general_status);
+            return Err(EtherNetIpError::Protocol(format!("CIP Error 0x{:02X}: {}", general_status, error_msg)));
+        }
+        
+        println!("✅ Write completed successfully");
         Ok(())
     }
 
@@ -3184,44 +3225,59 @@ impl EipClient {
             cip_request.push(0x00);
         }
         
-        // Data Type: Allen-Bradley STRING (0x02A0) 
-        cip_request.extend_from_slice(&[0xA0, 0x02]);
+        // For write operations, we don't include data type and element count
+        // The PLC infers the data type from the tag definition
         
-        // Element Count (always 1 for single string)
-        cip_request.extend_from_slice(&[0x01, 0x00]);
+        // Build Allen-Bradley STRING structure based on what we see in read responses:
+        // Looking at read response: [CE, 0F, 01, 00, 00, 00, 31, 00, ...]
+        // Structure appears to be:
+        // - Some header/identifier (2 bytes): 0xCE, 0x0F  
+        // - Length (2 bytes): number of characters
+        // - MaxLength or padding (2 bytes): 0x00, 0x00
+        // - Data array (variable length, null terminated)
         
-        // Build the correct AB STRING structure based on the provided information:
-        // struct STRING {
-        //     UINT Len;       // Number of characters used (2 bytes)
-        //     UINT MaxLen;    // Maximum allowed characters (2 bytes) 
-        //     SINT Data[MaxLen]; // The character array (82 bytes for AB STRING)
-        // }
+        let current_len = string_bytes.len().min(82) as u16;
         
-        let max_len: u16 = 82; // Standard AB STRING max length
-        let current_len = string_bytes.len().min(max_len as usize) as u16;
+        // Build the correct Allen-Bradley STRING structure to match what the PLC expects
+        // Analysis of read response: [CE, 0F, 01, 00, 00, 00, 31, 00, 00, 00, ...]
+        // Structure appears to be:
+        // - Header (2 bytes): 0xCE, 0x0F (Allen-Bradley STRING identifier)
+        // - Length (4 bytes, DINT): Number of characters currently used  
+        // - Data (variable): Character data followed by padding to complete the structure
         
-        // Len (2 bytes) - number of characters used
+        let current_len = string_bytes.len().min(82) as u32;
+        
+        // AB STRING header/identifier - this appears to be required
+        cip_request.extend_from_slice(&[0xCE, 0x0F]);
+        
+        // Length (4 bytes) - number of characters used as DINT
         cip_request.extend_from_slice(&current_len.to_le_bytes());
         
-        // MaxLen (2 bytes) - maximum characters allowed (typically 82)  
-        cip_request.extend_from_slice(&max_len.to_le_bytes());
+        // Data bytes - the actual string content
+        cip_request.extend_from_slice(&string_bytes[..current_len as usize]);
         
-        // Data[MaxLen] (82 bytes) - the character array, zero-padded
-        let mut data_array = vec![0u8; max_len as usize];
-        data_array[..current_len as usize].copy_from_slice(&string_bytes[..current_len as usize]);
-        cip_request.extend_from_slice(&data_array);
+        // Add padding if the total structure needs to be a specific size
+        // Based on reads, it looks like there might be additional padding after the data
         
-        println!("🔧 [DEBUG] Built unconnected string write request ({} bytes) for '{}' = '{}' (len={}, maxlen={})", 
-                 cip_request.len(), tag_name, value, current_len, max_len);
-        println!("🔧 [DEBUG] Request structure: Service=0x4D, Path={} bytes, DataType=0x02A0, Len={}, MaxLen={}, Data={}bytes", 
-                 path_len * 2, current_len, max_len, max_len);
+        println!("🔧 [DEBUG] Built Allen-Bradley STRING write request ({} bytes) for '{}' = '{}' (len={})", 
+                 cip_request.len(), tag_name, value, current_len);
+        println!("🔧 [DEBUG] Request structure: Service=0x4D, Path={} bytes, Header=0xCE0F, Len={} (4 bytes), Data", 
+                 path_len * 2, current_len);
         
         // Send the request using standard unconnected messaging
         let response = self.send_cip_request(&cip_request).await?;
         
-        // Check if write was successful
-        if response.len() >= 2 {
-            let status = response[1];
+        // Extract CIP response from EtherNet/IP wrapper
+        let cip_response = self.extract_cip_from_response(&response)?;
+        
+        // Check if write was successful - use correct CIP response format
+        if cip_response.len() >= 3 {
+            let service_reply = cip_response[0];  // Should be 0xCD (0x4D + 0x80) for Write Tag reply
+            let _additional_status_size = cip_response[1]; // Additional status size (usually 0)
+            let status = cip_response[2];         // CIP status code at position 2
+            
+            println!("🔧 [DEBUG] Write response - Service: 0x{:02X}, Status: 0x{:02X}", service_reply, status);
+            
             if status == 0x00 {
                 println!("✅ [UNCONNECTED] String write completed successfully");
                 Ok(())
@@ -3231,7 +3287,7 @@ impl EipClient {
                 Err(EtherNetIpError::Protocol(format!("CIP Error 0x{:02X}: {}", status, error_msg)))
             }
         } else {
-            Err(EtherNetIpError::Protocol("Invalid unconnected string write response".to_string()))
+            Err(EtherNetIpError::Protocol("Invalid unconnected string write response - too short".to_string()))
         }
     }
 
