@@ -103,16 +103,54 @@ echo ✅ ASP.NET example built successfully
 cd ..\..
 
 echo.
-echo [9/9] ⚛️ Building React Frontend...
-echo ===============================
+echo [9/11] 🐹 Building Go wrapper...
+echo ==============================
+cd gowrapper
+go mod tidy
+go test
+if %errorlevel% neq 0 (
+    echo ❌ Go wrapper build/test failed!
+    exit /b %errorlevel%
+)
+echo ✅ Go wrapper built and tested successfully
+cd ..
+
+echo.
+echo [10/11] 🌐 Building Go + React Example Backend...
+echo ===============================================
+cd examples\GoReactExample\backend
+go mod tidy
+go build -o server.exe main.go
+if %errorlevel% neq 0 (
+    echo ❌ Go backend build failed!
+    exit /b %errorlevel%
+)
+echo ✅ Go backend built successfully
+cd ..\..\..
+
+echo.
+echo [11/11] ⚛️ Building React Frontends...
+echo ====================================
+echo Building TypeScript Example...
 cd examples\TypeScriptExample\frontend
 call npm install --silent
 call npm run build --silent
 if %errorlevel% neq 0 (
-    echo ❌ React build failed!
+    echo ❌ TypeScript React build failed!
     exit /b %errorlevel%
 )
-echo ✅ React frontend built successfully
+echo ✅ TypeScript React frontend built successfully
+cd ..\..\..
+
+echo Building Go + React Example...
+cd examples\GoReactExample\frontend
+call npm install --silent
+call npm run build --silent
+if %errorlevel% neq 0 (
+    echo ❌ Go + React frontend build failed!
+    exit /b %errorlevel%
+)
+echo ✅ Go + React frontend built successfully
 cd ..\..\..
 
 echo.
@@ -122,26 +160,33 @@ echo.
 echo 📦 Built Components:
 echo   ✅ Rust Library (v0.4.0) - with real-time subscriptions & batch operations
 echo   ✅ C# Wrapper - tested and verified  
+echo   ✅ Go Wrapper - CGO bindings with comprehensive API
 echo   ✅ C# FFI Connection Test - diagnostic tool
 echo   ✅ WPF Example - production ready
 echo   ✅ WinForms Example - production ready
 echo   ✅ ASP.NET Example - web API ready
-echo   ✅ React Frontend - modern UI ready
+echo   ✅ TypeScript React Frontend - modern UI ready
+echo   ✅ Go + React Example - full-stack solution
 echo.
 echo 🚀 Ready for deployment!
 echo.
 echo 📋 Key Outputs:
 echo   Rust DLL:     target\release\rust_ethernet_ip.dll
 echo   C# Wrapper:   csharp\RustEtherNetIp\bin\Release\net9.0\RustEtherNetIp.dll
+echo   Go Wrapper:   gowrapper\ (Go module)
 echo   WPF App:      examples\WpfExample\bin\Release\net9.0-windows\WpfExample.exe
 echo   WinForms App: examples\WinFormsExample\bin\Release\net9.0-windows\WinFormsExample.exe
 echo   ASP.NET Web:  examples\AspNetExample\bin\Release\net9.0\AspNetExample.dll
-echo   React Web:    examples\TypeScriptExample\frontend\dist\
+echo   TypeScript:   examples\TypeScriptExample\frontend\dist\
+echo   Go Backend:   examples\GoReactExample\backend\server.exe
+echo   React Web:    examples\GoReactExample\frontend\build\
 echo.
 echo 💡 Next Steps:
 echo   1. Test C# FFI connection: dotnet run --project examples\CSharpFFITest
 echo   2. Test Rust connectivity: cargo run --example connection_test
 echo   3. Test string operations: cargo run --example test_string_direct
-echo   4. Run WPF example: examples\WpfExample\bin\Release\net9.0-windows\WpfExample.exe
-echo   5. Run ASP.NET: dotnet run --project examples\AspNetExample
+echo   4. Test Go wrapper: cd gowrapper && go test
+echo   5. Run WPF example: examples\WpfExample\bin\Release\net9.0-windows\WpfExample.exe
+echo   6. Run ASP.NET: dotnet run --project examples\AspNetExample
+echo   7. Run Go + React: cd examples\GoReactExample\backend && .\server.exe
 echo. 

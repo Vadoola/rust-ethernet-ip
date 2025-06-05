@@ -55,12 +55,21 @@ All Allen-Bradley native data types with proper CIP encoding:
 - **STRING** - Variable-length strings (CIP type 0x00DA)
 - **UDT** - User Defined Types with full nesting support (CIP type 0x00A0)
 
-### 🔗 **C# Integration** ✅ **COMPLETED**
+### 🔗 **Language Bindings** ✅ **COMPLETED**
+
+#### **C# Integration** ✅ **COMPLETED**
 - **Complete C# wrapper** with all data types
 - **22 FFI functions** for seamless integration
 - **Type-safe API** with comprehensive error handling
 - **NuGet package ready** for easy distribution
 - **Cross-platform support** (Windows, Linux, macOS)
+
+#### **Go Integration** ✅ **NEW in v0.4.0**
+- **CGO wrapper** with comprehensive API coverage
+- **Type-safe Go bindings** for all PLC data types
+- **Connection management** and health monitoring
+- **Error handling** with Go-idiomatic patterns
+- **Full-stack example** with Go backend + React frontend
 
 ### ⚠️ **Comprehensive Error Handling** ✅ **COMPLETED**
 - **Detailed CIP error mapping** with 40+ error codes
