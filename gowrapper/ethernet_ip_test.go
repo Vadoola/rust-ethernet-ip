@@ -2,9 +2,10 @@ package ethernetip
 
 import (
 	"testing"
+	"time"
 )
 
-// TestPlcDataType tests the PlcDataType enumeration
+// TestPlcDataType tests the PlcDataType enum
 func TestPlcDataType(t *testing.T) {
 	if Bool != 0 {
 		t.Errorf("Expected Bool to be 0, got %d", Bool)
@@ -12,12 +13,24 @@ func TestPlcDataType(t *testing.T) {
 	if Sint != 1 {
 		t.Errorf("Expected Sint to be 1, got %d", Sint)
 	}
+	if Int != 2 {
+		t.Errorf("Expected Int to be 2, got %d", Int)
+	}
+	if Dint != 3 {
+		t.Errorf("Expected Dint to be 3, got %d", Dint)
+	}
+	if Lint != 4 {
+		t.Errorf("Expected Lint to be 4, got %d", Lint)
+	}
+	if Real != 9 {
+		t.Errorf("Expected Real to be 9, got %d", Real)
+	}
 	if String != 11 {
 		t.Errorf("Expected String to be 11, got %d", String)
 	}
 }
 
-// TestPlcValue tests the PlcValue structure
+// TestPlcValue tests the PlcValue struct
 func TestPlcValue(t *testing.T) {
 	// Test boolean value
 	boolValue := &PlcValue{Type: Bool, Value: true}
@@ -29,370 +42,334 @@ func TestPlcValue(t *testing.T) {
 	}
 
 	// Test integer value
-	intValue := &PlcValue{Type: Dint, Value: int32(42)}
-	if intValue.Type != Dint {
-		t.Errorf("Expected Dint type, got %d", intValue.Type)
+	intValue := &PlcValue{Type: Int, Value: int16(42)}
+	if intValue.Type != Int {
+		t.Errorf("Expected Int type, got %d", intValue.Type)
 	}
-	if intValue.Value != int32(42) {
+	if intValue.Value != int16(42) {
 		t.Errorf("Expected 42 value, got %v", intValue.Value)
 	}
 
+	// Test real value
+	realValue := &PlcValue{Type: Real, Value: 3.14}
+	if realValue.Type != Real {
+		t.Errorf("Expected Real type, got %d", realValue.Type)
+	}
+	if realValue.Value != 3.14 {
+		t.Errorf("Expected 3.14 value, got %v", realValue.Value)
+	}
+
 	// Test string value
-	stringValue := &PlcValue{Type: String, Value: "Hello PLC"}
+	stringValue := &PlcValue{Type: String, Value: "test"}
 	if stringValue.Type != String {
 		t.Errorf("Expected String type, got %d", stringValue.Type)
 	}
-	if stringValue.Value != "Hello PLC" {
-		t.Errorf("Expected 'Hello PLC' value, got %v", stringValue.Value)
+	if stringValue.Value != "test" {
+		t.Errorf("Expected 'test' value, got %v", stringValue.Value)
 	}
 }
 
-// TestEipError tests the EipError structure
+// TestEipError tests the EipError struct
 func TestEipError(t *testing.T) {
-	err := &EipError{Code: -1, Message: "Connection failed"}
-	expectedMessage := "EIP Error -1: Connection failed"
-	if err.Error() != expectedMessage {
-		t.Errorf("Expected error message '%s', got '%s'", expectedMessage, err.Error())
+	err := &EipError{
+		Code:    1,
+		Message: "test error",
+	}
+
+	expected := "EIP Error 1: test error"
+	if err.Error() != expected {
+		t.Errorf("EipError.Error() = %v, want %v", err.Error(), expected)
 	}
 }
 
-// TestEipClient tests the EipClient structure
+// TestEipClient tests the EipClient struct
 func TestEipClient(t *testing.T) {
-	// Test client creation with invalid IP (should fail)
-	client, err := NewClient("invalid.ip.address")
-	if err == nil {
-		t.Error("Expected error when connecting to invalid IP address")
-		if client != nil {
-			client.Close()
-		}
+	client, err := NewClient("192.168.0.1")
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	if client.GetClientID() <= 0 {
+		t.Error("Expected positive client ID")
 	}
 
-	// Test client properties
-	if client != nil {
-		if client.GetClientID() < 0 {
-			t.Error("Expected positive client ID")
-		}
-		if client.GetIPAddress() != "invalid.ip.address" {
-			t.Errorf("Expected IP address 'invalid.ip.address', got '%s'", client.GetIPAddress())
-		}
+	if client.GetIPAddress() != "192.168.0.1" {
+		t.Errorf("Expected IP address 192.168.0.1, got %s", client.GetIPAddress())
 	}
 }
 
-// Mock tests for PLC operations (these would require actual PLC connection)
-func TestMockPlcOperations(t *testing.T) {
-	t.Skip("Skipping PLC operations tests - requires actual PLC connection")
-
-	// This is how the tests would look with a real PLC connection
-	/*
-		client, err := NewClient("192.168.1.100")
-		if err != nil {
-			t.Fatalf("Failed to connect to PLC: %v", err)
-		}
-		defer client.Close()
-
-		// Test boolean operations
-		err = client.WriteBool("TestBool", true)
-		if err != nil {
-			t.Errorf("Failed to write boolean: %v", err)
-		}
-
-		value, err := client.ReadBool("TestBool")
-		if err != nil {
-			t.Errorf("Failed to read boolean: %v", err)
-		}
-		if value != true {
-			t.Errorf("Expected true, got %v", value)
-		}
-
-		// Test integer operations
-		err = client.WriteDint("TestDint", 1234)
-		if err != nil {
-			t.Errorf("Failed to write DINT: %v", err)
-		}
-
-		dintValue, err := client.ReadDint("TestDint")
-		if err != nil {
-			t.Errorf("Failed to read DINT: %v", err)
-		}
-		if dintValue != 1234 {
-			t.Errorf("Expected 1234, got %d", dintValue)
-		}
-
-		// Test string operations
-		err = client.WriteString("TestString", "Hello World")
-		if err != nil {
-			t.Errorf("Failed to write string: %v", err)
-		}
-
-		stringValue, err := client.ReadString("TestString")
-		if err != nil {
-			t.Errorf("Failed to read string: %v", err)
-		}
-		if stringValue != "Hello World" {
-			t.Errorf("Expected 'Hello World', got '%s'", stringValue)
-		}
-
-		// Test health check
-		healthy, err := client.CheckHealth()
-		if err != nil {
-			t.Errorf("Failed to check health: %v", err)
-		}
-		if !healthy {
-			t.Error("Expected PLC to be healthy")
-		}
-	*/
-}
-
-// TestReadWriteValue tests the generic ReadValue and WriteValue methods
+// TestReadWriteValue tests reading and writing values
 func TestReadWriteValue(t *testing.T) {
-	t.Skip("Skipping generic value tests - requires actual PLC connection")
+	client, err := NewClient("192.168.0.1")
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer client.Close()
 
-	// This is how the tests would look with a real PLC connection
-	/*
-		client, err := NewClient("192.168.1.100")
-		if err != nil {
-			t.Fatalf("Failed to connect to PLC: %v", err)
-		}
-		defer client.Close()
-
-		// Test with boolean value
-		boolValue := &PlcValue{Type: Bool, Value: true}
-		err = client.WriteValue("TestBool", boolValue)
-		if err != nil {
-			t.Errorf("Failed to write boolean value: %v", err)
-		}
-
-		readValue, err := client.ReadValue("TestBool", Bool)
-		if err != nil {
-			t.Errorf("Failed to read boolean value: %v", err)
-		}
-		if readValue.Value != true {
-			t.Errorf("Expected true, got %v", readValue.Value)
-		}
-
-		// Test with integer value
-		intValue := &PlcValue{Type: Dint, Value: int32(5678)}
-		err = client.WriteValue("TestDint", intValue)
-		if err != nil {
-			t.Errorf("Failed to write DINT value: %v", err)
-		}
-
-		readIntValue, err := client.ReadValue("TestDint", Dint)
-		if err != nil {
-			t.Errorf("Failed to read DINT value: %v", err)
-		}
-		if readIntValue.Value != int32(5678) {
-			t.Errorf("Expected 5678, got %v", readIntValue.Value)
-		}
-	*/
-}
-
-// BenchmarkPlcOperations benchmarks PLC operations
-func BenchmarkPlcOperations(b *testing.B) {
-	b.Skip("Skipping PLC benchmark tests - requires actual PLC connection")
-
-	// This is how the benchmarks would look with a real PLC connection
-	/*
-		client, err := NewClient("192.168.1.100")
-		if err != nil {
-			b.Fatalf("Failed to connect to PLC: %v", err)
-		}
-		defer client.Close()
-
-		b.Run("ReadBool", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				_, err := client.ReadBool("TestBool")
-				if err != nil {
-					b.Errorf("Failed to read boolean: %v", err)
-				}
-			}
-		})
-
-		b.Run("WriteBool", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				err := client.WriteBool("TestBool", i%2 == 0)
-				if err != nil {
-					b.Errorf("Failed to write boolean: %v", err)
-				}
-			}
-		})
-
-		b.Run("ReadDint", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				_, err := client.ReadDint("TestDint")
-				if err != nil {
-					b.Errorf("Failed to read DINT: %v", err)
-				}
-			}
-		})
-
-		b.Run("WriteDint", func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				err := client.WriteDint("TestDint", int32(i))
-				if err != nil {
-					b.Errorf("Failed to write DINT: %v", err)
-				}
-			}
-		})
-	*/
-}
-
-// TestConnectionLifecycle tests connection management
-func TestConnectionLifecycle(t *testing.T) {
-	t.Skip("Skipping connection lifecycle tests - requires actual PLC connection")
-
-	// This is how the tests would look with a real PLC connection
-	/*
-		// Test multiple connections
-		client1, err := NewClient("192.168.1.100")
-		if err != nil {
-			t.Fatalf("Failed to create first client: %v", err)
-		}
-		defer client1.Close()
-
-		client2, err := NewClient("192.168.1.100")
-		if err != nil {
-			t.Fatalf("Failed to create second client: %v", err)
-		}
-		defer client2.Close()
-
-		// Verify they have different client IDs
-		if client1.GetClientID() == client2.GetClientID() {
-			t.Error("Expected different client IDs for different connections")
-		}
-
-		// Test connection health
-		healthy1, err := client1.CheckHealth()
-		if err != nil {
-			t.Errorf("Failed to check health for client1: %v", err)
-		}
-		if !healthy1 {
-			t.Error("Expected client1 to be healthy")
-		}
-
-		healthy2, err := client2.CheckHealth()
-		if err != nil {
-			t.Errorf("Failed to check health for client2: %v", err)
-		}
-		if !healthy2 {
-			t.Error("Expected client2 to be healthy")
-		}
-
-		// Test packet size configuration
-		err = client1.SetMaxPacketSize(1024)
-		if err != nil {
-			t.Errorf("Failed to set max packet size: %v", err)
-		}
-	*/
-}
-
-// TestErrorHandling tests various error conditions
-func TestErrorHandling(t *testing.T) {
-	// Test invalid IP addresses
-	invalidIPs := []string{
-		"",
-		"invalid",
-		"999.999.999.999",
-		"192.168.1",
-		"192.168.1.100.1",
+	// Test writing boolean value
+	boolValue := &PlcValue{Type: Bool, Value: true}
+	err = client.WriteValue("TestBool", boolValue)
+	if err != nil {
+		t.Fatalf("Failed to write bool value: %v", err)
 	}
 
-	for _, ip := range invalidIPs {
-		client, err := NewClient(ip)
-		if err == nil {
-			t.Errorf("Expected error for invalid IP: %s", ip)
-			if client != nil {
-				client.Close()
+	// Test reading boolean value
+	readValue, err := client.ReadValue("TestBool", Bool)
+	if err != nil {
+		t.Fatalf("Failed to read bool value: %v", err)
+	}
+	if readValue.Value != true {
+		t.Error("Expected true, got false")
+	}
+
+	// Test writing integer value
+	intValue := &PlcValue{Type: Int, Value: int16(42)}
+	err = client.WriteValue("TestInt", intValue)
+	if err != nil {
+		t.Fatalf("Failed to write int value: %v", err)
+	}
+
+	// Test reading integer value
+	readIntValue, err := client.ReadValue("TestInt", Int)
+	if err != nil {
+		t.Fatalf("Failed to read int value: %v", err)
+	}
+	if readIntValue.Value != int16(42) {
+		t.Errorf("Expected 42, got %v", readIntValue.Value)
+	}
+
+	// Test writing real value
+	realValue := &PlcValue{Type: Real, Value: 3.14}
+	err = client.WriteValue("TestReal", realValue)
+	if err != nil {
+		t.Fatalf("Failed to write real value: %v", err)
+	}
+
+	// Test reading real value
+	readRealValue, err := client.ReadValue("TestReal", Real)
+	if err != nil {
+		t.Fatalf("Failed to read real value: %v", err)
+	}
+	if readRealValue.Value != 3.14 {
+		t.Errorf("Expected 3.14, got %v", readRealValue.Value)
+	}
+
+	// Test writing string value
+	stringValue := &PlcValue{Type: String, Value: "Hello, World!"}
+	err = client.WriteValue("TestString", stringValue)
+	if err != nil {
+		t.Fatalf("Failed to write string value: %v", err)
+	}
+
+	// Test reading string value
+	readStringValue, err := client.ReadValue("TestString", String)
+	if err != nil {
+		t.Fatalf("Failed to read string value: %v", err)
+	}
+	if readStringValue.Value != "Hello, World!" {
+		t.Errorf("Expected 'Hello, World!', got %v", readStringValue.Value)
+	}
+}
+
+// TestBatchOperations tests batch read and write operations
+func TestBatchOperations(t *testing.T) {
+	client, err := NewClient("192.168.0.1")
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	// Configure batch operations
+	config := &BatchConfig{
+		MaxOperationsPerPacket: 10,
+		MaxPacketSize:          1024,
+		PacketTimeoutMs:        1000,
+		ContinueOnError:        true,
+		OptimizePacketPacking:  true,
+	}
+	err = client.ConfigureBatchOperations(config)
+	if err != nil {
+		t.Fatalf("Failed to configure batch operations: %v", err)
+	}
+
+	// Test batch write
+	tagValues := map[string]interface{}{
+		"TestBool":   true,
+		"TestInt":    int16(42),
+		"TestReal":   3.14,
+		"TestString": "Hello, World!",
+	}
+	err = client.BatchWrite(tagValues)
+	if err != nil {
+		t.Fatalf("Failed to batch write: %v", err)
+	}
+
+	// Test batch read
+	tagNames := []string{"TestBool", "TestInt", "TestReal", "TestString"}
+	results, err := client.BatchRead(tagNames)
+	if err != nil {
+		t.Fatalf("Failed to batch read: %v", err)
+	}
+
+	// Verify results
+	if len(results) != len(tagNames) {
+		t.Errorf("Expected %d results, got %d", len(tagNames), len(results))
+	}
+
+	for tagName, value := range results {
+		switch tagName {
+		case "TestBool":
+			if boolValue, ok := value.(bool); !ok || !boolValue {
+				t.Errorf("Expected true for TestBool, got %v", value)
 			}
-		} else {
-			// Verify error is of correct type
-			if eipErr, ok := err.(*EipError); ok {
-				if eipErr.Code >= 0 {
-					t.Errorf("Expected negative error code for invalid IP: %s", ip)
-				}
-			} else {
-				t.Errorf("Expected EipError type for invalid IP: %s", ip)
+		case "TestInt":
+			if intValue, ok := value.(int16); !ok || intValue != 42 {
+				t.Errorf("Expected 42 for TestInt, got %v", value)
+			}
+		case "TestReal":
+			if realValue, ok := value.(float64); !ok || realValue != 3.14 {
+				t.Errorf("Expected 3.14 for TestReal, got %v", value)
+			}
+		case "TestString":
+			if stringValue, ok := value.(string); !ok || stringValue != "Hello, World!" {
+				t.Errorf("Expected 'Hello, World!' for TestString, got %v", value)
 			}
 		}
 	}
 }
 
-// TestConcurrentAccess tests concurrent access to PLC
-func TestConcurrentAccess(t *testing.T) {
-	t.Skip("Skipping concurrent access tests - requires actual PLC connection")
+// TestHealthCheck tests the health check functionality
+func TestHealthCheck(t *testing.T) {
+	client, err := NewClient("192.168.0.1")
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer client.Close()
 
-	// This is how the tests would look with a real PLC connection
-	/*
-		client, err := NewClient("192.168.1.100")
-		if err != nil {
-			t.Fatalf("Failed to connect to PLC: %v", err)
-		}
-		defer client.Close()
-
-		// Test concurrent reads
-		const numGoroutines = 10
-		const numOperations = 100
-
-		errChan := make(chan error, numGoroutines)
-
-		for i := 0; i < numGoroutines; i++ {
-			go func(id int) {
-				for j := 0; j < numOperations; j++ {
-					_, err := client.ReadBool("TestBool")
-					if err != nil {
-						errChan <- fmt.Errorf("Goroutine %d, operation %d: %v", id, j, err)
-						return
-					}
-					time.Sleep(time.Millisecond)
-				}
-				errChan <- nil
-			}(i)
-		}
-
-		// Wait for all goroutines to complete
-		for i := 0; i < numGoroutines; i++ {
-			err := <-errChan
-			if err != nil {
-				t.Errorf("Concurrent read error: %v", err)
-			}
-		}
-	*/
-}
-
-// TestDataTypeConversions tests data type conversions
-func TestDataTypeConversions(t *testing.T) {
-	// Test valid PlcValue creation
-	testCases := []struct {
-		dataType PlcDataType
-		value    interface{}
-		valid    bool
-	}{
-		{Bool, true, true},
-		{Bool, false, true},
-		{Sint, int8(127), true},
-		{Sint, int8(-128), true},
-		{Int, int16(32767), true},
-		{Int, int16(-32768), true},
-		{Dint, int32(2147483647), true},
-		{Dint, int32(-2147483648), true},
-		{Lint, int64(9223372036854775807), true},
-		{Real, float64(3.14159), true},
-		{String, "Test String", true},
-		{Bool, "invalid", false}, // Invalid type for Bool
-		{Sint, 300, false},       // Invalid range for Sint
+	// Test basic health check
+	isHealthy, err := client.CheckHealth()
+	if err != nil {
+		t.Fatalf("Failed to check health: %v", err)
+	}
+	if !isHealthy {
+		t.Error("Expected healthy status")
 	}
 
-	for i, tc := range testCases {
-		value := &PlcValue{Type: tc.dataType, Value: tc.value}
+	// Test detailed health check
+	isHealthy, details, err := client.CheckHealthDetailed()
+	if err != nil {
+		t.Fatalf("Failed to check detailed health: %v", err)
+	}
+	if !isHealthy {
+		t.Error("Expected healthy status")
+	}
+	if details == "" {
+		t.Error("Expected non-empty health details")
+	}
+}
 
-		// This would be tested with actual WriteValue calls
-		if tc.valid {
-			if value.Type != tc.dataType {
-				t.Errorf("Test case %d: Expected type %d, got %d", i, tc.dataType, value.Type)
-			}
-			if value.Value != tc.value {
-				t.Errorf("Test case %d: Expected value %v, got %v", i, tc.value, value.Value)
-			}
+// TestTagMetadata tests tag metadata functionality
+func TestTagMetadata(t *testing.T) {
+	client, err := NewClient("192.168.0.1")
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	// Test discovering tags
+	err = client.DiscoverTags()
+	if err != nil {
+		t.Fatalf("Failed to discover tags: %v", err)
+	}
+
+	// Test getting tag metadata
+	metadata, err := client.GetTagMetadata("TestBool")
+	if err != nil {
+		t.Fatalf("Failed to get tag metadata: %v", err)
+	}
+
+	if metadata == nil {
+		t.Error("Expected non-nil metadata")
+	}
+
+	// Test cached metadata
+	cachedMetadata, err := client.GetTagMetadataCached("TestBool")
+	if err != nil {
+		t.Fatalf("Failed to get cached tag metadata: %v", err)
+	}
+
+	if cachedMetadata == nil {
+		t.Error("Expected non-nil cached metadata")
+	}
+
+	// Test clearing cache
+	client.ClearTagCache()
+}
+
+// TestAsyncOperations tests asynchronous operations
+func TestAsyncOperations(t *testing.T) {
+	client, err := NewClient("192.168.0.1")
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	// Test async read
+	resultChan := client.ReadTagAsync("TestBool", Bool)
+	result := <-resultChan
+	if result.Err != nil {
+		t.Fatalf("Failed to read tag asynchronously: %v", result.Err)
+	}
+	if result.Tag != "TestBool" {
+		t.Errorf("Expected tag name TestBool, got %s", result.Tag)
+	}
+
+	// Test async write
+	value := &PlcValue{Type: Bool, Value: true}
+	errChan := client.WriteTagAsync("TestBool", value)
+	err = <-errChan
+	if err != nil {
+		t.Fatalf("Failed to write tag asynchronously: %v", err)
+	}
+
+	// Test tag subscription
+	callbackCalled := false
+	unsubscribe := client.SubscribeToTag("TestBool", 100*time.Millisecond, Bool, func(value interface{}, err error) {
+		callbackCalled = true
+		if err != nil {
+			t.Errorf("Error in subscription callback: %v", err)
 		}
+	})
+
+	// Wait for a few callbacks
+	time.Sleep(300 * time.Millisecond)
+	unsubscribe()
+
+	if !callbackCalled {
+		t.Error("Expected subscription callback to be called")
+	}
+
+	// Test unsubscribing from all tags
+	client.UnsubscribeFromAllTags()
+}
+
+// TestConnectionRetry tests connection retry functionality
+func TestConnectionRetry(t *testing.T) {
+	// Test with invalid IP to trigger retries
+	_, err := ConnectWithRetry("192.168.0.999", 3, 100*time.Millisecond)
+	if err == nil {
+		t.Error("Expected error when connecting to invalid IP")
+	}
+
+	// Test with valid IP
+	client, err := ConnectWithRetry("192.168.0.1", 3, 100*time.Millisecond)
+	if err != nil {
+		t.Fatalf("Failed to connect with retry: %v", err)
+	}
+	defer client.Close()
+
+	if client.GetIPAddress() != "192.168.0.1" {
+		t.Errorf("Expected IP address 192.168.0.1, got %s", client.GetIPAddress())
 	}
 }

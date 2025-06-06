@@ -11,10 +11,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Test different common PLC IP addresses
     let test_addresses = vec![
         "192.168.0.1:44818",   // Current configured address
-        "192.168.1.1:44818",   // Common gateway
-        "192.168.1.100:44818", // Alternative from other examples
-        "192.168.0.100:44818", // Common PLC address
-        "10.0.0.1:44818",      // Industrial network
     ];
     
     println!("\n📡 Testing TCP connectivity first...");
