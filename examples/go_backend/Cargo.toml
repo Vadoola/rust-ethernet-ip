@@ -1,0 +1,13 @@
+[package]
+name = "plc-backend-ffi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "rust_ethernet_ip"
+crate-type = ["cdylib"]
+
+[dependencies]
+rust-ethernet-ip = { path = "../.." }
+lazy_static = "1.4"
+tokio = { version = "1.0", features = ["full"] } 
