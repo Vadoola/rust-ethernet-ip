@@ -56,9 +56,13 @@ export default function Page() {
   const [isDebugReading, setIsDebugReading] = useState(false);
 
   // Batch operations
-  const [batchTags, setBatchTags] = useState<string>("TestTag\nTestBool\nTestInt\nTestReal\nTestString");
+  const [batchTags, setBatchTags] = useState<string>(
+    "TestTag:Bool\nTestBool:Bool\nTestInt:Dint\nTestReal:Real\nTestString:String"
+  );
   const [batchReadResult, setBatchReadResult] = useState<any>(null);
-  const [batchWriteData, setBatchWriteData] = useState<string>("TestTag=true\nTestBool=false\nTestInt=999\nTestReal=88.8\nTestString=Hello PLC");
+  const [batchWriteData, setBatchWriteData] = useState<string>(
+    "TestTag:Bool=true\nTestBool:Bool=false\nTestInt:Dint=999\nTestReal:Real=88.8\nTestString:String=Hello PLC"
+  );
   const [batchWriteResult, setBatchWriteResult] = useState<any>(null);
   const [isBatchReading, setIsBatchReading] = useState(false);
   const [isBatchWriting, setIsBatchWriting] = useState(false);
@@ -133,7 +137,7 @@ export default function Page() {
         valueToSend = Number(tagValue);
         if (isNaN(valueToSend)) throw new Error("Invalid number value");
       } else if (tagType === "Bool") {
-        valueToSend = tagValue === "true" || tagValue === true;
+        valueToSend = String(tagValue).toLowerCase() === "true";
       }
       await writeTag(tagName, valueToSend, tagType);
       addLog("success", `Wrote tag ${tagName}: ${valueToSend}`);
@@ -352,8 +356,8 @@ export default function Page() {
                     <textarea
                       value={batchTags}
                       onChange={(e) => setBatchTags(e.target.value)}
-                      placeholder="Example:&#10;TestBool:Bool&#10;TestInt:Int&#10;TestReal:Real&#10;TestString:String"
-                      className="w-full h-32 px-3 py-2 bg-gray-800 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      placeholder={"Example:\nTestTag:Bool\nTestBool:Bool\nTestInt:Dint\nTestReal:Real\nTestString:String"}
+                      className="w-full h-32 px-3 py-2 bg-white text-black rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                     />
                   </div>
                   <div>
@@ -363,8 +367,8 @@ export default function Page() {
                     <textarea
                       value={batchWriteData}
                       onChange={(e) => setBatchWriteData(e.target.value)}
-                      placeholder="Example:&#10;TestBool:Bool=true&#10;TestInt:Int=123&#10;TestReal:Real=3.14&#10;TestString:String=Hello PLC"
-                      className="w-full h-32 px-3 py-2 bg-gray-800 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      placeholder={"Example:\nTestTag:Bool=true\nTestBool:Bool=false\nTestInt:Dint=999\nTestReal:Real=88.8\nTestString:String=Hello PLC"}
+                      className="w-full h-32 px-3 py-2 bg-white text-black rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                     />
                   </div>
                 </div>
@@ -384,7 +388,7 @@ export default function Page() {
                     Batch Write
                   </button>
                 </div>
-                <div className="mb-2 text-sm">Batch Read Result: <span className="font-mono text-base">{batchReadResult ? JSON.stringify(batchReadResult) : "-"}</span></div>
+                <div className="mt-2 text-sm">Batch Read Result: <span className="font-mono text-base">{batchReadResult ? JSON.stringify(batchReadResult, null, 2) : '-'}</span></div>
                 <div className="mb-2 text-sm">Batch Write Result: <span className="font-mono text-base">{batchWriteResult ? JSON.stringify(batchWriteResult) : "-"}</span></div>
               </div>
             )}
@@ -435,6 +439,9 @@ export default function Page() {
                   </button>
                 </div>
                 <div className="mb-2 text-sm">Benchmark Results: <span className="font-mono text-base">{benchmarkResults ? JSON.stringify(benchmarkResults) : "-"}</span></div>
+                {benchmarkResults && (
+                  <div className="text-sm mt-1">Read: {benchmarkResults.readRate?.toFixed(0)} ops/sec, Write: {benchmarkResults.writeRate?.toFixed(0)} ops/sec</div>
+                )}
               </div>
             )}
             {activeTab === "Config" && (
