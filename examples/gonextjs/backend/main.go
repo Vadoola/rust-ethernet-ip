@@ -494,7 +494,10 @@ func handleBenchmark(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	duration := 3 * time.Second
 	end := start.Add(duration)
-	var lastVal int32 = 0
+	var lastInt int32 = 0
+	var lastFloat float64 = 0.0
+	var lastBool bool = false
+	var lastString string = "A"
 	for time.Now().Before(end) {
 		_, err := client.ReadValue(req.Tag, typeVal)
 		if err == nil {
@@ -503,8 +506,32 @@ func handleBenchmark(w http.ResponseWriter, r *http.Request) {
 			log.Printf("[BENCHMARK] Read error: %v", err)
 		}
 		if req.Write {
-			lastVal++
-			plcVal := &gowrapper.PlcValue{Type: typeVal, Value: lastVal}
+			var writeVal interface{}
+			switch req.Type {
+			case "Bool":
+				lastBool = !lastBool
+				writeVal = lastBool
+			case "Int":
+				lastInt++
+				writeVal = int16(lastInt)
+			case "Dint":
+				lastInt++
+				writeVal = int32(lastInt)
+			case "Real":
+				lastFloat += 1.1
+				writeVal = lastFloat
+			case "String":
+				if lastString == "A" {
+					lastString = "B"
+				} else {
+					lastString = "A"
+				}
+				writeVal = lastString
+			default:
+				lastInt++
+				writeVal = lastInt
+			}
+			plcVal := &gowrapper.PlcValue{Type: typeVal, Value: writeVal}
 			err := client.WriteValue(req.Tag, plcVal)
 			if err == nil {
 				writeCount++

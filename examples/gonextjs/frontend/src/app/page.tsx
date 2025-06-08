@@ -347,23 +347,23 @@ export default function Page() {
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-1">
-                      Tags (one per line, format: TagName:Type)
+                      Tags (one per line, format: TagName:Type, e.g. TestBool:Bool)
                     </label>
                     <textarea
                       value={batchTags}
                       onChange={(e) => setBatchTags(e.target.value)}
-                      placeholder="Example:&#10;Tag1:Int&#10;Tag2:Real"
+                      placeholder="Example:&#10;TestBool:Bool&#10;TestInt:Int&#10;TestReal:Real&#10;TestString:String"
                       className="w-full h-32 px-3 py-2 bg-gray-800 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                     />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-1">
-                      Tag Values (one per line, format: TagName:Type=Value)
+                      Tag Values (one per line, format: TagName:Type=Value, e.g. TestBool:Bool=true)
                     </label>
                     <textarea
                       value={batchWriteData}
                       onChange={(e) => setBatchWriteData(e.target.value)}
-                      placeholder="Example:&#10;Tag1:Int=42&#10;Tag2:Real=3.14"
+                      placeholder="Example:&#10;TestBool:Bool=true&#10;TestInt:Int=123&#10;TestReal:Real=3.14&#10;TestString:String=Hello PLC"
                       className="w-full h-32 px-3 py-2 bg-gray-800 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                     />
                   </div>
