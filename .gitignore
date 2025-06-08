@@ -31,6 +31,9 @@ Thumbs.db
 # Project specific
 rust_enip_driver.dll
 
+# Next.js build output
+.next
+
 # Node.js
 node_modules/
 npm-debug.log*
