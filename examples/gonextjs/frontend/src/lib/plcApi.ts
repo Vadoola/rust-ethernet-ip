@@ -23,7 +23,7 @@ export async function readTag(tag: string, type: string): Promise<PlcTagValue> {
   const res = await fetch(`/api/tag?tag=${encodeURIComponent(tag)}&type=${encodeURIComponent(type)}`);
   if (!res.ok) throw new Error(await res.text());
   const data = await res.json();
-  return data.value;
+  return data;
 }
 
 export async function writeTag(tag: string, value: any, type: string): Promise<boolean> {
