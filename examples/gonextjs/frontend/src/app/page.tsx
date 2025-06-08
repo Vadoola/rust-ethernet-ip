@@ -253,36 +253,38 @@ export default function Page() {
             {activeTab === "Individual" && (
               <div>
                 <h2 className="font-bold text-lg mb-4 flex items-center gap-2"><span role="img" aria-label="individual">📊</span> Individual Tag Operations</h2>
-                <div className="flex flex-col sm:flex-row gap-2 mb-4 items-center">
-                  <input
-                    className="border rounded-lg px-3 py-2 flex-1 focus:ring-2 focus:ring-purple-400 outline-none"
-                    value={tagName}
-                    onChange={(e) => setTagName(e.target.value)}
-                    placeholder="Enter tag name"
-                  />
-                  <button
-                    className="bg-blue-200 hover:bg-blue-300 text-blue-900 px-3 py-2 rounded-lg font-semibold disabled:opacity-50 transition"
-                    onClick={handleDiscoverTag}
-                    disabled={!tagName || isDiscovering}
-                  >
-                    {isDiscovering ? "Discovering..." : "Discover Tag"}
-                  </button>
-                  <select
-                    className="border rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-400 outline-none"
-                    value={tagType}
-                    onChange={(e) => setTagType(e.target.value)}
-                  >
-                    {PLC_TYPES.map((type) => (
-                      <option key={type.value} value={type.value}>{type.label}</option>
-                    ))}
-                  </select>
-                  <input
-                    className="border rounded-lg px-3 py-2 flex-1 focus:ring-2 focus:ring-purple-400 outline-none"
-                    value={tagValue}
-                    onChange={(e) => setTagValue(e.target.value)}
-                    placeholder="Value"
-                  />
-                  <div className="flex gap-2">
+                <div className="flex flex-col gap-2 mb-4">
+                  <div className="flex flex-col sm:flex-row gap-2 items-center">
+                    <input
+                      className="border rounded-lg px-3 py-2 flex-1 focus:ring-2 focus:ring-purple-400 outline-none"
+                      value={tagName}
+                      onChange={(e) => setTagName(e.target.value)}
+                      placeholder="Enter tag name"
+                    />
+                    <button
+                      className="bg-blue-200 hover:bg-blue-300 text-blue-900 px-3 py-2 rounded-lg font-semibold disabled:opacity-50 transition"
+                      onClick={handleDiscoverTag}
+                      disabled={!tagName || isDiscovering}
+                    >
+                      {isDiscovering ? "Discovering..." : "Discover Tag"}
+                    </button>
+                    <select
+                      className="border rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-400 outline-none"
+                      value={tagType}
+                      onChange={(e) => setTagType(e.target.value)}
+                    >
+                      {PLC_TYPES.map((type) => (
+                        <option key={type.value} value={type.value}>{type.label}</option>
+                      ))}
+                    </select>
+                    <input
+                      className="border rounded-lg px-3 py-2 flex-1 focus:ring-2 focus:ring-purple-400 outline-none"
+                      value={tagValue}
+                      onChange={(e) => setTagValue(e.target.value)}
+                      placeholder="Value"
+                    />
+                  </div>
+                  <div className="flex flex-row gap-2 justify-end">
                     <button
                       className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold disabled:opacity-50 transition"
                       onClick={handleReadTag}
