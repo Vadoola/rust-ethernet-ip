@@ -72,6 +72,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 	"unsafe"
@@ -106,11 +107,60 @@ type TagMetadata struct {
 
 // BatchConfig represents configuration for batch operations
 type BatchConfig struct {
-	MaxOperationsPerPacket int   `json:"max_operations_per_packet"`
-	MaxPacketSize          int   `json:"max_packet_size"`
-	PacketTimeoutMs        int64 `json:"packet_timeout_ms"`
-	ContinueOnError        bool  `json:"continue_on_error"`
-	OptimizePacketPacking  bool  `json:"optimize_packet_packing"`
+	MaxOperationsPerPacket int           `json:"max_operations_per_packet"`
+	MaxPacketSize          int           `json:"max_packet_size"`
+	PacketTimeoutMs        int64         `json:"packet_timeout_ms"`
+	ContinueOnError        bool          `json:"continue_on_error"`
+	OptimizePacketPacking  bool          `json:"optimize_packet_packing"`
+	RetryCount             int           `json:"retry_count"`
+	RetryDelay             time.Duration `json:"retry_delay"`
+	MaxConcurrentOps       int           `json:"max_concurrent_ops"`
+	OperationTimeout       time.Duration `json:"operation_timeout"`
+}
+
+// DefaultBatchConfig returns a default batch configuration
+func DefaultBatchConfig() *BatchConfig {
+	return &BatchConfig{
+		MaxOperationsPerPacket: 20,
+		MaxPacketSize:          504,
+		PacketTimeoutMs:        3000,
+		ContinueOnError:        true,
+		OptimizePacketPacking:  true,
+		RetryCount:             3,
+		RetryDelay:             time.Second,
+		MaxConcurrentOps:       10,
+		OperationTimeout:       5 * time.Second,
+	}
+}
+
+// HighPerformanceBatchConfig returns a batch configuration optimized for performance
+func HighPerformanceBatchConfig() *BatchConfig {
+	return &BatchConfig{
+		MaxOperationsPerPacket: 50,
+		MaxPacketSize:          1000,
+		PacketTimeoutMs:        1000,
+		ContinueOnError:        true,
+		OptimizePacketPacking:  true,
+		RetryCount:             2,
+		RetryDelay:             500 * time.Millisecond,
+		MaxConcurrentOps:       20,
+		OperationTimeout:       2 * time.Second,
+	}
+}
+
+// ConservativeBatchConfig returns a batch configuration optimized for reliability
+func ConservativeBatchConfig() *BatchConfig {
+	return &BatchConfig{
+		MaxOperationsPerPacket: 10,
+		MaxPacketSize:          252,
+		PacketTimeoutMs:        5000,
+		ContinueOnError:        false,
+		OptimizePacketPacking:  false,
+		RetryCount:             5,
+		RetryDelay:             2 * time.Second,
+		MaxConcurrentOps:       5,
+		OperationTimeout:       10 * time.Second,
+	}
 }
 
 // BatchOperation represents a single operation in a batch
@@ -167,49 +217,206 @@ type EipClient struct {
 	// Tag metadata cache
 	tagCache   map[string]*TagMetadata
 	tagCacheMu sync.RWMutex
+
+	// Keep-alive mechanism
+	keepAliveStop chan struct{}
+	keepAliveWg   sync.WaitGroup
 }
 
 // EipError represents errors from the EtherNet/IP library
 type EipError struct {
-	Code    int
-	Message string
+	Code    int                    `json:"code"`
+	Message string                 `json:"message"`
+	Details map[string]interface{} `json:"details,omitempty"`
+	Time    time.Time              `json:"time"`
 }
 
+// Error code constants
+const (
+	ErrConnectionFailed = iota + 1
+	ErrTagNotFound
+	ErrInvalidDataType
+	ErrTimeout
+	ErrBatchOperationFailed
+	ErrInvalidOperation
+	ErrInvalidValue
+	ErrInvalidTagName
+	ErrInvalidTagType
+	ErrInvalidTagValue
+	ErrInvalidTagAddress
+	ErrInvalidTagLength
+	ErrInvalidTagOffset
+	ErrInvalidTagDimension
+	ErrInvalidTagScope
+	ErrInvalidTagAccess
+	ErrInvalidTagStatus
+	ErrInvalidTagQuality
+	ErrInvalidTagTimestamp
+	ErrInvalidTagMetadata
+	ErrInvalidTagSubscription
+	ErrInvalidTagBatch
+	ErrInvalidTagConfig
+	ErrInvalidTagHealth
+	ErrInvalidTagKeepAlive
+	ErrInvalidTagRetry
+	ErrInvalidTagTimeout
+	ErrInvalidTagInterval
+	ErrInvalidTagCondition
+	ErrInvalidTagPeriod
+	ErrInvalidTagParallel
+)
+
 func (e *EipError) Error() string {
-	return fmt.Sprintf("EIP Error %d: %s", e.Code, e.Message)
+	details, _ := json.Marshal(e.Details)
+	return fmt.Sprintf("EIP Error %d: %s (Details: %s) at %s", e.Code, e.Message, string(details), e.Time.Format(time.RFC3339))
+}
+
+// NewEipError creates a new EipError with the given code and message
+func NewEipError(code int, message string) *EipError {
+	return &EipError{
+		Code:    code,
+		Message: message,
+		Time:    time.Now(),
+	}
+}
+
+// NewEipErrorWithDetails creates a new EipError with additional details
+func NewEipErrorWithDetails(code int, message string, details map[string]interface{}) *EipError {
+	return &EipError{
+		Code:    code,
+		Message: message,
+		Details: details,
+		Time:    time.Now(),
+	}
+}
+
+// IsConnectionError returns true if the error is related to connection issues
+func (e *EipError) IsConnectionError() bool {
+	return e.Code == ErrConnectionFailed
+}
+
+// IsTagError returns true if the error is related to tag operations
+func (e *EipError) IsTagError() bool {
+	return e.Code >= ErrTagNotFound && e.Code <= ErrInvalidTagParallel
+}
+
+// IsTimeoutError returns true if the error is a timeout
+func (e *EipError) IsTimeoutError() bool {
+	return e.Code == ErrTimeout
+}
+
+// IsBatchError returns true if the error is related to batch operations
+func (e *EipError) IsBatchError() bool {
+	return e.Code == ErrBatchOperationFailed
+}
+
+// IsValidationError returns true if the error is related to validation
+func (e *EipError) IsValidationError() bool {
+	return e.Code >= ErrInvalidOperation && e.Code <= ErrInvalidTagParallel
 }
 
 // NewClient creates a new EtherNet/IP client connection
 func NewClient(ipAddress string) (*EipClient, error) {
+	log.Printf("🔌 [DEBUG] Attempting to connect to PLC at %s", ipAddress)
+
+	// Validate IP address format
+	if ipAddress == "" {
+		return nil, NewEipError(ErrInvalidOperation, "IP address cannot be empty")
+	}
+
+	// Convert IP address to C string
 	cIPAddress := C.CString(ipAddress)
 	defer C.free(unsafe.Pointer(cIPAddress))
 
-	clientID := int(C.eip_connect(cIPAddress))
+	// Call the Rust library to connect
+	clientID := C.eip_connect(cIPAddress)
 	if clientID < 0 {
-		return nil, &EipError{
-			Code:    int(clientID),
-			Message: fmt.Sprintf("Failed to connect to PLC at %s", ipAddress),
-		}
+		log.Printf("❌ [DEBUG] Failed to connect to PLC at %s", ipAddress)
+		return nil, NewEipErrorWithDetails(ErrConnectionFailed,
+			fmt.Sprintf("Failed to connect to PLC at %s", ipAddress),
+			map[string]interface{}{
+				"ip_address": ipAddress,
+				"error_code": int(clientID),
+			})
 	}
 
-	return &EipClient{
-		clientID:      clientID,
+	log.Printf("✅ [DEBUG] Successfully connected to PLC at %s with client ID %d", ipAddress, clientID)
+
+	// Create and initialize the client
+	client := &EipClient{
+		clientID:      int(clientID),
 		ipAddr:        ipAddress,
 		subscriptions: make(map[string]chan struct{}),
 		tagCache:      make(map[string]*TagMetadata),
-	}, nil
+		keepAliveStop: make(chan struct{}),
+	}
+
+	// Set default max packet size
+	if err := client.SetMaxPacketSize(4000); err != nil {
+		log.Printf("⚠️ [DEBUG] Failed to set max packet size: %v", err)
+	}
+
+	// Start keep-alive mechanism
+	client.startKeepAlive(30 * time.Second)
+
+	return client, nil
 }
 
 // Close disconnects from the PLC
 func (c *EipClient) Close() error {
+	// Stop keep-alive mechanism
+	c.stopKeepAlive()
+
 	result := int(C.eip_disconnect(C.int(c.clientID)))
 	if result != 0 {
-		return &EipError{
-			Code:    result,
-			Message: "Failed to disconnect from PLC",
-		}
+		return NewEipErrorWithDetails(ErrConnectionFailed,
+			"Failed to disconnect from PLC",
+			map[string]interface{}{
+				"client_id":  c.clientID,
+				"error_code": result,
+			})
 	}
 	return nil
+}
+
+// startKeepAlive starts the keep-alive mechanism
+func (c *EipClient) startKeepAlive(interval time.Duration) {
+	c.keepAliveWg.Add(1)
+	go func() {
+		defer c.keepAliveWg.Done()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				if healthy, _ := c.CheckHealth(); !healthy {
+					// Attempt to reconnect
+					c.Close()
+					if newClient, err := NewClient(c.ipAddr); err == nil {
+						*c = *newClient
+					}
+				}
+			case <-c.keepAliveStop:
+				return
+			}
+		}
+	}()
+}
+
+// stopKeepAlive stops the keep-alive mechanism
+func (c *EipClient) stopKeepAlive() {
+	if c.keepAliveStop != nil {
+		close(c.keepAliveStop)
+		c.keepAliveWg.Wait()
+	}
+}
+
+// SetKeepAliveInterval sets the keep-alive interval
+func (c *EipClient) SetKeepAliveInterval(interval time.Duration) {
+	c.stopKeepAlive()
+	c.keepAliveStop = make(chan struct{})
+	c.startKeepAlive(interval)
 }
 
 // GetClientID returns the internal client ID
@@ -224,41 +431,71 @@ func (c *EipClient) GetIPAddress() string {
 
 // ReadBool reads a boolean value from the PLC
 func (c *EipClient) ReadBool(tagName string) (bool, error) {
+	log.Printf("📥 [DEBUG] Reading boolean from tag '%s'", tagName)
+
+	// Validate tag name
+	if tagName == "" {
+		return false, NewEipError(ErrInvalidTagName, "Tag name cannot be empty")
+	}
+
+	// Convert tag name to C string
 	cTagName := C.CString(tagName)
 	defer C.free(unsafe.Pointer(cTagName))
 
+	// Call the Rust library to read the boolean value
 	var result C.int
 	retCode := int(C.eip_read_bool(C.int(c.clientID), cTagName, &result))
 	if retCode != 0 {
-		return false, &EipError{
-			Code:    retCode,
-			Message: fmt.Sprintf("Failed to read boolean tag %s", tagName),
-		}
+		log.Printf("❌ [DEBUG] Failed to read boolean from tag '%s': error code %d", tagName, retCode)
+		return false, NewEipErrorWithDetails(ErrTagNotFound,
+			fmt.Sprintf("Failed to read boolean tag '%s'", tagName),
+			map[string]interface{}{
+				"tag_name":   tagName,
+				"data_type":  "BOOL",
+				"error_code": retCode,
+				"client_id":  c.clientID,
+			})
 	}
 
+	log.Printf("✅ [DEBUG] Successfully read boolean from tag '%s': %v", tagName, result != 0)
 	return result != 0, nil
 }
 
 // WriteBool writes a boolean value to the PLC
 func (c *EipClient) WriteBool(tagName string, value bool) error {
+	log.Printf("📤 [DEBUG] Writing boolean %v to tag '%s'", value, tagName)
+
+	// Validate tag name
+	if tagName == "" {
+		return NewEipError(ErrInvalidTagName, "Tag name cannot be empty")
+	}
+
+	// Convert tag name to C string
 	cTagName := C.CString(tagName)
 	defer C.free(unsafe.Pointer(cTagName))
 
+	// Convert boolean to C int
 	var cValue C.int
 	if value {
 		cValue = 1
-	} else {
-		cValue = 0
 	}
 
+	// Call the Rust library to write the boolean value
 	retCode := int(C.eip_write_bool(C.int(c.clientID), cTagName, cValue))
 	if retCode != 0 {
-		return &EipError{
-			Code:    retCode,
-			Message: fmt.Sprintf("Failed to write boolean tag %s", tagName),
-		}
+		log.Printf("❌ [DEBUG] Failed to write boolean to tag '%s': error code %d", tagName, retCode)
+		return NewEipErrorWithDetails(ErrTagNotFound,
+			fmt.Sprintf("Failed to write boolean tag '%s'", tagName),
+			map[string]interface{}{
+				"tag_name":   tagName,
+				"data_type":  "BOOL",
+				"value":      value,
+				"error_code": retCode,
+				"client_id":  c.clientID,
+			})
 	}
 
+	log.Printf("✅ [DEBUG] Successfully wrote boolean to tag '%s'", tagName)
 	return nil
 }
 
@@ -948,14 +1185,228 @@ func (c *EipClient) ClearTagCache() {
 
 // Helper: Connect with retry
 func ConnectWithRetry(ipAddress string, maxRetries int, delay time.Duration) (*EipClient, error) {
-	var lastErr error
+	log.Printf("Attempting to connect to PLC at %s with retry logic", ipAddress)
+	var client *EipClient
+	var err error
 	for i := 0; i < maxRetries; i++ {
-		client, err := NewClient(ipAddress)
+		client, err = NewClient(ipAddress)
 		if err == nil {
+			log.Printf("Successfully connected to PLC at %s after %d retries", ipAddress, i)
 			return client, nil
 		}
-		lastErr = err
+		log.Printf("Retry %d: Failed to connect to PLC at %s", i+1, ipAddress)
 		time.Sleep(delay)
 	}
-	return nil, lastErr
+	log.Printf("Failed to connect to PLC at %s after %d retries", ipAddress, maxRetries)
+	return nil, err
+}
+
+// BatchReadWithRetry performs a batch read operation with retries
+func (c *EipClient) BatchReadWithRetry(tagNames []string, retries int) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	var err error
+
+	for i := 0; i < retries; i++ {
+		result, err = c.BatchRead(tagNames)
+		if err == nil {
+			return result, nil
+		}
+		time.Sleep(time.Second * time.Duration(i+1))
+	}
+	return nil, err
+}
+
+// BatchWriteWithRetry performs a batch write operation with retries
+func (c *EipClient) BatchWriteWithRetry(tagValues map[string]interface{}, retries int) error {
+	var err error
+
+	for i := 0; i < retries; i++ {
+		err = c.BatchWrite(tagValues)
+		if err == nil {
+			return nil
+		}
+		time.Sleep(time.Second * time.Duration(i+1))
+	}
+	return err
+}
+
+// ExecuteBatchWithRetry executes a batch of operations with retries
+func (c *EipClient) ExecuteBatchWithRetry(operations []BatchOperation, retries int) ([]BatchOperationResult, error) {
+	var results []BatchOperationResult
+	var err error
+
+	for i := 0; i < retries; i++ {
+		results, err = c.ExecuteBatch(operations)
+		if err == nil {
+			return results, nil
+		}
+		time.Sleep(time.Second * time.Duration(i+1))
+	}
+	return nil, err
+}
+
+// ReadTagWithRetry reads a tag value with retries
+func (c *EipClient) ReadTagWithRetry(tagName string, dataType PlcDataType, retries int) (*PlcValue, error) {
+	var result *PlcValue
+	var err error
+
+	for i := 0; i < retries; i++ {
+		result, err = c.ReadValue(tagName, dataType)
+		if err == nil {
+			return result, nil
+		}
+		time.Sleep(time.Second * time.Duration(i+1))
+	}
+	return nil, err
+}
+
+// WriteTagWithRetry writes a tag value with retries
+func (c *EipClient) WriteTagWithRetry(tagName string, value *PlcValue, retries int) error {
+	var err error
+
+	for i := 0; i < retries; i++ {
+		err = c.WriteValue(tagName, value)
+		if err == nil {
+			return nil
+		}
+		time.Sleep(time.Second * time.Duration(i+1))
+	}
+	return err
+}
+
+// WaitForTagValue waits for a tag to reach a specific value
+func (c *EipClient) WaitForTagValue(tagName string, dataType PlcDataType, expectedValue interface{}, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		value, err := c.ReadValue(tagName, dataType)
+		if err == nil && value.Value == expectedValue {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return NewEipErrorWithDetails(ErrTimeout,
+		fmt.Sprintf("Timeout waiting for tag %s to reach value %v", tagName, expectedValue),
+		map[string]interface{}{
+			"tag_name":       tagName,
+			"data_type":      dataType,
+			"expected_value": expectedValue,
+			"timeout":        timeout,
+		})
+}
+
+// WaitForTagCondition waits for a tag to satisfy a condition
+func (c *EipClient) WaitForTagCondition(tagName string, dataType PlcDataType, condition func(interface{}) bool, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		value, err := c.ReadValue(tagName, dataType)
+		if err == nil && condition(value.Value) {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return NewEipErrorWithDetails(ErrTimeout,
+		fmt.Sprintf("Timeout waiting for tag %s to satisfy condition", tagName),
+		map[string]interface{}{
+			"tag_name":  tagName,
+			"data_type": dataType,
+			"timeout":   timeout,
+		})
+}
+
+// ReadTagPeriodically reads a tag value periodically and sends updates to a channel
+func (c *EipClient) ReadTagPeriodically(tagName string, dataType PlcDataType, interval time.Duration) (<-chan *PlcValue, <-chan error) {
+	valueChan := make(chan *PlcValue)
+	errChan := make(chan error)
+
+	go func() {
+		defer close(valueChan)
+		defer close(errChan)
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				value, err := c.ReadValue(tagName, dataType)
+				if err != nil {
+					errChan <- err
+					return
+				}
+				valueChan <- value
+			}
+		}
+	}()
+
+	return valueChan, errChan
+}
+
+// ReadMultipleTags reads multiple tags in parallel
+func (c *EipClient) ReadMultipleTags(tags map[string]PlcDataType) (map[string]*PlcValue, error) {
+	type result struct {
+		tagName string
+		value   *PlcValue
+		err     error
+	}
+
+	resultChan := make(chan result, len(tags))
+
+	for tagName, dataType := range tags {
+		go func(name string, dt PlcDataType) {
+			value, err := c.ReadValue(name, dt)
+			resultChan <- result{
+				tagName: name,
+				value:   value,
+				err:     err,
+			}
+		}(tagName, dataType)
+	}
+
+	results := make(map[string]*PlcValue)
+	var lastErr error
+
+	for i := 0; i < len(tags); i++ {
+		r := <-resultChan
+		if r.err != nil {
+			lastErr = r.err
+		} else {
+			results[r.tagName] = r.value
+		}
+	}
+
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return results, nil
+}
+
+// Add debug logging to verify library loading
+func init() {
+	log.Printf("Loading Rust EtherNet/IP library...")
+	// Add library path verification
+}
+
+// Add debug logging throughout the code
+func (c *EipClient) Connect(ipAddress string) error {
+	log.Printf("Connecting to PLC at %s...", ipAddress)
+	// Add connection steps logging
+	return nil
+}
+
+// Add tag path validation
+func validateTagPath(tagName string) error {
+	if tagName == "" {
+		return NewEipError(ErrInvalidTagName, "Tag name cannot be empty")
+	}
+	// Add more validation as needed
+	return nil
+}
+
+// Add session management verification
+func (c *EipClient) verifySession() error {
+	if c.clientID < 0 {
+		return NewEipError(ErrConnectionFailed, "No active session")
+	}
+	// Add session health check
+	return nil
 }

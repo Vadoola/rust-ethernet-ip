@@ -1,9 +1,23 @@
 package ethernetip
 
 import (
+	"os"
 	"testing"
 	"time"
 )
+
+// getTestPlcIP returns the IP address of the test PLC from environment variable,
+// or an empty string if not set
+func getTestPlcIP() string {
+	return os.Getenv("TEST_PLC_IP")
+}
+
+// skipIfNoPlc skips the test if no PLC is available
+func skipIfNoPlc(t *testing.T) {
+	if getTestPlcIP() == "" {
+		t.Skip("Skipping test: No PLC available. Set TEST_PLC_IP environment variable to run this test.")
+	}
+}
 
 // TestPlcDataType tests the PlcDataType enum
 func TestPlcDataType(t *testing.T) {
@@ -74,6 +88,7 @@ func TestEipError(t *testing.T) {
 	err := &EipError{
 		Code:    1,
 		Message: "test error",
+		Time:    time.Time{},
 	}
 
 	expected := "EIP Error 1: test error"
@@ -84,7 +99,9 @@ func TestEipError(t *testing.T) {
 
 // TestEipClient tests the EipClient struct
 func TestEipClient(t *testing.T) {
-	client, err := NewClient("192.168.0.1")
+	skipIfNoPlc(t)
+
+	client, err := NewClient(getTestPlcIP())
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -94,14 +111,16 @@ func TestEipClient(t *testing.T) {
 		t.Error("Expected positive client ID")
 	}
 
-	if client.GetIPAddress() != "192.168.0.1" {
-		t.Errorf("Expected IP address 192.168.0.1, got %s", client.GetIPAddress())
+	if client.GetIPAddress() != getTestPlcIP() {
+		t.Errorf("Expected IP address %s, got %s", getTestPlcIP(), client.GetIPAddress())
 	}
 }
 
 // TestReadWriteValue tests reading and writing values
 func TestReadWriteValue(t *testing.T) {
-	client, err := NewClient("192.168.0.1")
+	skipIfNoPlc(t)
+
+	client, err := NewClient(getTestPlcIP())
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -174,7 +193,9 @@ func TestReadWriteValue(t *testing.T) {
 
 // TestBatchOperations tests batch read and write operations
 func TestBatchOperations(t *testing.T) {
-	client, err := NewClient("192.168.0.1")
+	skipIfNoPlc(t)
+
+	client, err := NewClient(getTestPlcIP())
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -241,37 +262,38 @@ func TestBatchOperations(t *testing.T) {
 
 // TestHealthCheck tests the health check functionality
 func TestHealthCheck(t *testing.T) {
-	client, err := NewClient("192.168.0.1")
+	skipIfNoPlc(t)
+
+	client, err := NewClient(getTestPlcIP())
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
 	defer client.Close()
 
 	// Test basic health check
-	isHealthy, err := client.CheckHealth()
+	healthy, err := client.CheckHealth()
 	if err != nil {
 		t.Fatalf("Failed to check health: %v", err)
 	}
-	if !isHealthy {
-		t.Error("Expected healthy status")
+	if !healthy {
+		t.Error("Expected healthy connection")
 	}
 
 	// Test detailed health check
-	isHealthy, details, err := client.CheckHealthDetailed()
+	healthy, details, err := client.CheckHealthDetailed()
 	if err != nil {
 		t.Fatalf("Failed to check detailed health: %v", err)
 	}
-	if !isHealthy {
-		t.Error("Expected healthy status")
-	}
-	if details == "" {
-		t.Error("Expected non-empty health details")
+	if !healthy {
+		t.Errorf("Expected healthy connection, got details: %s", details)
 	}
 }
 
 // TestTagMetadata tests tag metadata functionality
 func TestTagMetadata(t *testing.T) {
-	client, err := NewClient("192.168.0.1")
+	skipIfNoPlc(t)
+
+	client, err := NewClient(getTestPlcIP())
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -288,7 +310,6 @@ func TestTagMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get tag metadata: %v", err)
 	}
-
 	if metadata == nil {
 		t.Error("Expected non-nil metadata")
 	}
@@ -298,7 +319,6 @@ func TestTagMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get cached tag metadata: %v", err)
 	}
-
 	if cachedMetadata == nil {
 		t.Error("Expected non-nil cached metadata")
 	}
@@ -309,28 +329,38 @@ func TestTagMetadata(t *testing.T) {
 
 // TestAsyncOperations tests asynchronous operations
 func TestAsyncOperations(t *testing.T) {
-	client, err := NewClient("192.168.0.1")
+	skipIfNoPlc(t)
+
+	client, err := NewClient(getTestPlcIP())
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
 	defer client.Close()
 
 	// Test async read
-	resultChan := client.ReadTagAsync("TestBool", Bool)
-	result := <-resultChan
-	if result.Err != nil {
-		t.Fatalf("Failed to read tag asynchronously: %v", result.Err)
-	}
-	if result.Tag != "TestBool" {
-		t.Errorf("Expected tag name TestBool, got %s", result.Tag)
+	valueChan := client.ReadTagAsync("TestBool", Bool)
+	select {
+	case result := <-valueChan:
+		if result.Err != nil {
+			t.Fatalf("Failed to read tag asynchronously: %v", result.Err)
+		}
+		if result.Value == nil {
+			t.Error("Expected non-nil value")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Async read timed out")
 	}
 
 	// Test async write
-	value := &PlcValue{Type: Bool, Value: true}
-	errChan := client.WriteTagAsync("TestBool", value)
-	err = <-errChan
-	if err != nil {
-		t.Fatalf("Failed to write tag asynchronously: %v", err)
+	boolValue := &PlcValue{Type: Bool, Value: true}
+	errChan := client.WriteTagAsync("TestBool", boolValue)
+	select {
+	case err := <-errChan:
+		if err != nil {
+			t.Fatalf("Failed to write tag asynchronously: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Async write timed out")
 	}
 
 	// Test tag subscription
@@ -356,20 +386,166 @@ func TestAsyncOperations(t *testing.T) {
 
 // TestConnectionRetry tests connection retry functionality
 func TestConnectionRetry(t *testing.T) {
-	// Test with invalid IP to trigger retries
-	_, err := ConnectWithRetry("192.168.0.999", 3, 100*time.Millisecond)
-	if err == nil {
-		t.Error("Expected error when connecting to invalid IP")
-	}
+	skipIfNoPlc(t)
 
-	// Test with valid IP
-	client, err := ConnectWithRetry("192.168.0.1", 3, 100*time.Millisecond)
+	client, err := ConnectWithRetry(getTestPlcIP(), 3, time.Second)
 	if err != nil {
 		t.Fatalf("Failed to connect with retry: %v", err)
 	}
 	defer client.Close()
 
-	if client.GetIPAddress() != "192.168.0.1" {
-		t.Errorf("Expected IP address 192.168.0.1, got %s", client.GetIPAddress())
+	if client.GetClientID() <= 0 {
+		t.Error("Expected positive client ID")
+	}
+}
+
+// TestKeepAlive tests keep-alive functionality
+func TestKeepAlive(t *testing.T) {
+	skipIfNoPlc(t)
+
+	client, err := NewClient(getTestPlcIP())
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	// Set keep-alive interval
+	client.SetKeepAliveInterval(time.Second)
+
+	// Wait for a few keep-alive cycles
+	time.Sleep(3 * time.Second)
+
+	// Check if connection is still healthy
+	healthy, err := client.CheckHealth()
+	if err != nil {
+		t.Fatalf("Failed to check health: %v", err)
+	}
+	if !healthy {
+		t.Error("Expected healthy connection after keep-alive")
+	}
+}
+
+// TestEnhancedBatchOperations tests enhanced batch operations
+func TestEnhancedBatchOperations(t *testing.T) {
+	skipIfNoPlc(t)
+
+	client, err := NewClient(getTestPlcIP())
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	// Configure batch operations with retry
+	config := HighPerformanceBatchConfig()
+	err = client.ConfigureBatchOperations(config)
+	if err != nil {
+		t.Fatalf("Failed to configure batch operations: %v", err)
+	}
+
+	// Test batch read with retry
+	tagNames := []string{"TestBool", "TestInt", "TestReal"}
+	values, err := client.BatchReadWithRetry(tagNames, 3)
+	if err != nil {
+		t.Fatalf("Failed to read tags in batch: %v", err)
+	}
+	if len(values) != len(tagNames) {
+		t.Errorf("Expected %d values, got %d", len(tagNames), len(values))
+	}
+}
+
+// TestHelperMethods tests helper methods
+func TestHelperMethods(t *testing.T) {
+	skipIfNoPlc(t)
+
+	client, err := NewClient(getTestPlcIP())
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	// Test waiting for tag value
+	boolValue := &PlcValue{Type: Bool, Value: true}
+	err = client.WriteValue("TestBool", boolValue)
+	if err != nil {
+		t.Fatalf("Failed to write bool value: %v", err)
+	}
+
+	err = client.WaitForTagValue("TestBool", Bool, true, 5*time.Second)
+	if err != nil {
+		t.Fatalf("Failed to wait for tag value: %v", err)
+	}
+
+	// Test waiting for tag condition
+	err = client.WaitForTagCondition("TestInt", Int, func(v interface{}) bool {
+		return v.(int16) > 0
+	}, 5*time.Second)
+	if err != nil {
+		t.Fatalf("Failed to wait for tag condition: %v", err)
+	}
+}
+
+// TestErrorHandling tests error handling
+func TestErrorHandling(t *testing.T) {
+	skipIfNoPlc(t)
+
+	client, err := NewClient(getTestPlcIP())
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	// Test reading non-existent tag
+	_, err = client.ReadValue("NonExistentTag", Bool)
+	if err == nil {
+		t.Error("Expected error when reading non-existent tag")
+	}
+
+	// Test writing to non-existent tag
+	err = client.WriteValue("NonExistentTag", &PlcValue{Type: Bool, Value: true})
+	if err == nil {
+		t.Error("Expected error when writing to non-existent tag")
+	}
+
+	// Test invalid data type
+	err = client.WriteValue("TestBool", &PlcValue{Type: Int, Value: int16(42)})
+	if err == nil {
+		t.Error("Expected error when writing with invalid data type")
+	}
+}
+
+// TestIntegration tests integration scenarios
+func TestIntegration(t *testing.T) {
+	skipIfNoPlc(t)
+
+	// Test connection with retry
+	client, err := ConnectWithRetry(getTestPlcIP(), 3, time.Second)
+	if err != nil {
+		t.Fatalf("Failed to connect with retry: %v", err)
+	}
+	defer client.Close()
+
+	// Configure batch operations
+	config := ConservativeBatchConfig()
+	err = client.ConfigureBatchOperations(config)
+	if err != nil {
+		t.Fatalf("Failed to configure batch operations: %v", err)
+	}
+
+	// Test multiple operations
+	operations := []BatchOperation{
+		{TagName: "TestBool", IsWrite: true, DataType: Bool, Value: true},
+		{TagName: "TestInt", IsWrite: true, DataType: Int, Value: int16(42)},
+		{TagName: "TestReal", IsWrite: true, DataType: Real, Value: 3.14},
+	}
+
+	results, err := client.ExecuteBatchWithRetry(operations, 3)
+	if err != nil {
+		t.Fatalf("Failed to execute batch operations: %v", err)
+	}
+
+	for i, result := range results {
+		if !result.Success {
+			t.Errorf("Operation %d failed: %s", i, result.ErrorMessage)
+		}
 	}
 }

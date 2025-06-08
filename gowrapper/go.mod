@@ -1,6 +1,7 @@
-module github.com/sergiogallegos/rust-ethernet-ip-go
+module github.com/sergiogallegos/rust-ethernet-ip/gowrapper
 
-go 1.21
+go 1.23.0
 
-require (
-) 
+toolchain go1.24.3
+
+replace github.com/sergiogallegos/rust-ethernet-ip => ../

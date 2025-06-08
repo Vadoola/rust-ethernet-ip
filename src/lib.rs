@@ -921,6 +921,7 @@ impl EipClient {
     /// - Invalid response format
     /// - PLC rejection (status code non-zero)
     async fn register_session(&mut self) -> crate::error::Result<()> {
+        println!("🔌 [DEBUG] Starting session registration...");
         let packet: [u8; 28] = [
             0x65, 0x00,             // Command: Register Session (0x0065)
             0x04, 0x00,             // Length: 4 bytes
@@ -932,29 +933,49 @@ impl EipClient {
             0x00, 0x00,             // Option Flags: 0
         ];
 
+        println!("📤 [DEBUG] Sending Register Session packet: {:02X?}", packet);
         self.stream.lock().await.write_all(&packet).await
-            .map_err(|e| EtherNetIpError::Io(e))?;
+            .map_err(|e| {
+                println!("❌ [DEBUG] Failed to send Register Session packet: {}", e);
+                EtherNetIpError::Io(e)
+            })?;
 
         let mut buf = [0u8; 1024];
+        println!("⏳ [DEBUG] Waiting for Register Session response...");
         let n = match timeout(Duration::from_secs(5), self.stream.lock().await.read(&mut buf)).await {
-            Ok(Ok(n)) => n,
-            Ok(Err(e)) => return Err(EtherNetIpError::Io(e)),
-            Err(_) => return Err(EtherNetIpError::Timeout(Duration::from_secs(5))),
+            Ok(Ok(n)) => {
+                println!("📥 [DEBUG] Received {} bytes in response", n);
+                n
+            },
+            Ok(Err(e)) => {
+                println!("❌ [DEBUG] Error reading response: {}", e);
+                return Err(EtherNetIpError::Io(e));
+            },
+            Err(_) => {
+                println!("⏰ [DEBUG] Timeout waiting for response");
+                return Err(EtherNetIpError::Timeout(Duration::from_secs(5)));
+            },
         };
 
         if n < 28 {
+            println!("❌ [DEBUG] Response too short: {} bytes (expected 28)", n);
             return Err(EtherNetIpError::Protocol("Response too short".to_string()));
         }
 
         // Extract session handle from response
         self.session_handle = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
+        println!("🔑 [DEBUG] Session handle: 0x{:08X}", self.session_handle);
         
         // Check status
         let status = u32::from_le_bytes([buf[8], buf[9], buf[10], buf[11]]);
+        println!("📊 [DEBUG] Status code: 0x{:08X}", status);
+        
         if status != 0 {
+            println!("❌ [DEBUG] Session registration failed with status: 0x{:08X}", status);
             return Err(EtherNetIpError::Protocol(format!("Session registration failed with status: 0x{:08X}", status)));
         }
 
+        println!("✅ [DEBUG] Session registration successful");
         Ok(())
     }
     
