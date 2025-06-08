@@ -10,7 +10,8 @@ import {
   runBenchmark,
   getPlcStatus,
   createTestTags,
-  discoverTag
+  discoverTag,
+  debugReadTag
 } from "../lib/plcApi";
 import "./globals.css";
 
@@ -52,6 +53,7 @@ export default function Page() {
   const [isReading, setIsReading] = useState(false);
   const [isWriting, setIsWriting] = useState(false);
   const [isDiscovering, setIsDiscovering] = useState(false);
+  const [isDebugReading, setIsDebugReading] = useState(false);
 
   // Batch operations
   const [batchTags, setBatchTags] = useState<string>("TestTag\nTestBool\nTestInt\nTestReal\nTestString");
@@ -145,6 +147,19 @@ export default function Page() {
       addLog("error", `Failed to discover tag type for ${tagName}: ${err.message || err}`);
     } finally {
       setIsDiscovering(false);
+    }
+  };
+  const handleDebugRead = async () => {
+    if (!tagName) return;
+    setIsDebugReading(true);
+    addLog("info", `Debug reading tag: ${tagName} (type: ${tagType})`);
+    try {
+      const result = await debugReadTag(tagName, tagType);
+      addLog("success", `Debug read result: ${JSON.stringify(result)}`);
+    } catch (err: any) {
+      addLog("error", `Debug read failed: ${err.message || err}`);
+    } finally {
+      setIsDebugReading(false);
     }
   };
 
@@ -298,6 +313,13 @@ export default function Page() {
                       disabled={!isConnected || isWriting}
                     >
                       Write
+                    </button>
+                    <button
+                      className="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded-lg font-semibold disabled:opacity-50 transition"
+                      onClick={handleDebugRead}
+                      disabled={!isConnected || isDebugReading}
+                    >
+                      {isDebugReading ? "Debug..." : "Debug Read"}
                     </button>
                   </div>
                 </div>

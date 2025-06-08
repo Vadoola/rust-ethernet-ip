@@ -82,4 +82,9 @@ export async function discoverTag(tag: string): Promise<string> {
   if (!res.ok) throw new Error(await res.text());
   const data = await res.json();
   return data.type as string;
+}
+
+export async function debugReadTag(tag: string, typeStr: string): Promise<any> {
+  const res = await fetch(`/api/test-read?tag=${encodeURIComponent(tag)}&type=${encodeURIComponent(typeStr)}`);
+  return await res.json();
 } 

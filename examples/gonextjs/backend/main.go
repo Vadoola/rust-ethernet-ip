@@ -27,6 +27,8 @@ func main() {
 	r.HandleFunc("/api/tag", handleTag).Methods("GET", "POST")
 	r.HandleFunc("/api/batch", handleBatch).Methods("POST")
 	r.HandleFunc("/api/taginfo", handleTagInfo).Methods("GET")
+	// Debug read endpoint
+	r.HandleFunc("/api/test-read", handleTestRead).Methods("GET")
 
 	// WebSocket endpoint
 	r.HandleFunc("/ws", handleWebSocket)
@@ -306,4 +308,46 @@ func plcDataTypeToString(dt int) string {
 	default:
 		return "Unknown"
 	}
+}
+
+// Debug read handler
+func handleTestRead(w http.ResponseWriter, r *http.Request) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if client == nil {
+		http.Error(w, "Not connected", http.StatusBadRequest)
+		return
+	}
+	tag := r.URL.Query().Get("tag")
+	typeStr := r.URL.Query().Get("type")
+	if tag == "" || typeStr == "" {
+		http.Error(w, "Tag and type required", http.StatusBadRequest)
+		return
+	}
+	log.Printf("[DEBUG] /api/test-read: tag=%s, type=%s", tag, typeStr)
+	typeVal, err := parsePlcDataType(typeStr)
+	if err != nil {
+		log.Printf("[ERROR] /api/test-read: parsePlcDataType failed: %v", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	val, err := client.ReadValue(tag, typeVal)
+	if err != nil {
+		log.Printf("[ERROR] /api/test-read: ReadValue failed: %v", err)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"tag":   tag,
+			"type":  typeStr,
+			"error": err.Error(),
+			"value": nil,
+		})
+		return
+	}
+	log.Printf("[DEBUG] /api/test-read: ReadValue success: %+v", val)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"tag":   tag,
+		"type":  typeStr,
+		"error": nil,
+		"value": val.Value,
+	})
 }
