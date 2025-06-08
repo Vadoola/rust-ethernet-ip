@@ -127,8 +127,15 @@ export default function Page() {
     setIsWriting(true);
     addLog("info", `Writing tag: ${tagName} = ${tagValue} (type: ${tagType})`);
     try {
-      await writeTag(tagName, tagValue, tagType);
-      addLog("success", `Wrote tag ${tagName}: ${tagValue}`);
+      let valueToSend: any = tagValue;
+      if (["Dint", "Int", "Real"].includes(tagType)) {
+        valueToSend = Number(tagValue);
+        if (isNaN(valueToSend)) throw new Error("Invalid number value");
+      } else if (tagType === "Bool") {
+        valueToSend = tagValue === "true" || tagValue === true;
+      }
+      await writeTag(tagName, valueToSend, tagType);
+      addLog("success", `Wrote tag ${tagName}: ${valueToSend}`);
     } catch (err: any) {
       addLog("error", `Failed to write tag ${tagName}: ${err.message || err}`);
     } finally {
@@ -166,10 +173,15 @@ export default function Page() {
   // Batch handlers
   const handleBatchRead = async () => {
     setIsBatchReading(true);
+    // Parse lines as TagName:Type
     const tags = batchTags.split("\n").map((t) => t.trim()).filter(Boolean);
-    addLog("info", `Batch reading tags: ${tags.join(", ")}`);
+    const tagObjs = tags.map((line) => {
+      const [tag, type] = line.split(":");
+      return { tag: tag.trim(), type: (type || "String").trim() };
+    });
+    addLog("info", `Batch reading tags: ${tagObjs.map(t => `${t.tag} (${t.type})`).join(", ")}`);
     try {
-      const result = await batchReadTags(tags);
+      const result = await batchReadTags(tagObjs);
       setBatchReadResult(result);
       addLog("success", `Batch read complete: ${JSON.stringify(result)}`);
     } catch (err: any) {
@@ -180,14 +192,18 @@ export default function Page() {
   };
   const handleBatchWrite = async () => {
     setIsBatchWriting(true);
-    const tagValues: Record<string, any> = {};
+    // Parse lines as TagName:Type=Value
+    const tagObjs: { tag: string; type: string; value: any }[] = [];
     batchWriteData.split("\n").forEach((line) => {
-      const [tag, value] = line.split("=");
-      if (tag && value !== undefined) tagValues[tag.trim()] = value.trim();
+      const [left, value] = line.split("=");
+      if (left && value !== undefined && value !== "") {
+        const [tag, type] = left.split(":");
+        tagObjs.push({ tag: tag.trim(), type: (type || "String").trim(), value: value.trim() });
+      }
     });
-    addLog("info", `Batch writing: ${JSON.stringify(tagValues)}`);
+    addLog("info", `Batch writing: ${JSON.stringify(tagObjs)}`);
     try {
-      const result = await batchWriteTags(tagValues);
+      const result = await batchWriteTags(tagObjs);
       setBatchWriteResult(result);
       addLog("success", `Batch write complete: ${JSON.stringify(result)}`);
     } catch (err: any) {
@@ -269,57 +285,55 @@ export default function Page() {
               <div>
                 <h2 className="font-bold text-lg mb-4 flex items-center gap-2"><span role="img" aria-label="individual">📊</span> Individual Tag Operations</h2>
                 <div className="flex flex-col gap-2 mb-4">
-                  <div className="flex flex-col sm:flex-row gap-2 items-center">
+                  <div className="flex flex-col sm:flex-row gap-2 items-center mb-2">
                     <input
-                      className="border rounded-lg px-3 py-2 flex-1 focus:ring-2 focus:ring-purple-400 outline-none"
+                      type="text"
                       value={tagName}
                       onChange={(e) => setTagName(e.target.value)}
                       placeholder="Enter tag name"
+                      className="flex-1 px-3 py-2 bg-white text-black rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                     />
-                    <button
-                      className="bg-blue-200 hover:bg-blue-300 text-blue-900 px-3 py-2 rounded-lg font-semibold disabled:opacity-50 transition"
-                      onClick={handleDiscoverTag}
-                      disabled={!tagName || isDiscovering}
-                    >
-                      {isDiscovering ? "Discovering..." : "Discover Tag"}
-                    </button>
                     <select
-                      className="border rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-400 outline-none"
                       value={tagType}
                       onChange={(e) => setTagType(e.target.value)}
+                      className="px-3 py-2 bg-white text-black rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                     >
-                      {PLC_TYPES.map((type) => (
-                        <option key={type.value} value={type.value}>{type.label}</option>
-                      ))}
+                      <option value="Bool">Bool</option>
+                      <option value="Sint">Sint</option>
+                      <option value="Int">Int</option>
+                      <option value="Dint">Dint</option>
+                      <option value="Lint">Lint</option>
+                      <option value="Usint">Usint</option>
+                      <option value="Uint">Uint</option>
+                      <option value="Udint">Udint</option>
+                      <option value="Ulint">Ulint</option>
+                      <option value="Real">Real</option>
+                      <option value="Lreal">Lreal</option>
+                      <option value="String">String</option>
+                      <option value="Udt">Udt</option>
                     </select>
                     <input
-                      className="border rounded-lg px-3 py-2 flex-1 focus:ring-2 focus:ring-purple-400 outline-none"
+                      type="text"
                       value={tagValue}
                       onChange={(e) => setTagValue(e.target.value)}
                       placeholder="Value"
+                      className="flex-1 px-3 py-2 bg-white text-black rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                     />
                   </div>
-                  <div className="flex flex-row gap-2 justify-end">
+                  <div className="flex flex-row gap-2 justify-end mb-4">
                     <button
                       className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold disabled:opacity-50 transition"
                       onClick={handleReadTag}
                       disabled={!isConnected || isReading}
                     >
-                      Read
+                      {isReading ? "Reading..." : "Read"}
                     </button>
                     <button
-                      className="bg-yellow-400 hover:bg-yellow-500 text-white px-4 py-2 rounded-lg font-semibold disabled:opacity-50 transition"
+                      className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-semibold disabled:opacity-50 transition"
                       onClick={handleWriteTag}
                       disabled={!isConnected || isWriting}
                     >
-                      Write
-                    </button>
-                    <button
-                      className="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded-lg font-semibold disabled:opacity-50 transition"
-                      onClick={handleDebugRead}
-                      disabled={!isConnected || isDebugReading}
-                    >
-                      {isDebugReading ? "Debug..." : "Debug Read"}
+                      {isWriting ? "Writing..." : "Write"}
                     </button>
                   </div>
                 </div>
@@ -329,13 +343,31 @@ export default function Page() {
             {activeTab === "Batch" && (
               <div>
                 <h2 className="font-bold text-lg mb-4 flex items-center gap-2"><span role="img" aria-label="batch">⚡</span> Batch Operations</h2>
-                <div className="flex flex-col sm:flex-row gap-2 mb-4">
-                  <textarea
-                    className="border rounded-lg px-3 py-2 w-full h-24 focus:ring-2 focus:ring-purple-400 outline-none"
-                    value={batchTags}
-                    onChange={(e) => setBatchTags(e.target.value)}
-                    placeholder="Tag1\nTag2\nTag3"
-                  />
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-1">
+                      Tags (one per line, format: TagName:Type)
+                    </label>
+                    <textarea
+                      value={batchTags}
+                      onChange={(e) => setBatchTags(e.target.value)}
+                      placeholder="Example:&#10;Tag1:Int&#10;Tag2:Real"
+                      className="w-full h-32 px-3 py-2 bg-gray-800 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-1">
+                      Tag Values (one per line, format: TagName:Type=Value)
+                    </label>
+                    <textarea
+                      value={batchWriteData}
+                      onChange={(e) => setBatchWriteData(e.target.value)}
+                      placeholder="Example:&#10;Tag1:Int=42&#10;Tag2:Real=3.14"
+                      className="w-full h-32 px-3 py-2 bg-gray-800 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-row gap-2 justify-end">
                   <button
                     className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold disabled:opacity-50 transition"
                     onClick={handleBatchRead}
@@ -343,14 +375,6 @@ export default function Page() {
                   >
                     Batch Read
                   </button>
-                </div>
-                <div className="flex flex-col sm:flex-row gap-2 mb-4">
-                  <textarea
-                    className="border rounded-lg px-3 py-2 w-full h-24 focus:ring-2 focus:ring-purple-400 outline-none"
-                    value={batchWriteData}
-                    onChange={(e) => setBatchWriteData(e.target.value)}
-                    placeholder="Tag1=Value1\nTag2=Value2"
-                  />
                   <button
                     className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded-lg font-semibold disabled:opacity-50 transition"
                     onClick={handleBatchWrite}

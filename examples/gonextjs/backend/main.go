@@ -29,6 +29,7 @@ func main() {
 	r.HandleFunc("/api/taginfo", handleTagInfo).Methods("GET")
 	// Debug read endpoint
 	r.HandleFunc("/api/test-read", handleTestRead).Methods("GET")
+	r.HandleFunc("/api/benchmark", handleBenchmark).Methods("POST")
 
 	// WebSocket endpoint
 	r.HandleFunc("/ws", handleWebSocket)
@@ -122,7 +123,50 @@ func handleTag(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		plcVal := &gowrapper.PlcValue{Type: typeVal, Value: req.Value}
+		var value interface{} = req.Value
+		switch req.Type {
+		case "Dint":
+			if f, ok := req.Value.(float64); ok {
+				value = int32(f)
+			} else if i, ok := req.Value.(int); ok {
+				value = int32(i)
+			} else if s, ok := req.Value.(string); ok {
+				var v int32
+				_, err := fmt.Sscanf(s, "%d", &v)
+				if err != nil {
+					http.Error(w, "invalid DINT value", http.StatusBadRequest)
+					return
+				}
+				value = v
+			}
+		case "Int":
+			if f, ok := req.Value.(float64); ok {
+				value = int16(f)
+			} else if i, ok := req.Value.(int); ok {
+				value = int16(i)
+			} else if s, ok := req.Value.(string); ok {
+				var v int16
+				_, err := fmt.Sscanf(s, "%d", &v)
+				if err != nil {
+					http.Error(w, "invalid INT value", http.StatusBadRequest)
+					return
+				}
+				value = v
+			}
+		case "Real":
+			if f, ok := req.Value.(float64); ok {
+				value = f
+			} else if s, ok := req.Value.(string); ok {
+				var v float64
+				_, err := fmt.Sscanf(s, "%f", &v)
+				if err != nil {
+					http.Error(w, "invalid REAL value", http.StatusBadRequest)
+					return
+				}
+				value = v
+			}
+		}
+		plcVal := &gowrapper.PlcValue{Type: typeVal, Value: value}
 		err = client.WriteValue(req.Tag, plcVal)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -146,12 +190,81 @@ func handleBatch(w http.ResponseWriter, r *http.Request) {
 			Tag  string `json:"tag"`
 			Type string `json:"type"`
 		} `json:"tags"`
+		Writes []struct {
+			Tag   string      `json:"tag"`
+			Type  string      `json:"type"`
+			Value interface{} `json:"value"`
+		} `json:"writes"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
+	if len(req.Writes) > 0 {
+		// Batch write
+		writeMap := make(map[string]interface{})
+		for _, writeReq := range req.Writes {
+			_, err := parsePlcDataType(writeReq.Type)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			var value interface{} = writeReq.Value
+			switch writeReq.Type {
+			case "Dint":
+				if f, ok := writeReq.Value.(float64); ok {
+					value = int32(f)
+				} else if i, ok := writeReq.Value.(int); ok {
+					value = int32(i)
+				} else if s, ok := writeReq.Value.(string); ok {
+					var v int32
+					_, err := fmt.Sscanf(s, "%d", &v)
+					if err != nil {
+						http.Error(w, "invalid DINT value", http.StatusBadRequest)
+						return
+					}
+					value = v
+				}
+			case "Int":
+				if f, ok := writeReq.Value.(float64); ok {
+					value = int16(f)
+				} else if i, ok := writeReq.Value.(int); ok {
+					value = int16(i)
+				} else if s, ok := writeReq.Value.(string); ok {
+					var v int16
+					_, err := fmt.Sscanf(s, "%d", &v)
+					if err != nil {
+						http.Error(w, "invalid INT value", http.StatusBadRequest)
+						return
+					}
+					value = v
+				}
+			case "Real":
+				if f, ok := writeReq.Value.(float64); ok {
+					value = f
+				} else if s, ok := writeReq.Value.(string); ok {
+					var v float64
+					_, err := fmt.Sscanf(s, "%f", &v)
+					if err != nil {
+						http.Error(w, "invalid REAL value", http.StatusBadRequest)
+						return
+					}
+					value = v
+				}
+			}
+			writeMap[writeReq.Tag] = value
+		}
+		err := client.BatchWrite(writeMap)
+		if err != nil {
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+		return
+	}
+
+	// Batch read (existing logic)
 	results := make([]map[string]interface{}, len(req.Tags))
 	for i, t := range req.Tags {
 		typeVal, err := parsePlcDataType(t.Type)
@@ -349,5 +462,57 @@ func handleTestRead(w http.ResponseWriter, r *http.Request) {
 		"type":  typeStr,
 		"error": nil,
 		"value": val.Value,
+	})
+}
+
+func handleBenchmark(w http.ResponseWriter, r *http.Request) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if client == nil {
+		http.Error(w, "Not connected", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Tag   string `json:"tag"`
+		Write bool   `json:"write"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	typeVal := gowrapper.Dint // Default to Dint for speed test; could be improved
+	readCount := 0
+	writeCount := 0
+	start := time.Now()
+	duration := 3 * time.Second
+	end := start.Add(duration)
+	var lastVal int32 = 0
+	for time.Now().Before(end) {
+		_, err := client.ReadValue(req.Tag, typeVal)
+		if err == nil {
+			readCount++
+		}
+		if req.Write {
+			lastVal++
+			plcVal := &gowrapper.PlcValue{Type: typeVal, Value: lastVal}
+			err := client.WriteValue(req.Tag, plcVal)
+			if err == nil {
+				writeCount++
+			}
+		}
+	}
+	elapsed := time.Since(start)
+	readRate := float64(readCount) / elapsed.Seconds()
+	writeRate := float64(writeCount) / elapsed.Seconds()
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":    true,
+		"readCount":  readCount,
+		"writeCount": writeCount,
+		"elapsedMs":  elapsed.Milliseconds(),
+		"readRate":   readRate,
+		"writeRate":  writeRate,
 	})
 }

@@ -47,24 +47,34 @@ export function subscribeToTagUpdates(onUpdate: (data: PlcTagValue) => void): ()
   return () => ws.close();
 }
 
-export async function batchReadTags(tags: string[]): Promise<Record<string, any>> {
+export async function batchReadTags(tags: { tag: string; type: string }[]): Promise<Record<string, any>> {
   const res = await fetch('/api/batch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tags: tags.map(tag => ({ tag, type: 'String' })) }),
+    body: JSON.stringify({ tags }),
   });
   if (!res.ok) throw new Error(await res.text());
   return await res.json();
 }
 
-export async function batchWriteTags(tagValues: Record<string, any>): Promise<{ success: boolean; error?: string }> {
-  // Not implemented in backend, placeholder for future
-  return { success: false, error: 'Batch write not implemented' };
+export async function batchWriteTags(tagObjs: { tag: string; type: string; value: any }[]): Promise<{ success: boolean; error?: string }> {
+  const res = await fetch('/api/batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ writes: tagObjs }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return await res.json();
 }
 
-export async function runBenchmark(tag: string, write: boolean): Promise<{ success: boolean; error?: string }> {
-  // Not implemented in backend, placeholder for future
-  return { success: false, error: 'Benchmark not implemented' };
+export async function runBenchmark(tag: string, write: boolean): Promise<{ success: boolean; readCount: number; writeCount: number; elapsedMs: number; readRate: number; writeRate: number; error?: string }> {
+  const res = await fetch('/api/benchmark', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tag, write }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return await res.json();
 }
 
 export async function getPlcStatus(): Promise<{ status: PlcStatus }> {
