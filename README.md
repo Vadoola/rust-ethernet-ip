@@ -5,6 +5,11 @@
 > The core functionality is fully implemented, tested, and stable, with comprehensive data type support and advanced tag addressing capabilities.  
 > **Production release v1.0 is planned for Q4 2025.**
 
+> **🆕 NEW: Go + Next.js Fullstack Example!**
+>
+> Try the new high-performance Go backend + Next.js frontend demo for real-time, batch, and performance operations.
+> [See fullstack example & guide →](examples/gonextjs/README.md)
+
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
 [![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](https://github.com/sergiogallegos/rust-ethernet-ip/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -69,7 +74,7 @@ All Allen-Bradley native data types with proper CIP encoding:
 - **Type-safe Go bindings** for all PLC data types
 - **Connection management** and health monitoring
 - **Error handling** with Go-idiomatic patterns
-- **Full-stack example** with Go backend + React frontend
+- **Full-stack example** with Go backend + Next.js frontend ([see example](examples/gonextjs/README.md))
 
 ### ⚠️ **Comprehensive Error Handling** ✅ **COMPLETED**
 - **Detailed CIP error mapping** with 40+ error codes
@@ -587,6 +592,30 @@ cargo run --example batch_operations_demo
 
 **Perfect for:** Rust applications, embedded systems, high-performance scenarios
 
+### **🐹 Go + Next.js Fullstack Example** *(NEW in v0.4.0!)*
+Modern fullstack demo with a Go backend (using the Rust Go wrapper) and a Next.js (TypeScript) frontend for real-time, batch, and performance operations.
+
+```bash
+# Start backend
+cd examples/gonextjs/backend
+go run .
+
+# Start frontend (new terminal)
+cd ../frontend
+npm install && npm run dev
+```
+
+**Features:**
+- ✅ **Go backend** using the Rust EtherNet/IP Go wrapper (FFI)
+- ✅ **Next.js frontend** (TypeScript, Tailwind, App Router)
+- ✅ **Batch read/write** and individual tag operations
+- ✅ **Performance benchmarking** (ops/sec, latency)
+- ✅ **Real-time tag updates** via WebSocket
+- ✅ **Comprehensive PLC data type support**
+- ✅ **Modern, responsive UI**
+
+**Perfect for:** Modern web dashboards, Go/TypeScript fullstack apps, real-time industrial monitoring
+
 ### **🚀 Quick Start Guide**
 
 1. **Choose your platform:**
@@ -706,3 +735,43 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 **Built with ❤️ for the industrial automation community**
+
+## 📦 Examples
+
+- **C# + React**: Modern web and desktop examples using the C# wrapper
+- **Go + Next.js**: [Fullstack Go backend + Next.js frontend example](examples/gonextjs/README.md) (**NEW in v0.4.0!**)
+- **TypeScript + ASP.NET**: Classic React + ASP.NET example
+- ...and more in the `examples/` directory
+
+## 🏗️ Build All
+
+To build all wrappers, libraries, and examples (including Go + Next.js):
+
+```bash
+./build-all.bat
+```
+
+This script builds:
+- Rust library (DLL/SO/DYLIB)
+- C# wrapper and tests
+- Go wrapper and tests
+- All example backends and frontends (C#, Go, TypeScript, Next.js)
+
+See [BUILD.md](BUILD.md) for details.
+
+## 🆕 Version
+
+**Current Release:** v0.4.0 ([Release Notes](RELEASE_NOTES_v0.4.0.md))
+
+## 📝 Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a full list of changes.
+
+## 🚀 Release Notes
+
+See [RELEASE_NOTES_v0.4.0.md](RELEASE_NOTES_v0.4.0.md) for detailed release notes and migration info.
+
+## 🚀 Quick Start: Go + Next.js Fullstack Example
+
+- See [examples/gonextjs/README.md](examples/gonextjs/README.md) for step-by-step instructions.
+- Features: Go backend (using Rust FFI), Next.js frontend, batch ops, real-time, performance, and more.
