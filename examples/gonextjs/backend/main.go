@@ -476,6 +476,7 @@ func handleBenchmark(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		Tag   string `json:"tag"`
+		Type  string `json:"type"`
 		Write bool   `json:"write"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -483,7 +484,11 @@ func handleBenchmark(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	typeVal := gowrapper.Dint // Default to Dint for speed test; could be improved
+	typeVal, err := parsePlcDataType(req.Type)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	readCount := 0
 	writeCount := 0
 	start := time.Now()
@@ -494,6 +499,8 @@ func handleBenchmark(w http.ResponseWriter, r *http.Request) {
 		_, err := client.ReadValue(req.Tag, typeVal)
 		if err == nil {
 			readCount++
+		} else {
+			log.Printf("[BENCHMARK] Read error: %v", err)
 		}
 		if req.Write {
 			lastVal++
@@ -501,6 +508,8 @@ func handleBenchmark(w http.ResponseWriter, r *http.Request) {
 			err := client.WriteValue(req.Tag, plcVal)
 			if err == nil {
 				writeCount++
+			} else {
+				log.Printf("[BENCHMARK] Write error: %v", err)
 			}
 		}
 	}

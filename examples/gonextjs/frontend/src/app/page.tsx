@@ -67,6 +67,7 @@ export default function Page() {
   const [benchmarkResults, setBenchmarkResults] = useState<any>(null);
   const [isRunningBenchmark, setIsRunningBenchmark] = useState(false);
   const [benchmarkTestTag, setBenchmarkTestTag] = useState("");
+  const [benchmarkTestType, setBenchmarkTestType] = useState("Dint");
   const [benchmarkTestWrites, setBenchmarkTestWrites] = useState(false);
 
   // Logging
@@ -218,7 +219,7 @@ export default function Page() {
     setIsRunningBenchmark(true);
     addLog("info", `Running benchmark on tag: ${benchmarkTestTag}`);
     try {
-      const result = await runBenchmark(benchmarkTestTag, benchmarkTestWrites);
+      const result = await runBenchmark(benchmarkTestTag, benchmarkTestType, benchmarkTestWrites);
       setBenchmarkResults(result);
       addLog("success", `Benchmark complete: ${JSON.stringify(result)}`);
     } catch (err: any) {
@@ -392,11 +393,31 @@ export default function Page() {
                 <h2 className="font-bold text-lg mb-4 flex items-center gap-2"><span role="img" aria-label="performance">📈</span> Performance Benchmark</h2>
                 <div className="flex flex-col sm:flex-row gap-2 mb-4">
                   <input
-                    className="border rounded-lg px-3 py-2 flex-1 focus:ring-2 focus:ring-purple-400 outline-none"
+                    type="text"
                     value={benchmarkTestTag}
                     onChange={(e) => setBenchmarkTestTag(e.target.value)}
                     placeholder="Benchmark Tag Name"
+                    className="flex-1 px-3 py-2 bg-white text-black rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                   />
+                  <select
+                    value={benchmarkTestType}
+                    onChange={(e) => setBenchmarkTestType(e.target.value)}
+                    className="px-3 py-2 bg-white text-black rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="Bool">Bool</option>
+                    <option value="Sint">Sint</option>
+                    <option value="Int">Int</option>
+                    <option value="Dint">Dint</option>
+                    <option value="Lint">Lint</option>
+                    <option value="Usint">Usint</option>
+                    <option value="Uint">Uint</option>
+                    <option value="Udint">Udint</option>
+                    <option value="Ulint">Ulint</option>
+                    <option value="Real">Real</option>
+                    <option value="Lreal">Lreal</option>
+                    <option value="String">String</option>
+                    <option value="Udt">Udt</option>
+                  </select>
                   <label className="flex items-center gap-1 text-sm">
                     <input
                       type="checkbox"

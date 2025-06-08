@@ -67,11 +67,11 @@ export async function batchWriteTags(tagObjs: { tag: string; type: string; value
   return await res.json();
 }
 
-export async function runBenchmark(tag: string, write: boolean): Promise<{ success: boolean; readCount: number; writeCount: number; elapsedMs: number; readRate: number; writeRate: number; error?: string }> {
+export async function runBenchmark(tag: string, type: string, write: boolean): Promise<{ success: boolean; readCount: number; writeCount: number; elapsedMs: number; readRate: number; writeRate: number; error?: string }> {
   const res = await fetch('/api/benchmark', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tag, write }),
+    body: JSON.stringify({ tag, type, write }),
   });
   if (!res.ok) throw new Error(await res.text());
   return await res.json();
