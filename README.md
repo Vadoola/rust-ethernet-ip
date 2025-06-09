@@ -16,6 +16,7 @@
 [![Performance](https://img.shields.io/badge/performance-2500%2B%20ops%2Fsec-green.svg)]()
 [![Status](https://img.shields.io/badge/status-production--ready-brightgreen.svg)]()
 [![C# Wrapper](https://img.shields.io/badge/C%23%20wrapper-available-blue.svg)]()
+[![Python Wrapper](https://img.shields.io/badge/Python%20wrapper-available-blue.svg)]()
 
 A high-performance, production-ready EtherNet/IP communication library specifically designed for **Allen-Bradley CompactLogix and ControlLogix PLCs**. Built in pure Rust with focus on **PC applications**, offering exceptional performance, memory safety, and comprehensive industrial features.
 
@@ -75,6 +76,15 @@ All Allen-Bradley native data types with proper CIP encoding:
 - **Connection management** and health monitoring
 - **Error handling** with Go-idiomatic patterns
 - **Full-stack example** with Go backend + Next.js frontend ([see example](examples/gonextjs/README.md))
+
+#### **Python Integration** ✅ **NEW in v0.4.0**
+- **PyO3-based Python wrapper** with full API coverage
+- **Type-safe Python bindings** for all PLC data types
+- **Synchronous and asynchronous APIs** for flexible usage
+- **Comprehensive error handling** with Python exceptions
+- **Easy installation** via pip or maturin
+- **Cross-platform support** (Windows, Linux, macOS)
+- **Write_tag method now correctly returns a boolean indicating success or failure**
 
 ### ⚠️ **Comprehensive Error Handling** ✅ **COMPLETED**
 - **Detailed CIP error mapping** with 40+ error codes
@@ -163,6 +173,18 @@ Or via Package Manager Console:
 Install-Package RustEtherNetIp
 ```
 
+### Python Wrapper
+Install via pip:
+```bash
+pip install rust-ethernet-ip
+```
+
+Or build from source using maturin:
+```bash
+cd pywrapper
+maturin develop
+```
+
 ## 📖 **Quick Start**
 
 ### Rust Usage
@@ -213,6 +235,34 @@ if (client.Connect("192.168.1.100:44818"))
     Console.WriteLine($"Production count: {productionCount}");
     Console.WriteLine($"Temperature: {temperature:F1}°C");
 }
+```
+
+### Python Usage
+
+```python
+from rust_ethernet_ip import PyEipClient
+
+def main():
+    # Create a client and connect to the PLC
+    client = PyEipClient(addr="192.168.0.1")
+    if not client.connect():
+        print("Failed to connect to PLC")
+        return
+
+    try:
+        # Read a DINT value
+        value = client.read_dint("TestDINT")
+        print("Read TestDINT:", value)
+        
+        # Write a new value
+        client.write_dint("TestDINT", 42)
+        print("Wrote 42 to TestDINT")
+        
+    except Exception as e:
+        print("Error:", e)
+
+if __name__ == "__main__":
+    main()
 ```
 
 ### Advanced Tag Addressing

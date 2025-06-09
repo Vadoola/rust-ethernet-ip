@@ -1,3 +1,9 @@
+[workspace]
+members = [
+    ".",  # Main library (current directory)
+    "pywrapper"  # Python wrapper
+]
+
 [package]
 name = "rust-ethernet-ip"
 version = "0.4.0"
@@ -15,7 +21,7 @@ rust-version = "1.70"
 
 [lib]
 name = "rust_ethernet_ip"
-crate-type = ["rlib", "cdylib"]  # Support both library formats
+crate-type = ["rlib", "cdylib", "staticlib"]  # Added staticlib for Python bindings
 
 [[bin]]
 name = "enip-test"
@@ -31,6 +37,7 @@ log = "0.4"
 env_logger = "0.10"
 lazy_static = "1.4"
 vergen = { version = "8.3", features = ["build", "git", "gitcl"] }
+pyo3 = { version = "0.20", features = ["extension-module"] }
 
 [dev-dependencies]
 tokio-test = "0.4"
@@ -39,6 +46,7 @@ cargo-tarpaulin = "0.18"
 [features]
 default = []
 ffi = []  # Enable C FFI exports
+python = ["pyo3/extension-module"]  # Enable Python bindings
 
 [build-dependencies]
 vergen = { version = "8.3", features = ["build", "git", "gitcl"] }

@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Critical stability fixes** resolving all hanging and timeout issues
 - **Enhanced Allen-Bradley STRING support** with complete CIP protocol compliance
 - **Industrial-grade reliability** with comprehensive error handling and recovery
+- **Python wrapper** with full API coverage and type-safe bindings
 
 ### ✨ Added - Real-Time Subscriptions
 - **Real-time tag monitoring** with configurable update intervals (1ms - 10s)
@@ -93,6 +94,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Async/await support** throughout the API surface
 - **Cross-platform validation** on Windows, Linux, and macOS
 - **Docker compatibility** for containerized industrial applications
+- **Python wrapper** with PyO3 integration:
+  - Full API coverage with type-safe bindings
+  - Synchronous and asynchronous APIs
+  - Comprehensive error handling with Python exceptions
+  - Easy installation via pip or maturin
+  - Cross-platform support (Windows, Linux, macOS)
+  - Example scripts and documentation
 
 ### 📊 Updated Performance Metrics
 - **Single Tag Read**: 2,500+ ops/sec, <1ms latency (67% improvement)
@@ -281,3 +289,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial project structure
 - Basic PLC connection
 - Simple tag operations
+
+### Fixed
+- Fixed Python wrapper's write_tag method to correctly return a boolean indicating success or failure.

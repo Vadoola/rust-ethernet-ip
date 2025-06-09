@@ -213,6 +213,7 @@ pub mod udt;
 pub mod error;
 pub mod ffi;
 pub mod subscription;
+pub mod python;  // Add Python module
 
 // Re-export commonly used items
 pub use plc_manager::{PlcManager, PlcConfig, PlcConnection};
