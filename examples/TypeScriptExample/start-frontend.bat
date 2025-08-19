@@ -16,4 +16,4 @@ echo - Activity Log panel with real-time updates
 echo.
 echo Make sure the ASP.NET Core backend is running on localhost:5000
 echo.
-call npm run dev 
+call npm run dev -- --host 0.0.0.0
