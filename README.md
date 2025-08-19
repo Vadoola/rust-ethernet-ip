@@ -17,8 +17,13 @@
 [![Status](https://img.shields.io/badge/status-production--ready-brightgreen.svg)]()
 [![C# Wrapper](https://img.shields.io/badge/C%23%20wrapper-available-blue.svg)]()
 [![Python Wrapper](https://img.shields.io/badge/Python%20wrapper-available-blue.svg)]()
+[![Crates.io](https://img.shields.io/crates/v/rust-ethernet-ip.svg)](https://crates.io/crates/rust-ethernet-ip)
+[![Documentation](https://docs.rs/rust-ethernet-ip/badge.svg)](https://docs.rs/rust-ethernet-ip)
+[![Downloads](https://img.shields.io/crates/d/rust-ethernet-ip.svg)](https://crates.io/crates/rust-ethernet-ip)
 
 A high-performance, production-ready EtherNet/IP communication library specifically designed for **Allen-Bradley CompactLogix and ControlLogix PLCs**. Built in pure Rust with focus on **PC applications**, offering exceptional performance, memory safety, and comprehensive industrial features.
+ 
+ **📦 Available on [crates.io](https://crates.io/crates/rust-ethernet-ip)**
 
 ## 🎯 **Project Focus**
 
@@ -151,6 +156,15 @@ Optimized for PC applications with excellent performance:
 - [ ] **Community features** (Discord, support channels)
 
 ## 🛠️ **Installation**
+
+### 📦 **Rust Library (Crates.io)**
+
+The easiest way to get started is by adding the crate to your `Cargo.toml`:
+
+```toml
+[dependencies]
+rust-ethernet-ip = "0.4.0"
+tokio = { version = "1.0", features = ["full"] }
 
 ### Rust Library
 Add to your `Cargo.toml`:
@@ -713,12 +727,14 @@ Each example includes comprehensive documentation, setup instructions, and demon
 - **[Build Guide](BUILD.md)** - Comprehensive build instructions
 - **[C# Wrapper Guide](csharp/RustEtherNetIp/README.md)** - C# integration documentation
 - **[Changelog](CHANGELOG.md)** - Version history and changes
+- **[Crates.io Page](https://crates.io/crates/rust-ethernet-ip)** - Official crate registry page
 
 ## 🤝 **Community & Support**
 
 - **[Discord Server](https://discord.gg/uzaM3tua)** - Community discussions, support, and development updates
 - **[GitHub Issues](https://github.com/sergiogallegos/rust-ethernet-ip/issues)** - Bug reports and feature requests
-- **[GitHub Discussions](https://github.com/sergiogallegos/rust-ethernet-ip/discussions)** - General questions and ideas
+- **[GitHub Discussions](https://github.com/sergiogallegos/rust-ethernet-ip/discussions)** - General questions and ideas 
+- **[Crates.io](https://crates.io/crates/rust-ethernet-ip)** - Official Rust package registry
 
 ## 🙏 **Inspiration**
 
