@@ -680,10 +680,36 @@ npm install && npm run dev
 
 **Perfect for:** Modern web dashboards, Go/TypeScript fullstack apps, real-time industrial monitoring
 
+### **⚡ Vue.js 3 + TypeScript Frontend** *(NEW in v0.4.0!)*
+Modern Vue.js 3 frontend with TypeScript, Tailwind CSS, and Pinia state management, designed to integrate with ASP.NET Core backends.
+
+```bash
+# Start backend API
+cd examples/AspNetExample
+dotnet run
+
+# Start Vue.js frontend (new terminal)
+cd examples/VueExample
+npm install && npm run dev
+```
+
+**Features:**
+- ✅ **Vue.js 3** with Composition API and TypeScript
+- ✅ **Tailwind CSS** for modern, responsive design
+- ✅ **Pinia state management** for application state
+- ✅ **Backend detection system** for automatic ASP.NET Core port discovery
+- ✅ **Component-based architecture** with reusable UI components
+- ✅ **Real-time connection monitoring** with PLC status display
+- ✅ **Tag operations interface** for read/write operations
+- ✅ **Professional dashboard** with metrics and activity logging
+- ✅ **Development tools** including BackendDetector for debugging
+
+**Perfect for:** Modern web applications, Vue.js-based HMIs, industrial dashboards, ASP.NET Core integration
+
 ### **🚀 Quick Start Guide**
 
 1. **Choose your platform:**
-   - **Web/Modern UI** → TypeScript + React Dashboard
+   - **Web/Modern UI** → TypeScript + React Dashboard or Vue.js 3 + TypeScript
    - **Desktop/Windows** → WPF or WinForms Application  
    - **Web API/Services** → ASP.NET Core Web API
    - **Native/Performance** → Rust Examples
@@ -709,9 +735,14 @@ examples/
 │   ├── frontend/              # Modern web UI
 │   ├── start-backend.bat      # Backend startup script
 │   └── start-frontend.bat     # Frontend startup script
+├── VueExample/                 # Vue.js 3 + TypeScript frontend
+│   ├── src/                   # Vue.js source code
+│   ├── start-frontend.bat     # Frontend startup script
+│   └── README.md              # Comprehensive documentation
 ├── WpfExample/                # WPF desktop application
 ├── WinFormsExample/           # WinForms desktop application
 ├── AspNetExample/             # ASP.NET Core Web API
+├── gonextjs/                  # Go + Next.js fullstack example
 └── rust-examples/             # Native Rust examples
     ├── advanced_tag_addressing.rs
     ├── data_types_showcase.rs
@@ -806,12 +837,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **C# + React**: Modern web and desktop examples using the C# wrapper
 - **Go + Next.js**: [Fullstack Go backend + Next.js frontend example](examples/gonextjs/README.md) (**NEW in v0.4.0!**)
+- **Vue.js 3 + TypeScript**: [Modern Vue.js frontend with ASP.NET Core integration](examples/VueExample/README.md) (**NEW in v0.4.0!**)
 - **TypeScript + ASP.NET**: Classic React + ASP.NET example
 - ...and more in the `examples/` directory
 
 ## 🏗️ Build All
 
-To build all wrappers, libraries, and examples (including Go + Next.js):
+To build all wrappers, libraries, and examples (including Go + Next.js and Vue.js):
 
 ```bash
 ./build-all.bat
@@ -821,7 +853,7 @@ This script builds:
 - Rust library (DLL/SO/DYLIB)
 - C# wrapper and tests
 - Go wrapper and tests
-- All example backends and frontends (C#, Go, TypeScript, Next.js)
+- All example backends and frontends (C#, Go, TypeScript, Next.js, Vue.js)
 
 See [BUILD.md](BUILD.md) for details.
 
