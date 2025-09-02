@@ -4,7 +4,15 @@
   "version": "0.4.0",
   "type": "module",
   "description": "React + TypeScript dashboard demonstrating Rust EtherNet/IP library v0.4.0 with real-time subscriptions",
-  "keywords": ["rust", "ethernet-ip", "plc", "typescript", "react", "industrial-automation", "allen-bradley"],
+  "keywords": [
+    "rust",
+    "ethernet-ip",
+    "plc",
+    "typescript",
+    "react",
+    "industrial-automation",
+    "allen-bradley"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
