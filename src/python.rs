@@ -1,12 +1,11 @@
 use pyo3::prelude::*;
-use pyo3::wrap_pyfunction;
-use pyo3::types::{PyDict, PyList, PyTuple};
-use pyo3::types::IntoPyDict;
+// use pyo3::wrap_pyfunction;
+use pyo3::types::{PyDict, PyTuple};
+// use pyo3::types::IntoPyDict;
 use tokio::runtime::Runtime;
 use std::collections::HashMap;
 use crate::{
-    EipClient, PlcValue, BatchOperation, BatchResult, BatchError,
-    SubscriptionOptions, TagSubscription, Result as EipResult
+    EipClient, PlcValue, SubscriptionOptions, Result as EipResult
 };
 
 /// Python module for rust_ethernet_ip

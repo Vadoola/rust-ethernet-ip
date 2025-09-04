@@ -16,7 +16,7 @@ lazy_static! {
 
 /// Connect to a PLC and return a client ID
 #[no_mangle]
-pub extern "C" fn eip_connect(ip_address: *const c_char) -> c_int {
+pub unsafe extern "C" fn eip_connect(ip_address: *const c_char) -> c_int {
     if ip_address.is_null() {
         return -1;
     }
@@ -48,7 +48,7 @@ pub extern "C" fn eip_connect(ip_address: *const c_char) -> c_int {
 
 /// Disconnect from a PLC
 #[no_mangle]
-pub extern "C" fn eip_disconnect(client_id: c_int) -> c_int {
+pub unsafe extern "C" fn eip_disconnect(client_id: c_int) -> c_int {
     let mut clients = FFI_CLIENTS.lock().unwrap();
     match clients.remove(&client_id) {
         Some(_) => 0,
@@ -58,7 +58,7 @@ pub extern "C" fn eip_disconnect(client_id: c_int) -> c_int {
 
 /// Read a boolean tag
 #[no_mangle]
-pub extern "C" fn eip_read_bool(client_id: c_int, tag_name: *const c_char, result: *mut c_int) -> c_int {
+pub unsafe extern "C" fn eip_read_bool(client_id: c_int, tag_name: *const c_char, result: *mut c_int) -> c_int {
     if tag_name.is_null() || result.is_null() {
         return -1;
     }
@@ -85,7 +85,7 @@ pub extern "C" fn eip_read_bool(client_id: c_int, tag_name: *const c_char, resul
 
 /// Write a boolean tag
 #[no_mangle]
-pub extern "C" fn eip_write_bool(client_id: c_int, tag_name: *const c_char, value: c_int) -> c_int {
+pub unsafe extern "C" fn eip_write_bool(client_id: c_int, tag_name: *const c_char, value: c_int) -> c_int {
     if tag_name.is_null() {
         return -1;
     }
@@ -110,7 +110,7 @@ pub extern "C" fn eip_write_bool(client_id: c_int, tag_name: *const c_char, valu
 
 // SINT (8-bit signed integer) operations
 #[no_mangle]
-pub extern "C" fn eip_read_sint(client_id: c_int, tag_name: *const c_char, result: *mut i8) -> c_int {
+pub unsafe extern "C" fn eip_read_sint(client_id: c_int, tag_name: *const c_char, result: *mut i8) -> c_int {
     if tag_name.is_null() || result.is_null() {
         return -1;
     }
@@ -136,7 +136,7 @@ pub extern "C" fn eip_read_sint(client_id: c_int, tag_name: *const c_char, resul
 }
 
 #[no_mangle]
-pub extern "C" fn eip_write_sint(client_id: c_int, tag_name: *const c_char, value: i8) -> c_int {
+pub unsafe extern "C" fn eip_write_sint(client_id: c_int, tag_name: *const c_char, value: i8) -> c_int {
     if tag_name.is_null() {
         return -1;
     }
@@ -160,7 +160,7 @@ pub extern "C" fn eip_write_sint(client_id: c_int, tag_name: *const c_char, valu
 
 // INT (16-bit signed integer) operations
 #[no_mangle]
-pub extern "C" fn eip_read_int(client_id: c_int, tag_name: *const c_char, result: *mut i16) -> c_int {
+pub unsafe extern "C" fn eip_read_int(client_id: c_int, tag_name: *const c_char, result: *mut i16) -> c_int {
     if tag_name.is_null() || result.is_null() {
         return -1;
     }
@@ -186,7 +186,7 @@ pub extern "C" fn eip_read_int(client_id: c_int, tag_name: *const c_char, result
 }
 
 #[no_mangle]
-pub extern "C" fn eip_write_int(client_id: c_int, tag_name: *const c_char, value: i16) -> c_int {
+pub unsafe extern "C" fn eip_write_int(client_id: c_int, tag_name: *const c_char, value: i16) -> c_int {
     if tag_name.is_null() {
         return -1;
     }
@@ -210,7 +210,7 @@ pub extern "C" fn eip_write_int(client_id: c_int, tag_name: *const c_char, value
 
 /// Read a DINT tag
 #[no_mangle]
-pub extern "C" fn eip_read_dint(client_id: c_int, tag_name: *const c_char, result: *mut c_int) -> c_int {
+pub unsafe extern "C" fn eip_read_dint(client_id: c_int, tag_name: *const c_char, result: *mut c_int) -> c_int {
     if tag_name.is_null() || result.is_null() {
         return -1;
     }
@@ -237,7 +237,7 @@ pub extern "C" fn eip_read_dint(client_id: c_int, tag_name: *const c_char, resul
 
 /// Write a DINT tag
 #[no_mangle]
-pub extern "C" fn eip_write_dint(client_id: c_int, tag_name: *const c_char, value: c_int) -> c_int {
+pub unsafe extern "C" fn eip_write_dint(client_id: c_int, tag_name: *const c_char, value: c_int) -> c_int {
     if tag_name.is_null() {
         return -1;
     }
@@ -261,7 +261,7 @@ pub extern "C" fn eip_write_dint(client_id: c_int, tag_name: *const c_char, valu
 
 // LINT (64-bit signed integer) operations
 #[no_mangle]
-pub extern "C" fn eip_read_lint(client_id: c_int, tag_name: *const c_char, result: *mut i64) -> c_int {
+pub unsafe extern "C" fn eip_read_lint(client_id: c_int, tag_name: *const c_char, result: *mut i64) -> c_int {
     if tag_name.is_null() || result.is_null() {
         return -1;
     }
@@ -287,7 +287,7 @@ pub extern "C" fn eip_read_lint(client_id: c_int, tag_name: *const c_char, resul
 }
 
 #[no_mangle]
-pub extern "C" fn eip_write_lint(client_id: c_int, tag_name: *const c_char, value: i64) -> c_int {
+pub unsafe extern "C" fn eip_write_lint(client_id: c_int, tag_name: *const c_char, value: i64) -> c_int {
     if tag_name.is_null() {
         return -1;
     }
@@ -311,7 +311,7 @@ pub extern "C" fn eip_write_lint(client_id: c_int, tag_name: *const c_char, valu
 
 // USINT (8-bit unsigned integer) operations
 #[no_mangle]
-pub extern "C" fn eip_read_usint(client_id: c_int, tag_name: *const c_char, result: *mut u8) -> c_int {
+pub unsafe extern "C" fn eip_read_usint(client_id: c_int, tag_name: *const c_char, result: *mut u8) -> c_int {
     if tag_name.is_null() || result.is_null() {
         return -1;
     }
@@ -337,7 +337,7 @@ pub extern "C" fn eip_read_usint(client_id: c_int, tag_name: *const c_char, resu
 }
 
 #[no_mangle]
-pub extern "C" fn eip_write_usint(client_id: c_int, tag_name: *const c_char, value: u8) -> c_int {
+pub unsafe extern "C" fn eip_write_usint(client_id: c_int, tag_name: *const c_char, value: u8) -> c_int {
     if tag_name.is_null() {
         return -1;
     }
@@ -361,7 +361,7 @@ pub extern "C" fn eip_write_usint(client_id: c_int, tag_name: *const c_char, val
 
 // UINT (16-bit unsigned integer) operations
 #[no_mangle]
-pub extern "C" fn eip_read_uint(client_id: c_int, tag_name: *const c_char, result: *mut u16) -> c_int {
+pub unsafe extern "C" fn eip_read_uint(client_id: c_int, tag_name: *const c_char, result: *mut u16) -> c_int {
     if tag_name.is_null() || result.is_null() {
         return -1;
     }
@@ -387,7 +387,7 @@ pub extern "C" fn eip_read_uint(client_id: c_int, tag_name: *const c_char, resul
 }
 
 #[no_mangle]
-pub extern "C" fn eip_write_uint(client_id: c_int, tag_name: *const c_char, value: u16) -> c_int {
+pub unsafe extern "C" fn eip_write_uint(client_id: c_int, tag_name: *const c_char, value: u16) -> c_int {
     if tag_name.is_null() {
         return -1;
     }
@@ -411,7 +411,7 @@ pub extern "C" fn eip_write_uint(client_id: c_int, tag_name: *const c_char, valu
 
 // UDINT (32-bit unsigned integer) operations
 #[no_mangle]
-pub extern "C" fn eip_read_udint(client_id: c_int, tag_name: *const c_char, result: *mut u32) -> c_int {
+pub unsafe extern "C" fn eip_read_udint(client_id: c_int, tag_name: *const c_char, result: *mut u32) -> c_int {
     if tag_name.is_null() || result.is_null() {
         return -1;
     }
@@ -437,7 +437,7 @@ pub extern "C" fn eip_read_udint(client_id: c_int, tag_name: *const c_char, resu
 }
 
 #[no_mangle]
-pub extern "C" fn eip_write_udint(client_id: c_int, tag_name: *const c_char, value: u32) -> c_int {
+pub unsafe extern "C" fn eip_write_udint(client_id: c_int, tag_name: *const c_char, value: u32) -> c_int {
     if tag_name.is_null() {
         return -1;
     }
@@ -461,7 +461,7 @@ pub extern "C" fn eip_write_udint(client_id: c_int, tag_name: *const c_char, val
 
 // ULINT (64-bit unsigned integer) operations
 #[no_mangle]
-pub extern "C" fn eip_read_ulint(client_id: c_int, tag_name: *const c_char, result: *mut u64) -> c_int {
+pub unsafe extern "C" fn eip_read_ulint(client_id: c_int, tag_name: *const c_char, result: *mut u64) -> c_int {
     if tag_name.is_null() || result.is_null() {
         return -1;
     }
@@ -487,7 +487,7 @@ pub extern "C" fn eip_read_ulint(client_id: c_int, tag_name: *const c_char, resu
 }
 
 #[no_mangle]
-pub extern "C" fn eip_write_ulint(client_id: c_int, tag_name: *const c_char, value: u64) -> c_int {
+pub unsafe extern "C" fn eip_write_ulint(client_id: c_int, tag_name: *const c_char, value: u64) -> c_int {
     if tag_name.is_null() {
         return -1;
     }
@@ -511,7 +511,7 @@ pub extern "C" fn eip_write_ulint(client_id: c_int, tag_name: *const c_char, val
 
 /// Read a REAL tag
 #[no_mangle]
-pub extern "C" fn eip_read_real(client_id: c_int, tag_name: *const c_char, result: *mut f64) -> c_int {
+pub unsafe extern "C" fn eip_read_real(client_id: c_int, tag_name: *const c_char, result: *mut f64) -> c_int {
     if tag_name.is_null() || result.is_null() {
         return -1;
     }
@@ -538,7 +538,7 @@ pub extern "C" fn eip_read_real(client_id: c_int, tag_name: *const c_char, resul
 
 /// Write a REAL tag
 #[no_mangle]
-pub extern "C" fn eip_write_real(client_id: c_int, tag_name: *const c_char, value: f64) -> c_int {
+pub unsafe extern "C" fn eip_write_real(client_id: c_int, tag_name: *const c_char, value: f64) -> c_int {
     if tag_name.is_null() {
         return -1;
     }
@@ -562,7 +562,7 @@ pub extern "C" fn eip_write_real(client_id: c_int, tag_name: *const c_char, valu
 
 // LREAL (64-bit double precision) operations
 #[no_mangle]
-pub extern "C" fn eip_read_lreal(client_id: c_int, tag_name: *const c_char, result: *mut f64) -> c_int {
+pub unsafe extern "C" fn eip_read_lreal(client_id: c_int, tag_name: *const c_char, result: *mut f64) -> c_int {
     if tag_name.is_null() || result.is_null() {
         return -1;
     }
@@ -588,7 +588,7 @@ pub extern "C" fn eip_read_lreal(client_id: c_int, tag_name: *const c_char, resu
 }
 
 #[no_mangle]
-pub extern "C" fn eip_write_lreal(client_id: c_int, tag_name: *const c_char, value: f64) -> c_int {
+pub unsafe extern "C" fn eip_write_lreal(client_id: c_int, tag_name: *const c_char, value: f64) -> c_int {
     if tag_name.is_null() {
         return -1;
     }
@@ -612,7 +612,7 @@ pub extern "C" fn eip_write_lreal(client_id: c_int, tag_name: *const c_char, val
 
 /// Read a STRING tag
 #[no_mangle]
-pub extern "C" fn eip_read_string(client_id: c_int, tag_name: *const c_char, result: *mut c_char, max_length: c_int) -> c_int {
+pub unsafe extern "C" fn eip_read_string(client_id: c_int, tag_name: *const c_char, result: *mut c_char, max_length: c_int) -> c_int {
     if tag_name.is_null() || result.is_null() || max_length <= 0 {
         return -1;
     }
@@ -652,7 +652,7 @@ pub extern "C" fn eip_read_string(client_id: c_int, tag_name: *const c_char, res
 
 /// Write a STRING tag
 #[no_mangle]
-pub extern "C" fn eip_write_string(client_id: c_int, tag_name: *const c_char, value: *const c_char) -> c_int {
+pub unsafe extern "C" fn eip_write_string(client_id: c_int, tag_name: *const c_char, value: *const c_char) -> c_int {
     if tag_name.is_null() || value.is_null() {
         return -1;
     }
@@ -681,40 +681,40 @@ pub extern "C" fn eip_write_string(client_id: c_int, tag_name: *const c_char, va
 
 // UDT operations
 #[no_mangle]
-pub extern "C" fn eip_read_udt(client_id: c_int, tag_name: *const c_char, result: *mut c_char, max_size: c_int) -> c_int {
+pub unsafe extern "C" fn eip_read_udt(_client_id: c_int, _tag_name: *const c_char, _result: *mut c_char, _max_size: c_int) -> c_int {
     // For now, return error - UDT support can be added later
     -1
 }
 
 #[no_mangle]
-pub extern "C" fn eip_write_udt(client_id: c_int, tag_name: *const c_char, value: *const c_char, size: c_int) -> c_int {
+pub unsafe extern "C" fn eip_write_udt(_client_id: c_int, _tag_name: *const c_char, _value: *const c_char, _size: c_int) -> c_int {
     // For now, return error - UDT support can be added later
     -1
 }
 
 // Tag discovery and metadata
 #[no_mangle]
-pub extern "C" fn eip_discover_tags(client_id: c_int) -> c_int {
+pub unsafe extern "C" fn eip_discover_tags(_client_id: c_int) -> c_int {
     // Return success for now - can implement tag discovery later
     0
 }
 
 #[no_mangle]
-pub extern "C" fn eip_get_tag_metadata(client_id: c_int, tag_name: *const c_char, metadata: *mut u8) -> c_int {
+pub unsafe extern "C" fn eip_get_tag_metadata(_client_id: c_int, _tag_name: *const c_char, _metadata: *mut u8) -> c_int {
     // For now, return error - metadata support can be added later
     -1
 }
 
 // Configuration
 #[no_mangle]
-pub extern "C" fn eip_set_max_packet_size(client_id: c_int, size: c_int) -> c_int {
+pub unsafe extern "C" fn eip_set_max_packet_size(_client_id: c_int, _size: c_int) -> c_int {
     // Return success for now - packet size configuration can be added later
     0
 }
 
 // Health checks
 #[no_mangle]
-pub extern "C" fn eip_check_health(client_id: c_int, is_healthy: *mut c_int) -> c_int {
+pub unsafe extern "C" fn eip_check_health(client_id: c_int, is_healthy: *mut c_int) -> c_int {
     if is_healthy.is_null() {
         return -1;
     }
@@ -733,14 +733,14 @@ pub extern "C" fn eip_check_health(client_id: c_int, is_healthy: *mut c_int) -> 
 }
 
 #[no_mangle]
-pub extern "C" fn eip_check_health_detailed(client_id: c_int, is_healthy: *mut c_int) -> c_int {
+pub unsafe extern "C" fn eip_check_health_detailed(client_id: c_int, is_healthy: *mut c_int) -> c_int {
     // Use the same logic as basic health check for now
     eip_check_health(client_id, is_healthy)
 }
 
 // Batch operations implementation
 #[no_mangle]
-pub extern "C" fn eip_read_tags_batch(client_id: c_int, tag_names: *mut *const c_char, tag_count: c_int, results: *mut c_char, results_capacity: c_int) -> c_int {
+pub unsafe extern "C" fn eip_read_tags_batch(client_id: c_int, tag_names: *mut *const c_char, tag_count: c_int, results: *mut c_char, results_capacity: c_int) -> c_int {
     if tag_names.is_null() || results.is_null() || tag_count <= 0 {
         return -1;
     }
@@ -807,7 +807,7 @@ pub extern "C" fn eip_read_tags_batch(client_id: c_int, tag_names: *mut *const c
 }
 
 #[no_mangle]
-pub extern "C" fn eip_write_tags_batch(client_id: c_int, tag_values: *const c_char, tag_count: c_int, results: *mut c_char, results_capacity: c_int) -> c_int {
+pub unsafe extern "C" fn eip_write_tags_batch(client_id: c_int, tag_values: *const c_char, tag_count: c_int, results: *mut c_char, results_capacity: c_int) -> c_int {
     if tag_values.is_null() || results.is_null() || tag_count <= 0 {
         return -1;
     }
@@ -844,7 +844,7 @@ pub extern "C" fn eip_write_tags_batch(client_id: c_int, tag_values: *const c_ch
 }
 
 #[no_mangle]
-pub extern "C" fn eip_execute_batch(client_id: c_int, operations: *const c_char, operation_count: c_int, results: *mut c_char, results_capacity: c_int) -> c_int {
+pub unsafe extern "C" fn eip_execute_batch(client_id: c_int, operations: *const c_char, operation_count: c_int, results: *mut c_char, results_capacity: c_int) -> c_int {
     if operations.is_null() || results.is_null() || operation_count <= 0 {
         return -1;
     }
@@ -881,11 +881,11 @@ pub extern "C" fn eip_execute_batch(client_id: c_int, operations: *const c_char,
 }
 
 #[no_mangle]
-pub extern "C" fn eip_configure_batch_operations(client_id: c_int, config: *const u8) -> c_int {
+pub unsafe extern "C" fn eip_configure_batch_operations(_client_id: c_int, _config: *const u8) -> c_int {
     0 // Return success for now
 }
 
 #[no_mangle]
-pub extern "C" fn eip_get_batch_config(client_id: c_int, config: *mut u8) -> c_int {
+pub unsafe extern "C" fn eip_get_batch_config(_client_id: c_int, _config: *mut u8) -> c_int {
     -1 // Not implemented yet
 } 

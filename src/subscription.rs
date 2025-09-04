@@ -105,6 +105,12 @@ pub struct SubscriptionManager {
     subscriptions: Arc<Mutex<Vec<TagSubscription>>>,
 }
 
+impl Default for SubscriptionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SubscriptionManager {
     /// Creates a new subscription manager
     pub fn new() -> Self {

@@ -96,6 +96,12 @@ pub struct PlcManager {
     health_check_interval: Duration,
 }
 
+impl Default for PlcManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PlcManager {
     /// Creates a new PLC manager
     pub fn new() -> Self {

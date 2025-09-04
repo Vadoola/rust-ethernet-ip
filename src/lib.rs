@@ -3258,7 +3258,7 @@ impl EipClient {
         // - MaxLength or padding (2 bytes): 0x00, 0x00
         // - Data array (variable length, null terminated)
         
-        let current_len = string_bytes.len().min(82) as u16;
+        let _current_len = string_bytes.len().min(82) as u16;
         
         // Build the correct Allen-Bradley STRING structure to match what the PLC expects
         // Analysis of read response: [CE, 0F, 01, 00, 00, 00, 31, 00, 00, 00, ...]

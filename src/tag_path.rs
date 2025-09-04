@@ -97,14 +97,14 @@ impl TagPath {
     }
     
     /// Converts the TagPath back to a string representation
-    pub fn to_string(&self) -> String {
+    pub fn as_string(&self) -> String {
         match self {
             TagPath::Controller { tag_name } => tag_name.clone(),
             TagPath::Program { program_name, tag_name } => {
                 format!("Program:{}.{}", program_name, tag_name)
             }
             TagPath::Array { base_path, indices } => {
-                let base = base_path.to_string();
+                let base = base_path.as_string();
                 let indices_str = indices.iter()
                     .map(|i| i.to_string())
                     .collect::<Vec<_>>()
@@ -112,16 +112,16 @@ impl TagPath {
                 format!("{}[{}]", base, indices_str)
             }
             TagPath::Bit { base_path, bit_index } => {
-                format!("{}.{}", base_path.to_string(), bit_index)
+                format!("{}.{}", base_path, bit_index)
             }
             TagPath::Member { base_path, member_name } => {
-                format!("{}.{}", base_path.to_string(), member_name)
+                format!("{}.{}", base_path, member_name)
             }
             TagPath::StringLength { base_path } => {
-                format!("{}.LEN", base_path.to_string())
+                format!("{}.LEN", base_path)
             }
             TagPath::StringData { base_path, index } => {
-                format!("{}.DATA[{}]", base_path.to_string(), index)
+                format!("{}.DATA[{}]", base_path, index)
             }
         }
     }
@@ -266,7 +266,7 @@ impl TagPath {
 
 impl fmt::Display for TagPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.to_string())
+        write!(f, "{}", self.as_string())
     }
 }
 
