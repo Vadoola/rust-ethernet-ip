@@ -10,6 +10,11 @@
 > Try the new high-performance Go backend + Next.js frontend demo for real-time, batch, and performance operations.
 > [See fullstack example & guide →](examples/gonextjs/README.md)
 
+> **🏭 NEW: Professional HMI/SCADA Demo!**
+>
+> Experience a production-ready HMI dashboard with real-time monitoring, OEE analysis, and industrial data visualization.
+> [Try the HMI Demo →](#-hmi-scada-production-demo)
+
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
 [![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](https://github.com/sergiogallegos/rust-ethernet-ip/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -20,6 +25,7 @@
 [![Crates.io](https://img.shields.io/crates/v/rust-ethernet-ip.svg)](https://crates.io/crates/rust-ethernet-ip)
 [![Documentation](https://docs.rs/rust-ethernet-ip/badge.svg)](https://docs.rs/rust-ethernet-ip)
 [![Downloads](https://img.shields.io/crates/d/rust-ethernet-ip.svg)](https://crates.io/crates/rust-ethernet-ip)
+[![Sponsor](https://img.shields.io/badge/sponsor-💖-ff69b4.svg)](https://github.com/sponsors/sergiogallegos)
 
 A high-performance, production-ready EtherNet/IP communication library specifically designed for **Allen-Bradley CompactLogix and ControlLogix PLCs**. Built in pure Rust with focus on **PC applications**, offering exceptional performance, memory safety, and comprehensive industrial features.
  
@@ -116,6 +122,33 @@ All Allen-Bradley native data types with proper CIP encoding:
 - **Parallel processing** with concurrent execution
 - **Transaction support** with rollback capabilities
 - **2,000+ ops/sec throughput** with intelligent packet packing
+
+## 🏭 **HMI/SCADA Production Demo**
+
+Experience a **professional-grade HMI dashboard** showcasing real-world industrial data tracking and monitoring capabilities. This demo demonstrates the library's potential for building production-ready SCADA systems and industrial dashboards.
+
+![HMI/SCADA Production Demo](images/SampleHMI.png)
+
+### 🎯 **Demo Features**
+- **📊 Real-time Production Monitoring** - Live production counts, targets, and progress tracking
+- **📈 OEE Analysis** - Overall Equipment Effectiveness with availability, performance, and quality metrics
+- **🌡️ Process Parameters** - Temperature, pressure, vibration monitoring with color-coded alerts
+- **⚙️ Machine Status** - Real-time machine state, shift information, and operator tracking
+- **🔧 Maintenance Management** - Scheduled maintenance tracking and history
+- **📱 Responsive Design** - Works seamlessly on desktop, tablet, and mobile devices
+
+### 🚀 **Perfect for Demonstrations**
+This demo showcases:
+- **High-frequency data collection** (1-second intervals)
+- **Professional HMI aesthetics** with industrial-grade visualizations
+- **Real-world metrics** that matter to production managers
+- **Scalable architecture** for larger SCADA systems
+- **Modern web technologies** for cross-platform deployment
+
+### 🏷️ **Required PLC Tags**
+The demo reads 13 industrial tags including machine status, production metrics, process parameters, and OEE data. See the [Go + Next.js example](examples/gonextjs/README.md) for complete tag specifications and setup instructions.
+
+**Try it now:** Navigate to the "HMI Demo" tab in the [Go + Next.js fullstack example](examples/gonextjs/README.md)!
 
 ## 🚀 **Performance Characteristics**
 
@@ -677,8 +710,9 @@ npm install && npm run dev
 - ✅ **Real-time tag updates** via WebSocket
 - ✅ **Comprehensive PLC data type support**
 - ✅ **Modern, responsive UI**
+- ✅ **🏭 Professional HMI/SCADA Demo** - Production-ready dashboard with OEE analysis, process monitoring, and industrial data visualization
 
-**Perfect for:** Modern web dashboards, Go/TypeScript fullstack apps, real-time industrial monitoring
+**Perfect for:** Modern web dashboards, Go/TypeScript fullstack apps, real-time industrial monitoring, HMI/SCADA systems
 
 ### **⚡ Vue.js 3 + TypeScript Frontend** *(NEW in v0.4.0!)*
 Modern Vue.js 3 frontend with TypeScript, Tailwind CSS, and Pinia state management, designed to integrate with ASP.NET Core backends.
@@ -759,6 +793,57 @@ Each example includes comprehensive documentation, setup instructions, and demon
 - **[C# Wrapper Guide](csharp/RustEtherNetIp/README.md)** - C# integration documentation
 - **[Changelog](CHANGELOG.md)** - Version history and changes
 - **[Crates.io Page](https://crates.io/crates/rust-ethernet-ip)** - Official crate registry page
+
+## 💖 **Sponsor This Project**
+
+This project is developed with ❤️ for the industrial automation community. If you find this library valuable for your projects, please consider sponsoring its development!
+
+### 🎯 **Why Sponsor?**
+- **🚀 Accelerate Development** - Help fund new features, performance improvements, and platform support
+- **🐛 Priority Bug Fixes** - Get faster resolution of issues affecting your production systems
+- **💡 Feature Requests** - Influence the roadmap with your specific industrial automation needs
+- **📚 Enhanced Documentation** - Support creation of comprehensive guides and tutorials
+- **🔧 Professional Support** - Access to direct developer support for complex implementations
+
+### 💰 **Sponsorship Tiers**
+- **☕ Coffee** - Show appreciation for the project
+- **🚀 Feature Sponsor** - Fund specific feature development
+- **🏭 Enterprise Sponsor** - Priority support and custom development
+- **🌟 Platinum Sponsor** - Direct collaboration and roadmap input
+
+### 🎁 **Sponsor Benefits**
+- **Priority issue resolution** for production-critical bugs
+- **Direct access** to development team for technical questions
+- **Early access** to new features and beta releases
+- **Custom feature development** for your specific use cases
+- **Recognition** in project documentation and releases
+
+**[Sponsor on GitHub →](https://github.com/sponsors/sergiogallegos)**
+
+### 💬 **Feedback & Feature Requests**
+
+We value your input! Help us improve the library by sharing:
+
+#### 🐛 **Bug Reports**
+- **Production Issues** - Critical bugs affecting your systems
+- **Performance Problems** - Slow operations or memory issues
+- **Compatibility Issues** - Problems with specific PLC models or configurations
+- **Error Handling** - Unexpected errors or unclear error messages
+
+#### 💡 **Feature Requests**
+- **New Data Types** - Additional Allen-Bradley data type support
+- **Platform Support** - New operating systems or architectures
+- **Performance Features** - Batch operations, caching, or optimization requests
+- **Integration Features** - New language bindings or framework integrations
+- **Industrial Features** - SCADA-specific functionality, alarms, or trending
+
+#### 📊 **Use Case Sharing**
+- **Success Stories** - How you're using the library in production
+- **Performance Metrics** - Real-world performance data from your applications
+- **Integration Examples** - Custom implementations or workarounds
+- **Best Practices** - Tips for other users in similar industries
+
+**[Submit Feedback →](https://github.com/sergiogallegos/rust-ethernet-ip/issues/new/choose)**
 
 ## 🤝 **Community & Support**
 

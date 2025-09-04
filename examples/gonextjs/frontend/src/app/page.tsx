@@ -16,7 +16,7 @@ import {
 import "./globals.css";
 
 // Tab type definition
-const TABS = ["Individual", "Batch", "Performance", "Config", "About"] as const;
+const TABS = ["Individual", "Batch", "Performance", "HMI Demo", "Config", "About"] as const;
 type TabType = typeof TABS[number];
 
 interface LogEntry {
@@ -83,6 +83,28 @@ export default function Page() {
   const [benchmarkTestTag, setBenchmarkTestTag] = useState("");
   const [benchmarkTestType, setBenchmarkTestType] = useState("Dint");
   const [benchmarkTestWrites, setBenchmarkTestWrites] = useState(false);
+
+  // HMI Demo state
+  const [hmiData, setHmiData] = useState({
+    machineStatus: "Running",
+    productionCount: 0,
+    targetCount: 1000,
+    cycleTime: 0,
+    temperature: 0,
+    pressure: 0,
+    vibration: 0,
+    qualityRate: 100,
+    efficiency: 0,
+    availability: 100,
+    performance: 0,
+    oee: 0,
+    shift: 1,
+    operator: "John Doe",
+    lastMaintenance: "2024-01-15",
+    nextMaintenance: "2024-02-15"
+  });
+  const [isHmiMonitoring, setIsHmiMonitoring] = useState(false);
+  const hmiIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Logging
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -218,7 +240,7 @@ export default function Page() {
     }
   };
 
-  const stopMonitoring = useCallback(() => {
+  const stopMonitoring = () => {
     console.log("[MONITORING] Stopping monitoring...");
     setIsMonitoring(false);
     if (monitoringIntervalRef.current) {
@@ -229,84 +251,92 @@ export default function Page() {
       console.log("[MONITORING] No interval to clear");
     }
     addLog("info", "Stopped tag monitoring");
-  }, []);
-
-  // Create a stable updateTags function using useCallback
-  const updateTags = useCallback(async () => {
-    console.log(`[MONITORING] updateTags called at ${new Date().toLocaleTimeString()}`);
-    
-    if (!isConnected) {
-      console.log("[MONITORING] Not connected, skipping update");
-      return;
-    }
-    
-    // Use the ref to get the current tags
-    const currentTags = monitoredTagsRef.current;
-    console.log(`[MONITORING] Current tags from ref:`, currentTags);
-    if (currentTags.length === 0) {
-      console.log("[MONITORING] No tags to monitor, stopping");
-      stopMonitoring();
-      return;
-    }
-    
-    console.log(`[MONITORING] Updating ${currentTags.length} tags`);
-    const timestamp = new Date().toLocaleTimeString();
-    
-    const updatePromises = currentTags.map(async (tag) => {
-      try {
-        const result = await readTag(tag.name, tag.type);
-        console.log(`[MONITORING] Tag ${tag.name}: ${result.value}`);
-        return {
-          ...tag,
-          value: result.value,
-          lastUpdate: timestamp,
-          error: undefined
-        };
-      } catch (err: any) {
-        console.log(`[MONITORING] Error reading tag ${tag.name}:`, err.message);
-        return {
-          ...tag,
-          error: err.message || "Read failed",
-          lastUpdate: timestamp
-        };
-      }
-    });
-
-    const updatedTags = await Promise.all(updatePromises);
-    setMonitoredTags(updatedTags);
-    console.log("[MONITORING] Tags updated successfully");
-  }, [isConnected, readTag, stopMonitoring]);
+  };
 
   const startMonitoring = () => {
-    if (monitoredTagsRef.current.length === 0) {
+    if (monitoredTags.length === 0) {
       addLog("warning", "No tags to monitor. Add some tags first.");
       return;
     }
     
-    // Clear any existing interval
-    if (monitoringIntervalRef.current) {
-      clearInterval(monitoringIntervalRef.current);
-      monitoringIntervalRef.current = null;
-    }
-    
     setIsMonitoring(true);
-    const intervalMs = monitoringIntervalValueRef.current;
-    addLog("info", `Started monitoring ${monitoredTagsRef.current.length} tags (${intervalMs}ms interval)`);
+    addLog("info", `Started monitoring ${monitoredTags.length} tags (${monitoringInterval}ms interval)`);
+  };
+
+  // Simple monitoring effect
+  useEffect(() => {
+    if (!isMonitoring || !isConnected) {
+      return;
+    }
+
+    console.log(`[MONITORING] Starting monitoring effect`);
+
+    const updateTags = async () => {
+      console.log(`[MONITORING] updateTags called at ${new Date().toLocaleTimeString()}`);
+      
+      if (!isConnected) {
+        console.log("[MONITORING] Not connected, skipping update");
+        return;
+      }
+      
+      // Get current tags from ref to avoid dependency issues
+      const currentTags = monitoredTagsRef.current;
+      if (currentTags.length === 0) {
+        console.log("[MONITORING] No tags to monitor");
+        return;
+      }
+      
+      console.log(`[MONITORING] Updating ${currentTags.length} tags`);
+      const timestamp = new Date().toLocaleTimeString();
+      
+      const updatePromises = currentTags.map(async (tag) => {
+        try {
+          const result = await readTag(tag.name, tag.type);
+          console.log(`[MONITORING] Tag ${tag.name}: ${result.value}`);
+          return {
+            ...tag,
+            value: result.value,
+            lastUpdate: timestamp,
+            error: undefined
+          };
+        } catch (err: any) {
+          console.log(`[MONITORING] Error reading tag ${tag.name}:`, err.message);
+          return {
+            ...tag,
+            error: err.message || "Read failed",
+            lastUpdate: timestamp
+          };
+        }
+      });
+
+      const updatedTags = await Promise.all(updatePromises);
+      setMonitoredTags(updatedTags);
+      console.log("[MONITORING] Tags updated successfully");
+    };
 
     // Initial update
     console.log("[MONITORING] Running initial update");
     updateTags();
     
-    // Set up interval with the current interval value
-    console.log(`[MONITORING] Setting up interval with ${intervalMs}ms`);
-    monitoringIntervalRef.current = setInterval(updateTags, intervalMs);
+    // Set up interval
+    console.log(`[MONITORING] Setting up interval with ${monitoringInterval}ms`);
+    monitoringIntervalRef.current = setInterval(updateTags, monitoringInterval);
     
     if (monitoringIntervalRef.current) {
       console.log("[MONITORING] Interval set successfully");
     } else {
       console.error("[MONITORING] Failed to set interval");
     }
-  };
+
+    // Cleanup function
+    return () => {
+      console.log("[MONITORING] Cleaning up monitoring effect");
+      if (monitoringIntervalRef.current) {
+        clearInterval(monitoringIntervalRef.current);
+        monitoringIntervalRef.current = null;
+      }
+    };
+  }, [isMonitoring, isConnected, monitoringInterval, readTag]);
 
 
   const restartMonitoring = () => {
@@ -330,6 +360,107 @@ export default function Page() {
       }
     };
   }, [isConnected, isMonitoring]);
+
+  // HMI Demo functions
+  const startHmiMonitoring = async () => {
+    if (!isConnected) {
+      addLog("warning", "Please connect to PLC first");
+      return;
+    }
+
+    setIsHmiMonitoring(true);
+    addLog("info", "Starting HMI demo monitoring...");
+
+    const updateHmiData = async () => {
+      try {
+        // Read all HMI tags from PLC
+        const [
+          machineStatusResult,
+          productionCountResult,
+          targetCountResult,
+          cycleTimeResult,
+          temperatureResult,
+          pressureResult,
+          vibrationResult,
+          qualityRateResult,
+          efficiencyResult,
+          availabilityResult,
+          performanceResult,
+          shiftResult,
+          operatorResult
+        ] = await Promise.all([
+          readTag("HMI_Machine_Status", "String"),
+          readTag("HMI_Production_Count", "Dint"),
+          readTag("HMI_Target_Count", "Dint"),
+          readTag("HMI_Cycle_Time", "Real"),
+          readTag("HMI_Temperature", "Real"),
+          readTag("HMI_Pressure", "Real"),
+          readTag("HMI_Vibration", "Real"),
+          readTag("HMI_Quality_Rate", "Real"),
+          readTag("HMI_Efficiency", "Real"),
+          readTag("HMI_Availability", "Real"),
+          readTag("HMI_Performance", "Real"),
+          readTag("HMI_Shift", "Int"),
+          readTag("HMI_Operator", "String")
+        ]);
+
+        // Calculate OEE (Overall Equipment Effectiveness)
+        const availability = Number(availabilityResult.value) || 0;
+        const performance = Number(performanceResult.value) || 0;
+        const quality = Number(qualityRateResult.value) || 0;
+        const oee = (availability * performance * quality) / 10000; // Convert to percentage
+
+        setHmiData(prev => ({
+          ...prev,
+          machineStatus: String(machineStatusResult.value) || "Unknown",
+          productionCount: Number(productionCountResult.value) || 0,
+          targetCount: Number(targetCountResult.value) || 1000,
+          cycleTime: Number(cycleTimeResult.value) || 0,
+          temperature: Number(temperatureResult.value) || 0,
+          pressure: Number(pressureResult.value) || 0,
+          vibration: Number(vibrationResult.value) || 0,
+          qualityRate: Number(qualityRateResult.value) || 100,
+          efficiency: Number(efficiencyResult.value) || 0,
+          availability: availability,
+          performance: performance,
+          oee: oee,
+          shift: Number(shiftResult.value) || 1,
+          operator: String(operatorResult.value) || "Unknown"
+        }));
+
+      } catch (err: any) {
+        addLog("error", `HMI data update failed: ${err.message}`);
+        console.error("HMI update error:", err);
+      }
+    };
+
+    // Initial update
+    await updateHmiData();
+
+    // Set up interval for continuous updates
+    hmiIntervalRef.current = setInterval(updateHmiData, 1000); // Update every second
+  };
+
+  const stopHmiMonitoring = () => {
+    setIsHmiMonitoring(false);
+    if (hmiIntervalRef.current) {
+      clearInterval(hmiIntervalRef.current);
+      hmiIntervalRef.current = null;
+    }
+    addLog("info", "Stopped HMI demo monitoring");
+  };
+
+  // Cleanup HMI monitoring on unmount or disconnect
+  useEffect(() => {
+    if (!isConnected && isHmiMonitoring) {
+      stopHmiMonitoring();
+    }
+    return () => {
+      if (hmiIntervalRef.current) {
+        clearInterval(hmiIntervalRef.current);
+      }
+    };
+  }, [isConnected, isHmiMonitoring]);
 
   // Batch handlers
   const handleBatchRead = async () => {
@@ -749,6 +880,287 @@ export default function Page() {
                 {benchmarkResults && (
                   <div className="text-sm mt-1">Read: {benchmarkResults.readRate?.toFixed(0)} ops/sec, Write: {benchmarkResults.writeRate?.toFixed(0)} ops/sec</div>
                 )}
+              </div>
+            )}
+            {activeTab === "HMI Demo" && (
+              <div>
+                <h2 className="font-bold text-lg mb-4 flex items-center gap-2">
+                  <span role="img" aria-label="hmi">🏭</span> HMI/SCADA Production Demo
+                </h2>
+                
+                {/* Control Panel */}
+                <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-green-50 rounded-lg">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-4">
+                      <button
+                        className={`px-6 py-2 rounded-lg font-semibold transition ${
+                          isHmiMonitoring 
+                            ? 'bg-red-500 hover:bg-red-600 text-white' 
+                            : 'bg-green-500 hover:bg-green-600 text-white'
+                        }`}
+                        onClick={isHmiMonitoring ? stopHmiMonitoring : startHmiMonitoring}
+                        disabled={!isConnected}
+                      >
+                        {isHmiMonitoring ? '🛑 Stop HMI Demo' : '▶️ Start HMI Demo'}
+                      </button>
+                      <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+                        isHmiMonitoring ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {isHmiMonitoring ? '🟢 Monitoring Active' : '⚫ Monitoring Stopped'}
+                      </div>
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      Last Update: {new Date().toLocaleTimeString()}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Production Dashboard */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                  {/* Machine Status */}
+                  <div className="bg-white rounded-lg shadow-lg p-6">
+                    <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
+                      <span role="img" aria-label="machine">⚙️</span> Machine Status
+                    </h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600">Status:</span>
+                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                          hmiData.machineStatus === 'Running' 
+                            ? 'bg-green-100 text-green-800' 
+                            : hmiData.machineStatus === 'Stopped'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {hmiData.machineStatus}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600">Shift:</span>
+                        <span className="font-semibold">Shift {hmiData.shift}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600">Operator:</span>
+                        <span className="font-semibold">{hmiData.operator}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Production Metrics */}
+                  <div className="bg-white rounded-lg shadow-lg p-6">
+                    <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
+                      <span role="img" aria-label="production">📊</span> Production
+                    </h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600">Current:</span>
+                        <span className="font-bold text-xl text-blue-600">{hmiData.productionCount}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600">Target:</span>
+                        <span className="font-semibold">{hmiData.targetCount}</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div 
+                          className="bg-blue-600 h-2 rounded-full transition-all duration-500" 
+                          style={{ width: `${Math.min((hmiData.productionCount / hmiData.targetCount) * 100, 100)}%` }}
+                        ></div>
+                      </div>
+                      <div className="text-center text-sm text-gray-600">
+                        {((hmiData.productionCount / hmiData.targetCount) * 100).toFixed(1)}% Complete
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* OEE Dashboard */}
+                  <div className="bg-white rounded-lg shadow-lg p-6">
+                    <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
+                      <span role="img" aria-label="oee">📈</span> OEE Analysis
+                    </h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600">Overall OEE:</span>
+                        <span className={`font-bold text-xl ${
+                          hmiData.oee >= 85 ? 'text-green-600' : 
+                          hmiData.oee >= 70 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {hmiData.oee.toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600">Availability:</span>
+                        <span className="font-semibold">{hmiData.availability.toFixed(1)}%</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600">Performance:</span>
+                        <span className="font-semibold">{hmiData.performance.toFixed(1)}%</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600">Quality:</span>
+                        <span className="font-semibold">{hmiData.qualityRate.toFixed(1)}%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Process Parameters */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                  {/* Temperature */}
+                  <div className="bg-white rounded-lg shadow-lg p-6">
+                    <h4 className="font-semibold mb-3 flex items-center gap-2">
+                      <span role="img" aria-label="temperature">🌡️</span> Temperature
+                    </h4>
+                    <div className="text-center">
+                      <div className={`text-3xl font-bold mb-2 ${
+                        hmiData.temperature > 80 ? 'text-red-600' : 
+                        hmiData.temperature > 60 ? 'text-yellow-600' : 'text-green-600'
+                      }`}>
+                        {hmiData.temperature.toFixed(1)}°C
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div 
+                          className={`h-2 rounded-full transition-all duration-500 ${
+                            hmiData.temperature > 80 ? 'bg-red-500' : 
+                            hmiData.temperature > 60 ? 'bg-yellow-500' : 'bg-green-500'
+                          }`}
+                          style={{ width: `${Math.min((hmiData.temperature / 100) * 100, 100)}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Pressure */}
+                  <div className="bg-white rounded-lg shadow-lg p-6">
+                    <h4 className="font-semibold mb-3 flex items-center gap-2">
+                      <span role="img" aria-label="pressure">🔧</span> Pressure
+                    </h4>
+                    <div className="text-center">
+                      <div className={`text-3xl font-bold mb-2 ${
+                        hmiData.pressure > 8 ? 'text-red-600' : 
+                        hmiData.pressure > 6 ? 'text-yellow-600' : 'text-green-600'
+                      }`}>
+                        {hmiData.pressure.toFixed(1)} bar
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div 
+                          className={`h-2 rounded-full transition-all duration-500 ${
+                            hmiData.pressure > 8 ? 'bg-red-500' : 
+                            hmiData.pressure > 6 ? 'bg-yellow-500' : 'bg-green-500'
+                          }`}
+                          style={{ width: `${Math.min((hmiData.pressure / 10) * 100, 100)}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Vibration */}
+                  <div className="bg-white rounded-lg shadow-lg p-6">
+                    <h4 className="font-semibold mb-3 flex items-center gap-2">
+                      <span role="img" aria-label="vibration">📳</span> Vibration
+                    </h4>
+                    <div className="text-center">
+                      <div className={`text-3xl font-bold mb-2 ${
+                        hmiData.vibration > 5 ? 'text-red-600' : 
+                        hmiData.vibration > 3 ? 'text-yellow-600' : 'text-green-600'
+                      }`}>
+                        {hmiData.vibration.toFixed(2)} mm/s
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div 
+                          className={`h-2 rounded-full transition-all duration-500 ${
+                            hmiData.vibration > 5 ? 'bg-red-500' : 
+                            hmiData.vibration > 3 ? 'bg-yellow-500' : 'bg-green-500'
+                          }`}
+                          style={{ width: `${Math.min((hmiData.vibration / 10) * 100, 100)}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Cycle Time */}
+                  <div className="bg-white rounded-lg shadow-lg p-6">
+                    <h4 className="font-semibold mb-3 flex items-center gap-2">
+                      <span role="img" aria-label="cycle">⏱️</span> Cycle Time
+                    </h4>
+                    <div className="text-center">
+                      <div className={`text-3xl font-bold mb-2 ${
+                        hmiData.cycleTime > 30 ? 'text-red-600' : 
+                        hmiData.cycleTime > 20 ? 'text-yellow-600' : 'text-green-600'
+                      }`}>
+                        {hmiData.cycleTime.toFixed(1)}s
+                      </div>
+                      <div className="text-sm text-gray-600">
+                        Target: 15.0s
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Maintenance Info */}
+                <div className="bg-white rounded-lg shadow-lg p-6">
+                  <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
+                    <span role="img" aria-label="maintenance">🔧</span> Maintenance Schedule
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <h4 className="font-semibold mb-2 text-gray-700">Last Maintenance</h4>
+                      <div className="bg-green-50 rounded-lg p-3">
+                        <div className="text-lg font-semibold text-green-800">{hmiData.lastMaintenance}</div>
+                        <div className="text-sm text-green-600">Completed successfully</div>
+                      </div>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold mb-2 text-gray-700">Next Maintenance</h4>
+                      <div className="bg-blue-50 rounded-lg p-3">
+                        <div className="text-lg font-semibold text-blue-800">{hmiData.nextMaintenance}</div>
+                        <div className="text-sm text-blue-600">Scheduled maintenance</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* PLC Tag Information */}
+                <div className="mt-6 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg p-6">
+                  <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
+                    <span role="img" aria-label="tags">🏷️</span> Required PLC Tags
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+                    <div className="bg-white rounded-lg p-3">
+                      <h4 className="font-semibold mb-2">Machine Control</h4>
+                      <ul className="space-y-1 text-gray-600">
+                        <li><code>HMI_Machine_Status</code> (String)</li>
+                        <li><code>HMI_Production_Count</code> (Dint)</li>
+                        <li><code>HMI_Target_Count</code> (Dint)</li>
+                        <li><code>HMI_Cycle_Time</code> (Real)</li>
+                      </ul>
+                    </div>
+                    <div className="bg-white rounded-lg p-3">
+                      <h4 className="font-semibold mb-2">Process Parameters</h4>
+                      <ul className="space-y-1 text-gray-600">
+                        <li><code>HMI_Temperature</code> (Real)</li>
+                        <li><code>HMI_Pressure</code> (Real)</li>
+                        <li><code>HMI_Vibration</code> (Real)</li>
+                        <li><code>HMI_Quality_Rate</code> (Real)</li>
+                      </ul>
+                    </div>
+                    <div className="bg-white rounded-lg p-3">
+                      <h4 className="font-semibold mb-2">OEE & Personnel</h4>
+                      <ul className="space-y-1 text-gray-600">
+                        <li><code>HMI_Efficiency</code> (Real)</li>
+                        <li><code>HMI_Availability</code> (Real)</li>
+                        <li><code>HMI_Performance</code> (Real)</li>
+                        <li><code>HMI_Shift</code> (Int)</li>
+                        <li><code>HMI_Operator</code> (String)</li>
+                      </ul>
+                    </div>
+                  </div>
+                  <div className="mt-4 p-3 bg-yellow-50 rounded-lg">
+                    <p className="text-sm text-yellow-800">
+                      <strong>Note:</strong> Create these tags in your PLC with the specified data types. 
+                      The demo will read these tags every second to display real-time production data.
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
             {activeTab === "Config" && (
