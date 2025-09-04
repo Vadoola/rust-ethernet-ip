@@ -16,7 +16,7 @@
 > [Try the HMI Demo →](#-hmi-scada-production-demo)
 
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](https://github.com/sergiogallegos/rust-ethernet-ip/releases)
+[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)](https://github.com/sergiogallegos/rust-ethernet-ip/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Performance](https://img.shields.io/badge/performance-2500%2B%20ops%2Fsec-green.svg)]()
 [![Status](https://img.shields.io/badge/status-production--ready-brightgreen.svg)]()
@@ -200,7 +200,7 @@ The easiest way to get started is by adding the crate to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rust-ethernet-ip = "0.4.0"
+rust-ethernet-ip = "0.5.0"
 tokio = { version = "1.0", features = ["full"] }
 
 ### Rust Library
@@ -208,7 +208,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rust-ethernet-ip = "0.4.0"
+rust-ethernet-ip = "0.5.0"
 tokio = { version = "1.0", features = ["full"] }
 ```
 
@@ -216,7 +216,7 @@ tokio = { version = "1.0", features = ["full"] }
 Install via NuGet:
 
 ```xml
-<PackageReference Include="RustEtherNetIp" Version="0.4.0" />
+<PackageReference Include="RustEtherNetIp" Version="0.5.0" />
 ```
 
 Or via Package Manager Console:
@@ -948,7 +948,7 @@ See [BUILD.md](BUILD.md) for details.
 
 ## 🆕 Version
 
-**Current Release:** v0.4.0 ([Release Notes](RELEASE_NOTES_v0.4.0.md))
+**Current Release:** v0.5.0 ([Release Notes](RELEASE_NOTES_v0.5.0.md))
 
 ## 📝 Changelog
 
@@ -956,7 +956,7 @@ See [CHANGELOG.md](CHANGELOG.md) for a full list of changes.
 
 ## 🚀 Release Notes
 
-See [RELEASE_NOTES_v0.4.0.md](RELEASE_NOTES_v0.4.0.md) for detailed release notes and migration info.
+See [RELEASE_NOTES_v0.5.0.md](RELEASE_NOTES_v0.5.0.md) for detailed release notes and migration info.
 
 ## 🚀 Quick Start: Go + Next.js Fullstack Example
 

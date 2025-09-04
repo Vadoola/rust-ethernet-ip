@@ -1,118 +1,63 @@
-#!/usr/bin/env pwsh
-<#
-.SYNOPSIS
-    Updates version across all project files
-.DESCRIPTION
-    This script updates the version number in Cargo.toml, C# project files, 
-    VERSION file, and other relevant files throughout the project.
-.PARAMETER Version
-    The new version number (e.g., "0.3.0")
-.PARAMETER UpdateChangelog
-    Whether to update the CHANGELOG.md with a new version entry
-.EXAMPLE
-    .\scripts\update-version.ps1 -Version "0.3.0" -UpdateChangelog
-#>
-
+# PowerShell script to update version across all files
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$Version,
-    
-    [Parameter(Mandatory = $false)]
-    [switch]$UpdateChangelog
+    [Parameter(Mandatory=$true)]
+    [string]$NewVersion
 )
 
-# Validate version format
-if ($Version -notmatch '^\d+\.\d+\.\d+$') {
-    Write-Error "Version must be in format X.Y.Z (e.g., 0.3.0)"
-    exit 1
-}
-
-$parts = $Version.Split('.')
-$major = $parts[0]
-$minor = $parts[1]
-$patch = $parts[2]
-
-Write-Host "Updating version to $Version..." -ForegroundColor Green
+Write-Host "🔄 Updating version to $NewVersion across all files..." -ForegroundColor Green
 
 # Update Cargo.toml
-Write-Host "Updating Cargo.toml..." -ForegroundColor Yellow
+Write-Host "📦 Updating Cargo.toml..." -ForegroundColor Yellow
 $cargoContent = Get-Content "Cargo.toml" -Raw
-$cargoContent = $cargoContent -replace 'version = "\d+\.\d+\.\d+"', "version = `"$Version`""
-Set-Content "Cargo.toml" $cargoContent
+$cargoContent = $cargoContent -replace 'version = "[^"]*"', "version = `"$NewVersion`""
+Set-Content "Cargo.toml" -Value $cargoContent
 
-# Update src/version.rs
-Write-Host "Updating src/version.rs..." -ForegroundColor Yellow
+# Update README.md
+Write-Host "📖 Updating README.md..." -ForegroundColor Yellow
+$readmeContent = Get-Content "README.md" -Raw
+$readmeContent = $readmeContent -replace 'version-0\.\d+\.\d+', "version-$NewVersion"
+$readmeContent = $readmeContent -replace 'rust-ethernet-ip = "0\.\d+\.\d+"', "rust-ethernet-ip = `"$NewVersion`""
+$readmeContent = $readmeContent -replace '<PackageReference Include="RustEtherNetIp" Version="0\.\d+\.\d+" />', "<PackageReference Include=`"RustEtherNetIp`" Version=`"$NewVersion`" />"
+$readmeContent = $readmeContent -replace 'v0\.\d+\.\d+', "v$NewVersion"
+Set-Content "README.md" -Value $readmeContent
+
+# Update Go backend
+Write-Host "🐹 Updating Go backend..." -ForegroundColor Yellow
+$goContent = Get-Content "examples/gonextjs/backend/main.go" -Raw
+$goContent = $goContent -replace '"version":\s*"0\.\d+\.\d+"', "`"version`": `"$NewVersion`""
+Set-Content "examples/gonextjs/backend/main.go" -Value $goContent
+
+# Update version.rs
+Write-Host "🦀 Updating version.rs..." -ForegroundColor Yellow
+$versionParts = $NewVersion.Split('.')
+$majorVersion = $versionParts[0]
+$minorVersion = $versionParts[1]
+$patchVersion = $versionParts[2]
+
 $versionContent = Get-Content "src/version.rs" -Raw
-$versionContent = $versionContent -replace 'pub const MAJOR_VERSION: u32 = \d+;', "pub const MAJOR_VERSION: u32 = $major;"
-$versionContent = $versionContent -replace 'pub const MINOR_VERSION: u32 = \d+;', "pub const MINOR_VERSION: u32 = $minor;"
-$versionContent = $versionContent -replace 'pub const PATCH_VERSION: u32 = \d+;', "pub const PATCH_VERSION: u32 = $patch;"
-Set-Content "src/version.rs" $versionContent
-
-# Update VERSION file
-Write-Host "Updating VERSION file..." -ForegroundColor Yellow
-Set-Content "VERSION" $Version
+$versionContent = $versionContent -replace 'pub const MAJOR_VERSION: u32 = \d+;', "pub const MAJOR_VERSION: u32 = $majorVersion;"
+$versionContent = $versionContent -replace 'pub const MINOR_VERSION: u32 = \d+;', "pub const MINOR_VERSION: u32 = $minorVersion;"
+$versionContent = $versionContent -replace 'pub const PATCH_VERSION: u32 = \d+;', "pub const PATCH_VERSION: u32 = $patchVersion;"
+Set-Content "src/version.rs" -Value $versionContent
 
 # Update C# project files
-$csprojFiles = @(
-    "csharp/RustEtherNetIp/RustEtherNetIp.csproj",
-    "examples/WpfExample/WpfExample.csproj",
-    "examples/WinFormsExample/WinFormsExample.csproj",
-    "examples/AspNetExample/AspNetExample.csproj"
-)
-
-foreach ($file in $csprojFiles) {
-    if (Test-Path $file) {
-        Write-Host "Updating $file..." -ForegroundColor Yellow
-        $content = Get-Content $file -Raw
-        $content = $content -replace '<Version>\d+\.\d+\.\d+</Version>', "<Version>$Version</Version>"
-        $content = $content -replace '<AssemblyVersion>\d+\.\d+\.\d+\.\d+</AssemblyVersion>', "<AssemblyVersion>$Version.0</AssemblyVersion>"
-        $content = $content -replace '<FileVersion>\d+\.\d+\.\d+\.\d+</FileVersion>', "<FileVersion>$Version.0</FileVersion>"
-        Set-Content $file $content
-    }
+Write-Host "🖥️ Updating C# project files..." -ForegroundColor Yellow
+Get-ChildItem -Path "csharp" -Filter "*.csproj" -Recurse | ForEach-Object {
+    $content = Get-Content $_.FullName -Raw
+    $content = $content -replace '<Version>0\.\d+\.\d+</Version>', "<Version>$NewVersion</Version>"
+    Set-Content $_.FullName -Value $content
 }
 
-# Update CHANGELOG.md if requested
-if ($UpdateChangelog) {
-    Write-Host "Updating CHANGELOG.md..." -ForegroundColor Yellow
-    $changelogContent = Get-Content "CHANGELOG.md" -Raw
-    $date = Get-Date -Format "yyyy-MM-dd"
-    $newEntry = @"
-## [$Version] - $date
+# Update Python wrapper
+Write-Host "🐍 Updating Python wrapper..." -ForegroundColor Yellow
+$pyContent = Get-Content "pywrapper/pyproject.toml" -Raw
+$pyContent = $pyContent -replace 'version = "[^"]*"', "version = `"$NewVersion`""
+Set-Content "pywrapper/pyproject.toml" -Value $pyContent
 
-### Added
-- 
-
-### Changed
-- 
-
-### Fixed
-- 
-
-### Removed
-- 
-
-"@
-    
-    $changelogContent = $changelogContent -replace '## \[Unreleased\]', "## [Unreleased]`n`n$newEntry"
-    Set-Content "CHANGELOG.md" $changelogContent
-}
-
-Write-Host "Version update complete!" -ForegroundColor Green
-Write-Host "Updated files:" -ForegroundColor Cyan
-Write-Host "  - Cargo.toml" -ForegroundColor White
-Write-Host "  - src/version.rs" -ForegroundColor White
-Write-Host "  - VERSION" -ForegroundColor White
-foreach ($file in $csprojFiles) {
-    if (Test-Path $file) {
-        Write-Host "  - $file" -ForegroundColor White
-    }
-}
-if ($UpdateChangelog) {
-    Write-Host "  - CHANGELOG.md" -ForegroundColor White
-}
-
-Write-Host "`nNext steps:" -ForegroundColor Cyan
-Write-Host "1. Review and update CHANGELOG.md with actual changes" -ForegroundColor White
-Write-Host "2. Commit the version changes" -ForegroundColor White
-Write-Host "3. Create a git tag: git tag v$Version" -ForegroundColor White
-Write-Host "4. Build and test the new version" -ForegroundColor White 
+Write-Host "✅ Version update completed successfully!" -ForegroundColor Green
+Write-Host "📋 Next steps:" -ForegroundColor Cyan
+Write-Host "   1. Review the changes with: git diff" -ForegroundColor White
+Write-Host "   2. Test the build: cargo build --release" -ForegroundColor White
+Write-Host "   3. Update CHANGELOG.md with new version entry" -ForegroundColor White
+Write-Host "   4. Create release notes: RELEASE_NOTES_v$NewVersion.md" -ForegroundColor White
+Write-Host "   5. Commit and tag: git commit -am 'Release v$NewVersion' && git tag v$NewVersion" -ForegroundColor White

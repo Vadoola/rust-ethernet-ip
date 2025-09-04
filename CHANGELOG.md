@@ -5,6 +5,73 @@ All notable changes to the rust-ethernet-ip project will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2025-01-15
+
+### 🎯 Production-Ready Release
+- **Professional HMI/SCADA Demo** with real-time production monitoring
+- **Production Monitoring System** with comprehensive metrics and health checks
+- **Configuration Management** for production deployment
+- **Production API Endpoints** for system management and monitoring
+- **Performance Benchmarking Framework** for optimization and testing
+- **Enhanced Real-time Monitoring** with stable continuous updates
+
+### ✨ Added - Professional HMI/SCADA Demo
+- **Real-time Production Dashboard** with live monitoring capabilities
+- **OEE Analysis** (Overall Equipment Effectiveness) with availability, performance, and quality metrics
+- **Process Parameter Monitoring** with color-coded alerts for temperature, pressure, vibration, and cycle time
+- **Machine Status Tracking** with shift information and operator identification
+- **Maintenance Management** with scheduled maintenance tracking
+- **Responsive Design** that works seamlessly on desktop, tablet, and mobile devices
+- **Professional UI/UX** with modern industrial aesthetics
+
+### ✨ Added - Production Monitoring System
+- **Comprehensive Metrics Collection** for connections, operations, performance, and errors
+- **Health Status Monitoring** with configurable thresholds and alerting
+- **Real-time Performance Tracking** with latency and throughput metrics
+- **Error Categorization** with detailed error analysis and reporting
+- **System Uptime Tracking** with automatic health status calculation
+- **Memory and CPU Usage Monitoring** for resource management
+
+### ✨ Added - Configuration Management
+- **Production-Ready Config System** with validation and environment-specific settings
+- **PLC-Specific Configuration** for different Allen-Bradley models
+- **Security and Performance Tuning** options for production deployment
+- **Configuration Validation** with comprehensive error checking
+- **Development vs Production** configuration presets
+
+### ✨ Added - Production API Endpoints
+- **Health Check Endpoint** (`/api/health`) for system status monitoring
+- **Metrics Endpoint** (`/api/metrics`) for performance and operational data
+- **Configuration Management** (`/api/config`) for runtime configuration updates
+- **System Status** (`/api/status`) for comprehensive system information
+- **RESTful API Design** following industry best practices
+
+### ✨ Added - Performance Benchmarking Framework
+- **Criterion-Based Benchmarking** for Rust operations
+- **Comparative Analysis** capabilities for performance optimization
+- **Stress Testing Framework** for long-term stability validation
+- **Automated Performance Regression Testing**
+
+### 🐛 Fixed - Real-time Monitoring Stability
+- **Fixed Monitoring Flashing Issue** - Resolved the problem where monitoring status was flashing and buttons became unresponsive
+- **Stable Continuous Updates** - Monitoring now works continuously without stopping after the first read
+- **Proper State Management** - Fixed React closure issues that were causing monitoring to stop unexpectedly
+- **Improved Error Handling** - Better error recovery and user feedback for monitoring operations
+
+### 🚀 Performance Improvements
+- **Optimized Batch Operations** with improved packet packing
+- **Better Connection Pooling** for concurrent operations
+- **Reduced Memory Footprint** with more efficient data structures
+- **Faster Tag Path Parsing** with optimized algorithms
+- **Enhanced Network Resilience** with improved connection handling
+
+### 📚 Documentation Updates
+- **Production Deployment Guide** with step-by-step instructions
+- **Configuration Reference** with all available options and examples
+- **Troubleshooting Guide** for common issues and solutions
+- **Performance Tuning Guide** for optimal system configuration
+- **Updated All Examples** with the latest features and best practices
+
 ## [0.4.0] - 2025-01-15
 
 ### 🎯 Major Production Release

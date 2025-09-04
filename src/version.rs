@@ -7,7 +7,7 @@ pub const DESCRIPTION: &str = env!("CARGO_PKG_DESCRIPTION");
 pub const MAJOR_VERSION: u32 = 0;
 
 /// Minor version number
-pub const MINOR_VERSION: u32 = 2;
+pub const MINOR_VERSION: u32 = 5;
 
 /// Patch version number
 pub const PATCH_VERSION: u32 = 0;
