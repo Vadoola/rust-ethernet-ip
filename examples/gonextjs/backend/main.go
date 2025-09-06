@@ -567,7 +567,7 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	health := map[string]interface{}{
 		"status":    "healthy",
 		"timestamp": time.Now().Unix(),
-		"version":   "0.5.0",
+		"version":   "0.5.1",
 		"uptime":    time.Since(startTime).Seconds(),
 	}
 
@@ -666,7 +666,7 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	status := map[string]interface{}{
 		"server": map[string]interface{}{
 			"status":    "running",
-			"version":   "0.5.0",
+			"version":   "0.5.1",
 			"uptime":    time.Since(startTime).Seconds(),
 			"timestamp": time.Now().Unix(),
 		},

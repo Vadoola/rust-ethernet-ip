@@ -163,7 +163,7 @@ The demo reads 13 industrial tags including machine status, production metrics, 
 
 Optimized for PC applications with excellent performance:
 
-> **🆕 Latest Performance Improvements (v0.5.0)**
+> **🆕 Latest Performance Improvements (v0.5.1)**
 > 
 > Recent optimizations have delivered significant performance gains:
 > - **Memory allocation improvements**: 20-30% reduction in allocation overhead for network operations
@@ -227,7 +227,7 @@ The easiest way to get started is by adding the crate to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rust-ethernet-ip = "0.5.0"
+rust-ethernet-ip = "0.5.1"
 tokio = { version = "1.0", features = ["full"] }
 
 ### Rust Library
@@ -235,7 +235,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rust-ethernet-ip = "0.5.0"
+rust-ethernet-ip = "0.5.1"
 tokio = { version = "1.0", features = ["full"] }
 ```
 
@@ -243,7 +243,7 @@ tokio = { version = "1.0", features = ["full"] }
 Install via NuGet:
 
 ```xml
-<PackageReference Include="RustEtherNetIp" Version="0.5.0" />
+<PackageReference Include="RustEtherNetIp" Version="0.5.1" />
 ```
 
 Or via Package Manager Console:
@@ -975,7 +975,7 @@ See [BUILD.md](BUILD.md) for details.
 
 ## 🆕 Version
 
-**Current Release:** v0.5.0 ([Release Notes](RELEASE_NOTES_v0.5.0.md))
+**Current Release:** v0.5.1 ([Release Notes](RELEASE_NOTES_v0.5.0.md))
 
 ## 📝 Changelog
 
