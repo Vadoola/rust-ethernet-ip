@@ -5,7 +5,7 @@ use pyo3::types::{PyDict, PyTuple};
 use tokio::runtime::Runtime;
 use std::collections::HashMap;
 use crate::{
-    EipClient, PlcValue, SubscriptionOptions, Result as EipResult
+    EipClient, PlcValue, SubscriptionOptions
 };
 
 /// Python module for rust_ethernet_ip

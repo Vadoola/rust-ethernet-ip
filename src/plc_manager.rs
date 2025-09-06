@@ -125,13 +125,13 @@ impl PlcManager {
             .ok_or_else(|| EtherNetIpError::Connection("PLC not configured".to_string()))?;
 
         // First check if we have any connections for this address
-        if !self.connections.contains_key(&address) {
+        if let std::collections::hash_map::Entry::Vacant(e) = self.connections.entry(address) {
             // No connections exist, create a new one
             let mut client = EipClient::new(&address.to_string()).await?;
             client.set_max_packet_size(config.max_packet_size as u32);
             let mut new_conn = PlcConnection::new(client);
             new_conn.last_used = Instant::now();
-            self.connections.insert(address, vec![new_conn]);
+            e.insert(vec![new_conn]);
             return Ok(&mut self.connections.get_mut(&address).unwrap()[0].client);
         }
 

@@ -800,7 +800,7 @@ pub unsafe extern "C" fn eip_read_tags_batch(client_id: c_int, tag_names: *mut *
 
     unsafe {
         std::ptr::copy_nonoverlapping(results_bytes.as_ptr(), results as *mut u8, results_bytes.len());
-        *results.offset(results_bytes.len() as isize) = 0; // Null terminate
+        *results.add(results_bytes.len()) = 0; // Null terminate
     }
 
     0
@@ -837,7 +837,7 @@ pub unsafe extern "C" fn eip_write_tags_batch(client_id: c_int, tag_values: *con
 
     unsafe {
         std::ptr::copy_nonoverlapping(results_bytes.as_ptr(), results as *mut u8, results_bytes.len());
-        *results.offset(results_bytes.len() as isize) = 0; // Null terminate
+        *results.add(results_bytes.len()) = 0; // Null terminate
     }
 
     0
@@ -874,7 +874,7 @@ pub unsafe extern "C" fn eip_execute_batch(client_id: c_int, operations: *const 
 
     unsafe {
         std::ptr::copy_nonoverlapping(results_bytes.as_ptr(), results as *mut u8, results_bytes.len());
-        *results.offset(results_bytes.len() as isize) = 0; // Null terminate
+        *results.add(results_bytes.len()) = 0; // Null terminate
     }
 
     0
