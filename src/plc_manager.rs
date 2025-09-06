@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use std::time::{Duration, Instant};
-use std::net::SocketAddr;
 use crate::error::{EtherNetIpError, Result};
 use crate::EipClient;
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::time::{Duration, Instant};
 
 /// Configuration for a PLC connection
 #[derive(Debug, Clone)]
@@ -119,7 +119,9 @@ impl PlcManager {
 
     /// Gets a connection to a PLC
     pub async fn get_connection(&mut self, address: SocketAddr) -> Result<&mut EipClient> {
-        let config = self.configs.get(&address)
+        let config = self
+            .configs
+            .get(&address)
             .ok_or_else(|| EtherNetIpError::Connection("PLC not configured".to_string()))?;
 
         // First check if we have any connections for this address
@@ -162,7 +164,8 @@ impl PlcManager {
         }
 
         // Find the least recently used connection
-        let lru_index = connections.iter()
+        let lru_index = connections
+            .iter()
             .enumerate()
             .min_by_key(|(_, conn)| conn.last_used)
             .map(|(i, _)| i)
@@ -184,7 +187,7 @@ impl PlcManager {
     pub async fn check_health(&mut self) {
         for (address, connections) in &mut self.connections {
             let _config = self.configs.get(address).unwrap();
-            
+
             for conn in connections.iter_mut() {
                 if !conn.health.is_active {
                     if let Ok(new_client) = EipClient::new(&address.to_string()).await {
@@ -208,14 +211,15 @@ impl PlcManager {
     }
 
     pub async fn get_client(&mut self, address: &str) -> Result<&mut EipClient> {
-        let addr = address.parse::<SocketAddr>()
+        let addr = address
+            .parse::<SocketAddr>()
             .map_err(|_| EtherNetIpError::Connection("Invalid address format".to_string()))?;
         self.get_connection(addr).await
     }
 
     async fn _get_or_create_connection(&mut self, address: &SocketAddr) -> Result<&mut EipClient> {
         let config = self.configs.get(address).cloned().unwrap();
-        let connections = self.connections.entry(*address).or_insert_with(Vec::new);
+        let connections = self.connections.entry(*address).or_default();
 
         // Try to find an existing inactive connection
         for i in 0..connections.len() {
@@ -243,7 +247,8 @@ impl PlcManager {
         }
 
         // Find the least recently used connection
-        let lru_index = connections.iter()
+        let lru_index = connections
+            .iter()
             .enumerate()
             .min_by_key(|(_, conn)| conn.last_used)
             .map(|(i, _)| i)
@@ -288,4 +293,4 @@ mod tests {
         let result = manager.get_connection(config.address).await;
         assert!(result.is_err());
     }
-} 
+}
