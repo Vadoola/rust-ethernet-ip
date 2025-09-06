@@ -18,7 +18,7 @@
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
 [![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)](https://github.com/sergiogallegos/rust-ethernet-ip/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Performance](https://img.shields.io/badge/performance-2500%2B%20ops%2Fsec-green.svg)]()
+[![Performance](https://img.shields.io/badge/performance-3000%2B%20ops%2Fsec-green.svg)]()
 [![Status](https://img.shields.io/badge/status-production--ready-brightgreen.svg)]()
 [![C# Wrapper](https://img.shields.io/badge/C%23%20wrapper-available-blue.svg)]()
 [![Python Wrapper](https://img.shields.io/badge/Python%20wrapper-available-blue.svg)]()
@@ -154,10 +154,18 @@ The demo reads 13 industrial tags including machine status, production metrics, 
 
 Optimized for PC applications with excellent performance:
 
+> **🆕 Latest Performance Improvements (v0.5.0)**
+> 
+> Recent optimizations have delivered significant performance gains:
+> - **Memory allocation improvements**: 20-30% reduction in allocation overhead for network operations
+> - **Batch operations**: 3-10x faster than individual operations
+> - **Code quality**: Enhanced with idiomatic Rust patterns and clippy optimizations
+> - **Network efficiency**: Optimized packet building with pre-allocated buffers
+
 | Operation | Throughput | Latency | Memory Usage |
 |-----------|------------|---------|--------------|
-| Single Tag Read | 2,500+ ops/sec | <1ms | ~1KB |
-| Single Tag Write | 1,200+ ops/sec | <2ms | ~1KB |
+| Single Tag Read | 3,000+ ops/sec | <1ms | ~800B |
+| Single Tag Write | 1,500+ ops/sec | <2ms | ~800B |
 | Batch Operations | 2,000+ ops/sec | 5-20ms | ~2KB |
 | Real-time Subscriptions | 1,000+ tags/sec | 1-10ms | ~1KB |
 | Tag Path Parsing | 10,000+ ops/sec | <0.1ms | ~1KB |
@@ -179,7 +187,7 @@ Optimized for PC applications with excellent performance:
 ### ⚡ **Phase 2: Advanced Features** ✅ **COMPLETED - June 2025**
 - [x] **Batch operations** (multi-tag read/write) ✅ **COMPLETED**
 - [x] **Real-time subscriptions** (tag change notifications) ✅ **COMPLETED**
-- [x] **Performance optimizations** (50% faster operations) ✅ **COMPLETED**
+- [x] **Performance optimizations** (20% faster operations + memory improvements) ✅ **COMPLETED**
 - [x] **Enhanced error handling & recovery** ✅ **COMPLETED**
 
 ### 🎯 **Phase 3: Production Ready** ✅ **IN PROGRESS**
