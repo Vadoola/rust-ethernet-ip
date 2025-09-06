@@ -16,7 +16,7 @@
 > [Try the HMI Demo →](#-hmi-scada-production-demo)
 
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)](https://github.com/sergiogallegos/rust-ethernet-ip/releases)
+[![Version](https://img.shields.io/badge/version-0.5.1-blue.svg)](https://github.com/sergiogallegos/rust-ethernet-ip/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Performance](https://img.shields.io/badge/performance-3000%2B%20ops%2Fsec-green.svg)]()
 [![Status](https://img.shields.io/badge/status-production--ready-brightgreen.svg)]()
@@ -39,6 +39,15 @@ This library is specifically designed for:
 - **PC Applications** (Windows, Linux, macOS)
 - **Industrial Automation** software and SCADA systems
 - **High-performance** data acquisition and control
+
+### ⚠️ **Current Limitations**
+- **Slot 0 Only**: Currently supports direct connections to CPUs in slot 0
+- **No Remote Rack Support**: Cannot connect to CPUs in remote racks
+- **No Multi-Hop Routing**: Complex network topologies not supported
+- **Simple Paths Only**: Limited to basic tag path configurations
+
+> **🚀 Routing Support Coming Soon!**  
+> Industrial routing support (remote racks, multi-hop, complex topologies) is planned for v0.6.0 and v0.7.0. See [Phase 4 roadmap](#-phase-4-industrial-routing-support--planned) for details.
 
 ## ✨ **Key Features**
 
@@ -199,6 +208,16 @@ Optimized for PC applications with excellent performance:
 - [ ] **Performance benchmarking** - Comparative analysis with other libraries (in progress)
 - [ ] **Production deployment** - Docker containers and deployment guides (in progress)
 - [x] **Community features** - Discord server, GitHub discussions, sponsorship program
+
+### 🚀 **Phase 4: Industrial Routing Support** 📋 **PLANNED**
+- [ ] **Basic slot configuration** - Support for CPUs in slots 1-31 (v0.6.0)
+- [ ] **Simple backplane routing** - Direct backplane communication (v0.6.0)
+- [ ] **Route path building** - CIP route path construction (v0.6.0)
+- [ ] **Remote rack support** - Connect to remote racks via network (v0.7.0)
+- [ ] **Network routing** - Multi-hop network routing (v0.7.0)
+- [ ] **Path validation** - Route path verification and error handling (v0.7.0)
+- [ ] **Advanced routing** - Complex network topologies (v0.8.0)
+- [ ] **Route discovery** - Automatic path detection (v0.8.0)
 
 ## 🛠️ **Installation**
 

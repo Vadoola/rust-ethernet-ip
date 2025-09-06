@@ -5,6 +5,16 @@ All notable changes to the rust-ethernet-ip project will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2025-01-15
+
+### ⚡ Performance Improvements
+- **Memory allocation optimizations**: 20-30% reduction in allocation overhead for network operations
+- **Vec::with_capacity() implementation**: Pre-allocated buffers for CIP requests and packet building
+- **Code quality enhancements**: Fixed clippy lints with more idiomatic Rust patterns
+- **Network efficiency**: Optimized packet building with reduced memory fragmentation
+- **Throughput improvements**: 20% increase in single tag operations (2,500+ → 3,000+ ops/sec)
+- **Memory usage reduction**: 20% reduction in memory footprint per operation
+
 ## [0.5.0] - 2025-01-15
 
 ### 🎯 Production-Ready Release
@@ -14,14 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Production API Endpoints** for system management and monitoring
 - **Performance Benchmarking Framework** for optimization and testing
 - **Enhanced Real-time Monitoring** with stable continuous updates
-
-### ⚡ Performance Improvements
-- **Memory allocation optimizations**: 20-30% reduction in allocation overhead for network operations
-- **Vec::with_capacity() implementation**: Pre-allocated buffers for CIP requests and packet building
-- **Code quality enhancements**: Fixed clippy lints with more idiomatic Rust patterns
-- **Network efficiency**: Optimized packet building with reduced memory fragmentation
-- **Throughput improvements**: 20% increase in single tag operations (2,500+ → 3,000+ ops/sec)
-- **Memory usage reduction**: 20% reduction in memory footprint per operation
 
 ### ✨ Added - Professional HMI/SCADA Demo
 - **Real-time Production Dashboard** with live monitoring capabilities
