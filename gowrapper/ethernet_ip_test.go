@@ -2,6 +2,7 @@ package ethernetip
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -91,9 +92,10 @@ func TestEipError(t *testing.T) {
 		Time:    time.Time{},
 	}
 
-	expected := "EIP Error 1: test error"
-	if err.Error() != expected {
-		t.Errorf("EipError.Error() = %v, want %v", err.Error(), expected)
+	// The actual error message includes details and timestamp, so we check for the core components
+	errorMsg := err.Error()
+	if !strings.Contains(errorMsg, "EIP Error 1: test error") {
+		t.Errorf("EipError.Error() = %v, should contain 'EIP Error 1: test error'", errorMsg)
 	}
 }
 

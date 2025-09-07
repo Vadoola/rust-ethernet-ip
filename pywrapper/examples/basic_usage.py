@@ -4,44 +4,43 @@ Basic example of using the rust-ethernet-ip Python wrapper.
 """
 
 import asyncio
-from rust_ethernet_ip import EipClient
+from rust_ethernet_ip import PyEipClient, PyPlcValue
 
-async def main():
-    # Create a new client
-    client = await EipClient.connect("192.168.1.100")
-    
+def main():
+    # Create a new client (this will try to connect to PLC)
     try:
-        # Read a boolean tag
-        bool_value = await client.read_tag("MyBoolTag")
-        print(f"Boolean tag value: {bool_value}")
+        client = PyEipClient("192.168.1.100:44818")
+        print("✅ Successfully connected to PLC")
         
-        # Write to a boolean tag
-        await client.write_tag("MyBoolTag", True)
-        
-        # Read an integer tag
-        int_value = await client.read_tag("MyIntTag")
+        # Read a DINT tag
+        int_value = client.read_tag("MyIntTag")
         print(f"Integer tag value: {int_value}")
         
-        # Write to an integer tag
-        await client.write_tag("MyIntTag", 42)
+        # Write to a DINT tag
+        dint_value = PyPlcValue.dint(42)
+        result = client.write_tag("MyIntTag", dint_value)
+        print(f"Write result: {result}")
         
-        # Read a floating point tag
-        float_value = await client.read_tag("MyRealTag")
-        print(f"Real tag value: {float_value}")
+        # Read a REAL tag
+        real_value = client.read_tag("MyRealTag")
+        print(f"Real tag value: {real_value}")
         
-        # Write to a floating point tag
-        await client.write_tag("MyRealTag", 3.14159)
+        # Write to a REAL tag
+        real_val = PyPlcValue.real(3.14159)
+        result = client.write_tag("MyRealTag", real_val)
+        print(f"Write result: {result}")
         
-        # Read a string tag
-        string_value = await client.read_tag("MyStringTag")
+        # Read a STRING tag
+        string_value = client.read_tag("MyStringTag")
         print(f"String tag value: {string_value}")
         
-        # Write to a string tag
-        await client.write_tag("MyStringTag", "Hello, PLC!")
+        # Write to a STRING tag
+        string_val = PyPlcValue.string("Hello, PLC!")
+        result = client.write_tag("MyStringTag", string_val)
+        print(f"Write result: {result}")
         
         # Batch read multiple tags
-        results = await client.read_tags_batch([
-            "MyBoolTag",
+        results = client.read_tags_batch([
             "MyIntTag",
             "MyRealTag",
             "MyStringTag"
@@ -58,7 +57,11 @@ async def main():
         print(f"Error: {e}")
     finally:
         # Clean up
-        await client.unregister_session()
+        try:
+            client.unregister_session()
+            print("✅ Session unregistered")
+        except:
+            pass
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    main() 
