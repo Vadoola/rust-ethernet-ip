@@ -1,6 +1,6 @@
 [package]
 name = "rust_ethernet_ip"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 description = "Python bindings for rust-ethernet-ip"
 license = "MIT"

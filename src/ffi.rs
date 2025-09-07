@@ -1,3 +1,5 @@
+#![allow(clippy::missing_safety_doc)]
+
 use crate::EipClient;
 use crate::PlcValue;
 use crate::RUNTIME;
@@ -146,6 +148,15 @@ pub unsafe extern "C" fn eip_write_bool(
 }
 
 // SINT (8-bit signed integer) operations
+/// Read a signed 8-bit integer tag
+///
+/// # Safety
+///
+/// This function is unsafe because:
+/// - `tag_name` must be a valid null-terminated C string pointer
+/// - `result` must be a valid mutable pointer to an i8
+/// - The caller must ensure both pointers remain valid for the duration of the call
+/// - `client_id` must be a valid client ID returned from `eip_connect`
 #[no_mangle]
 pub unsafe extern "C" fn eip_read_sint(
     client_id: c_int,
@@ -176,6 +187,14 @@ pub unsafe extern "C" fn eip_read_sint(
     }
 }
 
+/// Write a signed 8-bit integer tag
+///
+/// # Safety
+///
+/// This function is unsafe because:
+/// - `tag_name` must be a valid null-terminated C string pointer
+/// - The caller must ensure the pointer remains valid for the duration of the call
+/// - `client_id` must be a valid client ID returned from `eip_connect`
 #[no_mangle]
 pub unsafe extern "C" fn eip_write_sint(
     client_id: c_int,
@@ -728,6 +747,15 @@ pub unsafe extern "C" fn eip_write_lreal(
 }
 
 /// Read a STRING tag
+///
+/// # Safety
+///
+/// This function is unsafe because:
+/// - `tag_name` must be a valid null-terminated C string pointer
+/// - `result` must be a valid mutable pointer to a buffer of at least `max_length` bytes
+/// - The caller must ensure both pointers remain valid for the duration of the call
+/// - `client_id` must be a valid client ID returned from `eip_connect`
+/// - `max_length` must be positive and represent the actual buffer size
 #[no_mangle]
 pub unsafe extern "C" fn eip_read_string(
     client_id: c_int,

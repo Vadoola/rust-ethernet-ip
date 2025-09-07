@@ -1,6 +1,6 @@
 {
   "name": "rust-ethernet-ip-vue-example",
-  "version": "0.5.1",
+  "version": "0.5.2",
 
   "private": true,
   "description": "Vue.js frontend for Rust EtherNet/IP library with ASP.NET backend integration",

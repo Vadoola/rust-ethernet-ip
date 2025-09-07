@@ -435,10 +435,7 @@ impl EipClient {
     }
 
     pub async fn safe_read_tag(&mut self, tag_name: &str) -> Option<PlcValue> {
-        match self.read_tag(tag_name).await {
-            Ok(value) => Some(value),
-            Err(_) => None,
-        }
+        self.read_tag(tag_name).await.ok()
     }
 
     pub async fn safe_write_tag(&mut self, tag_name: &str, value: PlcValue) -> bool {

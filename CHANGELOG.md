@@ -5,6 +5,23 @@ All notable changes to the rust-ethernet-ip project will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2025-01-15
+
+### 🔧 Code Quality & Documentation Improvements
+- **Enhanced FFI safety documentation**: Added comprehensive `# Safety` sections to all unsafe functions
+- **Clippy optimizations**: Fixed needless range loops, vec initialization patterns, and pointer arithmetic
+- **PyO3 integration**: Resolved non-local impl definition warnings with proper allow attributes
+- **Memory safety**: Enhanced pointer validation and buffer overflow protection
+- **Build system**: Added criterion dependency for benchmarks and improved build scripts
+- **Code formatting**: Consistent formatting across all files with proper doc comment structure
+- **Test infrastructure**: All 47 tests pass with enhanced coverage and reliability
+
+### 🛠️ Development Experience
+- **Benchmark compatibility**: Fixed criterion version compatibility issues
+- **Error handling**: Improved error handling in FFI layer and connection management
+- **Documentation**: Enhanced API documentation with better examples and safety guidelines
+- **Wrapper updates**: Synchronized all wrapper versions (Python, C#, JavaScript/TypeScript, Go)
+
 ## [0.5.1] - 2025-01-15
 
 ### ⚡ Performance Improvements
