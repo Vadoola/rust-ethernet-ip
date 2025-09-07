@@ -5,65 +5,58 @@ Demonstrates tag subscriptions and UDT handling.
 """
 
 import asyncio
-from rust_ethernet_ip import EipClient, SubscriptionOptions
+from rust_ethernet_ip import PyEipClient, PyPlcValue
 
 async def tag_update_callback(tag_name: str, value):
     """Callback function for tag updates."""
     print(f"Tag {tag_name} updated to: {value}")
 
-async def main():
+def main():
     # Create a new client
-    client = await EipClient.connect("192.168.1.100")
+    client = PyEipClient("192.168.1.100")
     
     try:
-        # Configure subscription options
-        options = SubscriptionOptions(
-            update_rate_ms=100,  # Update every 100ms
-            callback=tag_update_callback
-        )
+        # Connect to the PLC
+        client.connect()
         
-        # Subscribe to multiple tags
-        await client.subscribe_to_tags([
-            ("MyBoolTag", options),
-            ("MyIntTag", options),
-            ("MyRealTag", options)
-        ])
+        # Read some basic tags
+        print("Reading basic tags...")
         
-        # Work with a UDT (User Defined Type)
-        # Assuming we have a UDT named "MyUDT" with members:
-        # - Status (BOOL)
-        # - Value (REAL)
-        # - Description (STRING)
+        # Read a boolean tag
+        bool_value = client.read_bool("MyBoolTag")
+        print(f"Boolean tag value: {bool_value}")
         
-        # Read the entire UDT
-        udt_value = await client.read_tag("MyUDT")
-        print("\nUDT values:")
-        for member_name, member_value in udt_value.items():
-            print(f"{member_name}: {member_value}")
+        # Read an integer tag
+        int_value = client.read_dint("MyIntTag")
+        print(f"Integer tag value: {int_value}")
         
-        # Update individual UDT members
-        await client.write_tag("MyUDT.Status", True)
-        await client.write_tag("MyUDT.Value", 123.45)
-        await client.write_tag("MyUDT.Description", "Updated via Python")
+        # Read a real tag
+        real_value = client.read_real("MyRealTag")
+        print(f"Real tag value: {real_value}")
         
-        # Read the updated UDT
-        updated_udt = await client.read_tag("MyUDT")
-        print("\nUpdated UDT values:")
-        for member_name, member_value in updated_udt.items():
-            print(f"{member_name}: {member_value}")
+        # Write some values
+        print("\nWriting values...")
+        client.write_bool("MyBoolTag", True)
+        client.write_dint("MyIntTag", 42)
+        client.write_real("MyRealTag", 3.14159)
         
-        # Keep the program running to receive tag updates
-        print("\nWaiting for tag updates (press Ctrl+C to exit)...")
-        while True:
-            await asyncio.sleep(1)
-            
-    except KeyboardInterrupt:
-        print("\nExiting...")
+        # Read back the values
+        print("\nReading back values...")
+        print(f"Boolean: {client.read_bool('MyBoolTag')}")
+        print(f"Integer: {client.read_dint('MyIntTag')}")
+        print(f"Real: {client.read_real('MyRealTag')}")
+        
+        # Work with strings
+        print("\nWorking with strings...")
+        client.write_string("MyStringTag", "Hello from Python!")
+        string_value = client.read_string("MyStringTag")
+        print(f"String value: {string_value}")
+        
     except Exception as e:
         print(f"Error: {e}")
     finally:
         # Clean up
-        await client.unregister_session()
+        client.disconnect()
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    main() 

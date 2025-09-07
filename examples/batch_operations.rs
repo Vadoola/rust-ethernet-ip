@@ -15,7 +15,7 @@
 // - Data logging applications
 // - Industrial automation control loops
 
-use rust_ethernet_ip::{BatchConfig, BatchError, BatchOperation, EipClient, PlcValue};
+use rust_ethernet_ip::{BatchConfig, BatchError, BatchOperation, PlcValue};
 use std::time::Instant;
 use tokio::time::{sleep, Duration};
 
