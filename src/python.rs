@@ -1,12 +1,12 @@
+#![allow(non_local_definitions)]
+
 use pyo3::prelude::*;
 // use pyo3::wrap_pyfunction;
 use pyo3::types::{PyDict, PyTuple};
 // use pyo3::types::IntoPyDict;
-use tokio::runtime::Runtime;
+use crate::{EipClient, PlcValue, SubscriptionOptions};
 use std::collections::HashMap;
-use crate::{
-    EipClient, PlcValue, SubscriptionOptions
-};
+use tokio::runtime::Runtime;
 
 /// Python module for rust_ethernet_ip
 #[pymodule]
@@ -35,7 +35,7 @@ impl<'a> FromPyObject<'a> for TagValueArg {
         let tuple = ob.downcast::<PyTuple>()?;
         if tuple.len() != 2 {
             return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
-                "Expected tuple of length 2"
+                "Expected tuple of length 2",
             ));
         }
         let name = tuple.get_item(0)?.extract::<String>()?;
@@ -55,7 +55,7 @@ impl<'a> FromPyObject<'a> for TagSubOptArg {
         let tuple = ob.downcast::<PyTuple>()?;
         if tuple.len() != 2 {
             return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
-                "Expected tuple of length 2"
+                "Expected tuple of length 2",
             ));
         }
         let name = tuple.get_item(0)?.extract::<String>()?;
@@ -70,30 +70,33 @@ impl PyEipClient {
     #[new]
     fn new(addr: &str) -> PyResult<Self> {
         let runtime = Runtime::new().unwrap();
-        let client = runtime.block_on(async {
-            EipClient::connect(addr).await
-        }).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-        
+        let client = runtime
+            .block_on(async { EipClient::connect(addr).await })
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+
         Ok(PyEipClient { client, runtime })
     }
 
     /// Read a tag value
     fn read_tag(&mut self, tag_name: &str) -> PyResult<PyPlcValue> {
-        let value = self.runtime.block_on(async {
-            self.client.read_tag(tag_name).await
-        }).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-        
+        let value = self
+            .runtime
+            .block_on(async { self.client.read_tag(tag_name).await })
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+
         Ok(PyPlcValue { value })
     }
 
     /// Write a value to a tag
     fn write_tag(&mut self, tag_name: &str, value: &PyPlcValue) -> PyResult<bool> {
-        let result = self.runtime.block_on(async {
-            self.client.write_tag(tag_name, value.value.clone()).await
-        });
+        let result = self
+            .runtime
+            .block_on(async { self.client.write_tag(tag_name, value.value.clone()).await });
         match result {
             Ok(_) => Ok(true),
-            Err(e) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())),
+            Err(e) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                e.to_string(),
+            )),
         }
     }
 
@@ -101,63 +104,96 @@ impl PyEipClient {
     fn read_tags_batch(&mut self, tag_names: Vec<String>) -> PyResult<Vec<(String, PyObject)>> {
         Python::with_gil(|py| {
             let runtime = tokio::runtime::Runtime::new().unwrap();
-            let results = runtime.block_on(async {
-                self.client.read_tags_batch(&tag_names.iter().map(|s| s.as_str()).collect::<Vec<_>>()).await
-            }).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-            Ok(results.into_iter().map(|(name, result)| {
-                let obj = match result {
-                    Ok(v) => PyPlcValue { value: v }.into_py(py),
-                    Err(e) => PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()).into_py(py),
-                };
-                (name, obj)
-            }).collect())
+            let results = runtime
+                .block_on(async {
+                    self.client
+                        .read_tags_batch(&tag_names.iter().map(|s| s.as_str()).collect::<Vec<_>>())
+                        .await
+                })
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+            Ok(results
+                .into_iter()
+                .map(|(name, result)| {
+                    let obj = match result {
+                        Ok(v) => PyPlcValue { value: v }.into_py(py),
+                        Err(e) => PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())
+                            .into_py(py),
+                    };
+                    (name, obj)
+                })
+                .collect())
         })
     }
 
     /// Write multiple tags in batch
-    fn write_tags_batch(&mut self, tag_values: Vec<TagValueArg>) -> PyResult<Vec<(String, PyObject)>> {
+    fn write_tags_batch(
+        &mut self,
+        tag_values: Vec<TagValueArg>,
+    ) -> PyResult<Vec<(String, PyObject)>> {
         Python::with_gil(|py| {
             let runtime = tokio::runtime::Runtime::new().unwrap();
-            let results = runtime.block_on(async {
-                self.client.write_tags_batch(&tag_values.iter()
-                    .map(|arg| (arg.name.as_str(), arg.value.value.clone()))
-                    .collect::<Vec<_>>()).await
-            }).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-            Ok(results.into_iter().map(|(name, result)| {
-                let obj = match result {
-                    Ok(()) => py.None(),
-                    Err(e) => PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()).into_py(py),
-                };
-                (name, obj)
-            }).collect())
+            let results = runtime
+                .block_on(async {
+                    self.client
+                        .write_tags_batch(
+                            &tag_values
+                                .iter()
+                                .map(|arg| (arg.name.as_str(), arg.value.value.clone()))
+                                .collect::<Vec<_>>(),
+                        )
+                        .await
+                })
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+            Ok(results
+                .into_iter()
+                .map(|(name, result)| {
+                    let obj = match result {
+                        Ok(()) => py.None(),
+                        Err(e) => PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())
+                            .into_py(py),
+                    };
+                    (name, obj)
+                })
+                .collect())
         })
     }
 
     /// Subscribe to a tag
     fn subscribe_to_tag(&self, tag_path: &str, options: &PySubscriptionOptions) -> PyResult<()> {
-        self.runtime.block_on(async {
-            self.client.subscribe_to_tag(tag_path, options.options.clone()).await
-        }).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-        
+        self.runtime
+            .block_on(async {
+                self.client
+                    .subscribe_to_tag(tag_path, options.options.clone())
+                    .await
+            })
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+
         Ok(())
     }
 
     /// Subscribe to multiple tags
     fn subscribe_to_tags(&self, tags: Vec<TagSubOptArg>) -> PyResult<()> {
-        self.runtime.block_on(async {
-            self.client.subscribe_to_tags(&tags.iter()
-                .map(|arg| (arg.name.as_str(), arg.options.options.clone()))
-                .collect::<Vec<_>>()).await
-        }).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+        self.runtime
+            .block_on(async {
+                self.client
+                    .subscribe_to_tags(
+                        &tags
+                            .iter()
+                            .map(|arg| (arg.name.as_str(), arg.options.options.clone()))
+                            .collect::<Vec<_>>(),
+                    )
+                    .await
+            })
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
         Ok(())
     }
 
     /// Unregister the session
     fn unregister_session(&mut self) -> PyResult<()> {
-        self.runtime.block_on(async {
-            self.client.unregister_session().await
-        }).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-        
+        self.runtime
+            .block_on(async { self.client.unregister_session().await })
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+
         Ok(())
     }
 }
@@ -171,13 +207,21 @@ struct PyPlcValue {
 impl FromPyObject<'_> for PyPlcValue {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         if let Ok(bool_val) = ob.extract::<bool>() {
-            Ok(PyPlcValue { value: PlcValue::Bool(bool_val) })
+            Ok(PyPlcValue {
+                value: PlcValue::Bool(bool_val),
+            })
         } else if let Ok(int_val) = ob.extract::<i32>() {
-            Ok(PyPlcValue { value: PlcValue::Dint(int_val) })
+            Ok(PyPlcValue {
+                value: PlcValue::Dint(int_val),
+            })
         } else if let Ok(float_val) = ob.extract::<f64>() {
-            Ok(PyPlcValue { value: PlcValue::Lreal(float_val) })
+            Ok(PyPlcValue {
+                value: PlcValue::Lreal(float_val),
+            })
         } else if let Ok(string_val) = ob.extract::<String>() {
-            Ok(PyPlcValue { value: PlcValue::String(string_val) })
+            Ok(PyPlcValue {
+                value: PlcValue::String(string_val),
+            })
         } else if let Ok(dict) = ob.downcast::<PyDict>() {
             let mut map = HashMap::new();
             for (key, value) in dict.iter() {
@@ -185,10 +229,12 @@ impl FromPyObject<'_> for PyPlcValue {
                 let value = value.extract::<PyPlcValue>()?.value;
                 map.insert(key, value);
             }
-            Ok(PyPlcValue { value: PlcValue::Udt(map) })
+            Ok(PyPlcValue {
+                value: PlcValue::Udt(map),
+            })
         } else {
             Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
-                "Unsupported value type"
+                "Unsupported value type",
             ))
         }
     }
@@ -200,40 +246,62 @@ impl PyPlcValue {
     fn new(value: PyObject) -> PyResult<Self> {
         Python::with_gil(|py| {
             if let Ok(val) = value.extract::<bool>(py) {
-                Ok(PyPlcValue { value: PlcValue::Bool(val) })
+                Ok(PyPlcValue {
+                    value: PlcValue::Bool(val),
+                })
             } else if let Ok(val) = value.extract::<i32>(py) {
-                Ok(PyPlcValue { value: PlcValue::Dint(val) })
+                Ok(PyPlcValue {
+                    value: PlcValue::Dint(val),
+                })
             } else if let Ok(val) = value.extract::<f32>(py) {
-                Ok(PyPlcValue { value: PlcValue::Real(val) })
+                Ok(PyPlcValue {
+                    value: PlcValue::Real(val),
+                })
             } else if let Ok(val) = value.extract::<f64>(py) {
-                Ok(PyPlcValue { value: PlcValue::Real(val as f32) })
+                Ok(PyPlcValue {
+                    value: PlcValue::Real(val as f32),
+                })
             } else if let Ok(val) = value.extract::<String>(py) {
-                Ok(PyPlcValue { value: PlcValue::String(val) })
+                Ok(PyPlcValue {
+                    value: PlcValue::String(val),
+                })
             } else {
-                Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>("Unsupported value type"))
+                Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+                    "Unsupported value type",
+                ))
             }
         })
     }
 
     #[staticmethod]
     fn real(val: f32) -> Self {
-        PyPlcValue { value: PlcValue::Real(val) }
+        PyPlcValue {
+            value: PlcValue::Real(val),
+        }
     }
     #[staticmethod]
     fn lreal(val: f64) -> Self {
-        PyPlcValue { value: PlcValue::Lreal(val) }
+        PyPlcValue {
+            value: PlcValue::Lreal(val),
+        }
     }
     #[staticmethod]
     fn dint(val: i32) -> Self {
-        PyPlcValue { value: PlcValue::Dint(val) }
+        PyPlcValue {
+            value: PlcValue::Dint(val),
+        }
     }
     #[staticmethod]
     fn lint(val: i64) -> Self {
-        PyPlcValue { value: PlcValue::Lint(val) }
+        PyPlcValue {
+            value: PlcValue::Lint(val),
+        }
     }
     #[staticmethod]
     fn string(val: String) -> Self {
-        PyPlcValue { value: PlcValue::String(val) }
+        PyPlcValue {
+            value: PlcValue::String(val),
+        }
     }
 
     #[getter]
@@ -282,13 +350,13 @@ impl FromPyObject<'_> for PySubscriptionOptions {
         let update_rate = ob.getattr("update_rate")?.extract::<u32>()?;
         let change_threshold = ob.getattr("change_threshold")?.extract::<f32>()?;
         let timeout = ob.getattr("timeout")?.extract::<u32>()?;
-        
+
         Ok(PySubscriptionOptions {
             options: SubscriptionOptions {
                 update_rate,
                 change_threshold,
                 timeout,
-            }
+            },
         })
     }
 }
@@ -302,7 +370,7 @@ impl PySubscriptionOptions {
             change_threshold,
             timeout,
         };
-        
+
         Ok(PySubscriptionOptions { options })
     }
 
@@ -323,4 +391,4 @@ impl PySubscriptionOptions {
     fn timeout(&self) -> u32 {
         self.options.timeout
     }
-} 
+}

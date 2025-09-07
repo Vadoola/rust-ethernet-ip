@@ -1,8 +1,8 @@
+use crate::error::{EtherNetIpError, Result};
+use crate::EipClient;
 use std::collections::HashMap;
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
-use crate::error::{EtherNetIpError, Result};
-use crate::EipClient;
 
 /// Represents the scope of a tag in the PLC
 #[derive(Debug, Clone, PartialEq)]
@@ -92,7 +92,8 @@ impl TagCache {
     /// Removes expired tags from the cache
     #[allow(dead_code)]
     pub fn cleanup(&mut self) {
-        self.tags.retain(|_, (_, timestamp)| timestamp.elapsed() < self.expiration);
+        self.tags
+            .retain(|_, (_, timestamp)| timestamp.elapsed() < self.expiration);
     }
 }
 
@@ -126,7 +127,11 @@ impl TagManager {
         self.cache.write().unwrap().insert(tag_name, metadata);
     }
 
-    pub async fn validate_tag(&self, tag_name: &str, required_permissions: &TagPermissions) -> Result<()> {
+    pub async fn validate_tag(
+        &self,
+        tag_name: &str,
+        required_permissions: &TagPermissions,
+    ) -> Result<()> {
         if let Some(metadata) = self.get_metadata(tag_name).await {
             if !metadata.permissions.readable && required_permissions.readable {
                 return Err(EtherNetIpError::Permission(format!(
@@ -142,7 +147,10 @@ impl TagManager {
             }
             Ok(())
         } else {
-            Err(EtherNetIpError::Tag(format!("Tag '{}' not found", tag_name)))
+            Err(EtherNetIpError::Tag(format!(
+                "Tag '{}' not found",
+                tag_name
+            )))
         }
     }
 
@@ -151,13 +159,16 @@ impl TagManager {
     }
 
     pub async fn remove_stale_entries(&self) {
-        self.cache.write().unwrap().retain(|_, metadata| {
-            metadata.last_updated.elapsed() < self.cache_duration
-        });
+        self.cache
+            .write()
+            .unwrap()
+            .retain(|_, metadata| metadata.last_updated.elapsed() < self.cache_duration);
     }
 
     pub async fn discover_tags(&self, client: &mut EipClient) -> Result<()> {
-        let response = client.send_cip_request(&client.build_list_tags_request()).await?;
+        let response = client
+            .send_cip_request(&client.build_list_tags_request())
+            .await?;
         let tags = self.parse_tag_list(&response)?;
         let mut cache = self.cache.write().unwrap();
         for (name, metadata) in tags {
@@ -167,7 +178,11 @@ impl TagManager {
     }
 
     pub fn parse_tag_list(&self, response: &[u8]) -> Result<Vec<(String, TagMetadata)>> {
-        println!("[DEBUG] Raw tag list response ({} bytes): {:02X?}", response.len(), response);
+        println!(
+            "[DEBUG] Raw tag list response ({} bytes): {:02X?}",
+            response.len(),
+            response
+        );
         let mut tags = Vec::new();
         let mut offset = 0;
         while offset < response.len() {
@@ -187,10 +202,7 @@ impl TagManager {
                 println!("[WARN] Not enough bytes for data_type at offset {}", offset);
                 break;
             }
-            let data_type = u16::from_le_bytes([
-                response[offset],
-                response[offset + 1],
-            ]);
+            let data_type = u16::from_le_bytes([response[offset], response[offset + 1]]);
             offset += 2;
             if offset + 1 > response.len() {
                 println!("[WARN] Not enough bytes for is_array at offset {}", offset);
@@ -221,7 +233,7 @@ impl TagManager {
                     offset += 4;
                 }
             }
-            
+
             let array_info = if is_array && !dimensions.is_empty() {
                 Some(ArrayInfo {
                     element_count: dimensions.iter().product(),
@@ -230,11 +242,14 @@ impl TagManager {
             } else {
                 None
             };
-            
+
             let metadata = TagMetadata {
                 data_type,
                 scope: TagScope::Controller,
-                permissions: TagPermissions { readable: true, writable: true },
+                permissions: TagPermissions {
+                    readable: true,
+                    writable: true,
+                },
                 is_array,
                 dimensions,
                 last_access: Instant::now(),
@@ -283,4 +298,4 @@ mod tests {
         std::thread::sleep(Duration::from_secs(2));
         assert!(cache.get_tag("TestTag").is_none());
     }
-} 
+}

@@ -40,4 +40,4 @@ pub fn get_name() -> &'static str {
 /// Get the library description
 pub fn get_description() -> &'static str {
     DESCRIPTION
-} 
+}

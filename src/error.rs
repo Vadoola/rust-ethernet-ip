@@ -23,30 +23,19 @@ pub enum EtherNetIpError {
 
     /// Data type mismatch
     #[error("Data type mismatch: expected {expected}, got {actual}")]
-    DataTypeMismatch {
-        expected: String,
-        actual: String,
-    },
+    DataTypeMismatch { expected: String, actual: String },
 
     /// Write error with status code
     #[error("Write error: {message} (status: {status})")]
-    WriteError {
-        status: u8,
-        message: String,
-    },
+    WriteError { status: u8, message: String },
 
     /// Read error with status code
     #[error("Read error: {message} (status: {status})")]
-    ReadError {
-        status: u8,
-        message: String,
-    },
+    ReadError { status: u8, message: String },
 
     /// Invalid response from PLC
     #[error("Invalid response: {reason}")]
-    InvalidResponse {
-        reason: String,
-    },
+    InvalidResponse { reason: String },
 
     /// Timeout error
     #[error("Operation timed out after {0:?}")]
@@ -69,29 +58,19 @@ pub enum EtherNetIpError {
 
     /// String contains invalid characters
     #[error("Invalid string: {reason}")]
-    InvalidString {
-        reason: String,
-    },
+    InvalidString { reason: String },
 
     /// String write operation failed
     #[error("String write failed: {message} (status: {status})")]
-    StringWriteError {
-        status: u8,
-        message: String,
-    },
+    StringWriteError { status: u8, message: String },
 
     /// String read operation failed
     #[error("String read failed: {message} (status: {status})")]
-    StringReadError {
-        status: u8,
-        message: String,
-    },
+    StringReadError { status: u8, message: String },
 
     /// Invalid string response from PLC
     #[error("Invalid string response: {reason}")]
-    InvalidStringResponse {
-        reason: String,
-    },
+    InvalidStringResponse { reason: String },
 
     /// Tag error
     #[error("Tag error: {0}")]
@@ -112,4 +91,4 @@ pub enum EtherNetIpError {
     /// Subscription error
     #[error("Subscription error: {0}")]
     Subscription(String),
-} 
+}

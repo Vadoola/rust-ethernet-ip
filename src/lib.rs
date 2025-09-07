@@ -1443,21 +1443,18 @@ impl EipClient {
         println!("🔧 [DEBUG] Building list tags request");
 
         // Use Connected Explicit Messaging for consistency
-        let mut cip_request = Vec::with_capacity(8);
-
-        // Service: List All Tags Service (0x55)
-        cip_request.push(0x55);
-
-        // Request Path Size (in words) - 3 words = 6 bytes
-        cip_request.push(0x03);
-
-        // Request Path: Class 0x6B (Symbol Object), Instance 1
-        cip_request.push(0x20); // Class segment identifier
-        cip_request.push(0x6B); // Symbol Object Class
-        cip_request.push(0x24); // Instance segment identifier
-        cip_request.push(0x01); // Instance 1
-        cip_request.push(0x01); // Attribute segment identifier
-        cip_request.push(0x00); // Attribute 0 (tag list)
+        let cip_request = vec![
+            // Service: List All Tags Service (0x55)
+            0x55, // Request Path Size (in words) - 3 words = 6 bytes
+            0x03,
+            // Request Path: Class 0x6B (Symbol Object), Instance 1
+            0x20, // Class segment identifier
+            0x6B, // Symbol Object Class
+            0x24, // Instance segment identifier
+            0x01, // Instance 1
+            0x01, // Attribute segment identifier
+            0x00, // Attribute 0 (tag list)
+        ];
 
         println!(
             "🔧 [DEBUG] Built CIP list tags request ({} bytes): {:02X?}",

@@ -9,7 +9,7 @@ async fn main() {
         Ok(c) => {
             println!("Connected to PLC at {}", addr);
             c
-        },
+        }
         Err(e) => {
             eprintln!("Failed to connect: {e}");
             return;
@@ -39,7 +39,10 @@ async fn main() {
         Err(e) => eprintln!("Failed to write REAL: {e}"),
     }
     // Write STRING
-    match client.write_tag("TestSTRING", PlcValue::String("Hello PLC!".to_string())).await {
+    match client
+        .write_tag("TestSTRING", PlcValue::String("Hello PLC!".to_string()))
+        .await
+    {
         Ok(_) => println!("Wrote STRING value"),
         Err(e) => eprintln!("Failed to write STRING: {e}"),
     }
@@ -67,11 +70,14 @@ async fn main() {
 
     // Error handling: invalid data type
     println!("\nTesting error handling with invalid data type...");
-    match client.write_tag("TestDINT", PlcValue::String("Invalid".to_string())).await {
+    match client
+        .write_tag("TestDINT", PlcValue::String("Invalid".to_string()))
+        .await
+    {
         Ok(_) => println!("Unexpected success writing invalid data type"),
         Err(e) => println!("Expected error writing invalid data type: {e}"),
     }
 
     // Disconnect (optional, handled by Drop)
     println!("\nDemo complete.");
-} 
+}

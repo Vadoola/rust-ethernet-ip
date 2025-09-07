@@ -139,16 +139,16 @@ impl PlcManager {
         let connections = self.connections.get_mut(&address).unwrap();
 
         // First try to find an inactive connection
-        for i in 0..connections.len() {
-            if !connections[i].health.is_active {
+        for (i, connection) in connections.iter_mut().enumerate() {
+            if !connection.health.is_active {
                 let mut client = EipClient::new(&address.to_string()).await?;
                 client.set_max_packet_size(config.max_packet_size as u32);
-                connections[i].client = client;
-                connections[i].health.is_active = true;
-                connections[i].health.last_success = Instant::now();
-                connections[i].health.failed_attempts = 0;
-                connections[i].health.latency = Duration::from_millis(0);
-                connections[i].last_used = Instant::now();
+                connection.client = client;
+                connection.health.is_active = true;
+                connection.health.last_success = Instant::now();
+                connection.health.failed_attempts = 0;
+                connection.health.latency = Duration::from_millis(0);
+                connection.last_used = Instant::now();
                 return Ok(&mut connections[i].client);
             }
         }
@@ -222,16 +222,16 @@ impl PlcManager {
         let connections = self.connections.entry(*address).or_default();
 
         // Try to find an existing inactive connection
-        for i in 0..connections.len() {
-            if !connections[i].health.is_active {
+        for (i, connection) in connections.iter_mut().enumerate() {
+            if !connection.health.is_active {
                 let mut client = EipClient::new(&address.to_string()).await?;
                 client.set_max_packet_size(config.max_packet_size as u32);
-                connections[i].client = client;
-                connections[i].health.is_active = true;
-                connections[i].health.last_success = Instant::now();
-                connections[i].health.failed_attempts = 0;
-                connections[i].health.latency = Duration::from_millis(0);
-                connections[i].last_used = Instant::now();
+                connection.client = client;
+                connection.health.is_active = true;
+                connection.health.last_success = Instant::now();
+                connection.health.failed_attempts = 0;
+                connection.health.latency = Duration::from_millis(0);
+                connection.last_used = Instant::now();
                 return Ok(&mut connections[i].client);
             }
         }

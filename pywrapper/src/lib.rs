@@ -24,13 +24,16 @@ impl PyEipClient {
             Ok(c) => {
                 self.client = Some(c);
                 Ok(true)
-            },
+            }
             Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e.to_string())),
         }
     }
 
     pub fn read_dint(&mut self, tag: &str) -> PyResult<i32> {
-        let client = self.client.as_mut().ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Not connected"))?;
+        let client = self
+            .client
+            .as_mut()
+            .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Not connected"))?;
         let value = self.rt.block_on(client.read_tag(tag));
         match value {
             Ok(PlcValue::Dint(v)) => Ok(v),
@@ -40,8 +43,13 @@ impl PyEipClient {
     }
 
     pub fn write_dint(&mut self, tag: &str, value: i32) -> PyResult<()> {
-        let client = self.client.as_mut().ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Not connected"))?;
-        let result = self.rt.block_on(client.write_tag(tag, PlcValue::Dint(value)));
+        let client = self
+            .client
+            .as_mut()
+            .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("Not connected"))?;
+        let result = self
+            .rt
+            .block_on(client.write_tag(tag, PlcValue::Dint(value)));
         match result {
             Ok(_) => Ok(()),
             Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e.to_string())),
@@ -53,4 +61,4 @@ impl PyEipClient {
 fn _rust_ethernet_ip(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyEipClient>()?;
     Ok(())
-} 
+}

@@ -82,6 +82,7 @@ pyo3 = { version = "0.20", features = ["extension-module"] }
 [dev-dependencies]
 tokio-test = "0.4"
 cargo-tarpaulin = "0.18"
+criterion = "0.5"
 
 [features]
 default = []

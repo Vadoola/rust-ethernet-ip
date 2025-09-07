@@ -1,6 +1,6 @@
-use std::collections::HashMap;
-use crate::PlcValue;
 use crate::error::Result;
+use crate::PlcValue;
+use std::collections::HashMap;
 
 /// Definition of a User Defined Type
 #[derive(Debug, Clone)]
@@ -39,7 +39,10 @@ impl UdtManager {
     }
 
     /// Serialize a UDT instance to bytes
-    pub fn serialize_udt_instance(&self, _udt_value: &HashMap<String, PlcValue>) -> Result<Vec<u8>> {
+    pub fn serialize_udt_instance(
+        &self,
+        _udt_value: &HashMap<String, PlcValue>,
+    ) -> Result<Vec<u8>> {
         // For now, return empty bytes
         // Full UDT serialization can be implemented later
         Ok(Vec::new())
@@ -78,10 +81,13 @@ impl UserDefinedType {
 
     /// Adds a member to the UDT
     pub fn add_member(&mut self, member: UdtMember) {
-        self.member_offsets.insert(member.name.clone(), member.offset);
+        self.member_offsets
+            .insert(member.name.clone(), member.offset);
         self.members.push(member);
         // Calculate total size including padding
-        self.size = self.members.iter()
+        self.size = self
+            .members
+            .iter()
             .map(|m| m.offset + m.size)
             .max()
             .unwrap_or(0);
@@ -106,7 +112,7 @@ impl UserDefinedType {
     /// Converts a UDT instance to a HashMap of member values
     pub fn to_hash_map(&self, data: &[u8]) -> crate::error::Result<HashMap<String, PlcValue>> {
         let mut result = HashMap::new();
-        
+
         for member in &self.members {
             let offset = member.offset as usize;
             if offset + member.size as usize <= data.len() {
@@ -120,7 +126,11 @@ impl UserDefinedType {
     }
 
     /// Parses a member value from raw data
-    fn parse_member_value(&self, member: &UdtMember, data: &[u8]) -> crate::error::Result<PlcValue> {
+    fn parse_member_value(
+        &self,
+        member: &UdtMember,
+        data: &[u8],
+    ) -> crate::error::Result<PlcValue> {
         match member.data_type {
             0x00C1 => Ok(PlcValue::Bool(data[0] != 0)),
             0x00C4 => {
@@ -133,7 +143,9 @@ impl UserDefinedType {
                 bytes.copy_from_slice(&data[..4]);
                 Ok(PlcValue::Real(f32::from_le_bytes(bytes)))
             }
-            _ => Err(crate::error::EtherNetIpError::Protocol("Unsupported data type".to_string())),
+            _ => Err(crate::error::EtherNetIpError::Protocol(
+                "Unsupported data type".to_string(),
+            )),
         }
     }
 }
@@ -145,7 +157,7 @@ mod tests {
     #[test]
     fn test_udt_member_offsets() {
         let mut udt = UserDefinedType::new("TestUDT".to_string());
-        
+
         udt.add_member(UdtMember {
             name: "Bool1".to_string(),
             data_type: 0x00C1,
@@ -168,7 +180,7 @@ mod tests {
     #[test]
     fn test_udt_parsing() {
         let mut udt = UserDefinedType::new("TestUDT".to_string());
-        
+
         udt.add_member(UdtMember {
             name: "Bool1".to_string(),
             data_type: 0x00C1,
@@ -189,4 +201,4 @@ mod tests {
         assert_eq!(result.get("Bool1"), Some(&PlcValue::Bool(true)));
         assert_eq!(result.get("Dint1"), Some(&PlcValue::Dint(42)));
     }
-} 
+}
