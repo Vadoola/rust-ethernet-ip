@@ -1,16 +1,15 @@
 #![allow(non_local_definitions)]
 
-use pyo3::prelude::*;
-// use pyo3::wrap_pyfunction;
-use pyo3::types::{PyDict, PyTuple};
-// use pyo3::types::IntoPyDict;
 use crate::{EipClient, PlcValue, SubscriptionOptions};
+use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyTuple};
+use pyo3::IntoPyObjectExt;
 use std::collections::HashMap;
 use tokio::runtime::Runtime;
 
 /// Python module for rust_ethernet_ip
 #[pymodule]
-fn rust_ethernet_ip(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+fn rust_ethernet_ip(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEipClient>()?;
     m.add_class::<PyPlcValue>()?;
     m.add_class::<PySubscriptionOptions>()?;
@@ -31,7 +30,7 @@ struct TagValueArg {
 }
 
 impl<'a> FromPyObject<'a> for TagValueArg {
-    fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
+    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
         let tuple = ob.downcast::<PyTuple>()?;
         if tuple.len() != 2 {
             return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
@@ -51,7 +50,7 @@ struct TagSubOptArg {
 }
 
 impl<'a> FromPyObject<'a> for TagSubOptArg {
-    fn extract(ob: &'a pyo3::PyAny) -> PyResult<Self> {
+    fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
         let tuple = ob.downcast::<PyTuple>()?;
         if tuple.len() != 2 {
             return Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
@@ -101,8 +100,8 @@ impl PyEipClient {
     }
 
     /// Read multiple tags in batch
-    fn read_tags_batch(&mut self, tag_names: Vec<String>) -> PyResult<Vec<(String, PyObject)>> {
-        Python::with_gil(|py| {
+    fn read_tags_batch(&mut self, tag_names: Vec<String>) -> PyResult<Vec<(String, Py<PyAny>)>> {
+        Python::attach(|py| {
             let runtime = tokio::runtime::Runtime::new().unwrap();
             let results = runtime
                 .block_on(async {
@@ -111,17 +110,16 @@ impl PyEipClient {
                         .await
                 })
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-            Ok(results
-                .into_iter()
-                .map(|(name, result)| {
-                    let obj = match result {
-                        Ok(v) => PyPlcValue { value: v }.into_py(py),
-                        Err(e) => PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())
-                            .into_py(py),
-                    };
-                    (name, obj)
-                })
-                .collect())
+            let mut results_vec = Vec::new();
+            for (name, result) in results {
+                let obj = match result {
+                    Ok(v) => PyPlcValue { value: v }.into_bound_py_any(py)?,
+                    Err(e) => PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())
+                        .into_bound_py_any(py)?,
+                };
+                results_vec.push((name, obj.unbind()));
+            }
+            Ok(results_vec)
         })
     }
 
@@ -129,8 +127,8 @@ impl PyEipClient {
     fn write_tags_batch(
         &mut self,
         tag_values: Vec<TagValueArg>,
-    ) -> PyResult<Vec<(String, PyObject)>> {
-        Python::with_gil(|py| {
+    ) -> PyResult<Vec<(String, Py<PyAny>)>> {
+        Python::attach(|py| {
             let runtime = tokio::runtime::Runtime::new().unwrap();
             let results = runtime
                 .block_on(async {
@@ -144,17 +142,16 @@ impl PyEipClient {
                         .await
                 })
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-            Ok(results
-                .into_iter()
-                .map(|(name, result)| {
-                    let obj = match result {
-                        Ok(()) => py.None(),
-                        Err(e) => PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())
-                            .into_py(py),
-                    };
-                    (name, obj)
-                })
-                .collect())
+            let mut results_vec = Vec::new();
+            for (name, result) in results {
+                let obj = match result {
+                    Ok(()) => py.None().into_bound_py_any(py)?,
+                    Err(e) => PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())
+                        .into_bound_py_any(py)?,
+                };
+                results_vec.push((name, obj.unbind()));
+            }
+            Ok(results_vec)
         })
     }
 
@@ -205,7 +202,7 @@ struct PyPlcValue {
 }
 
 impl FromPyObject<'_> for PyPlcValue {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+    fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
         if let Ok(bool_val) = ob.extract::<bool>() {
             Ok(PyPlcValue {
                 value: PlcValue::Bool(bool_val),
@@ -243,25 +240,26 @@ impl FromPyObject<'_> for PyPlcValue {
 #[pymethods]
 impl PyPlcValue {
     #[new]
-    fn new(value: PyObject) -> PyResult<Self> {
-        Python::with_gil(|py| {
-            if let Ok(val) = value.extract::<bool>(py) {
+    fn new(value: Py<PyAny>) -> PyResult<Self> {
+        Python::attach(|py| {
+            let bound_value = value.bind(py);
+            if let Ok(val) = bound_value.extract::<bool>() {
                 Ok(PyPlcValue {
                     value: PlcValue::Bool(val),
                 })
-            } else if let Ok(val) = value.extract::<i32>(py) {
+            } else if let Ok(val) = bound_value.extract::<i32>() {
                 Ok(PyPlcValue {
                     value: PlcValue::Dint(val),
                 })
-            } else if let Ok(val) = value.extract::<f32>(py) {
+            } else if let Ok(val) = bound_value.extract::<f32>() {
                 Ok(PyPlcValue {
                     value: PlcValue::Real(val),
                 })
-            } else if let Ok(val) = value.extract::<f64>(py) {
+            } else if let Ok(val) = bound_value.extract::<f64>() {
                 Ok(PyPlcValue {
                     value: PlcValue::Real(val as f32),
                 })
-            } else if let Ok(val) = value.extract::<String>(py) {
+            } else if let Ok(val) = bound_value.extract::<String>() {
                 Ok(PyPlcValue {
                     value: PlcValue::String(val),
                 })
@@ -305,27 +303,27 @@ impl PyPlcValue {
     }
 
     #[getter]
-    fn value(&self, py: Python) -> PyResult<PyObject> {
+    fn value(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         match &self.value {
-            PlcValue::Bool(b) => Ok(b.into_py(py)),
-            PlcValue::Sint(i) => Ok(i.into_py(py)),
-            PlcValue::Int(i) => Ok(i.into_py(py)),
-            PlcValue::Dint(i) => Ok(i.into_py(py)),
-            PlcValue::Lint(i) => Ok(i.into_py(py)),
-            PlcValue::Usint(u) => Ok(u.into_py(py)),
-            PlcValue::Uint(u) => Ok(u.into_py(py)),
-            PlcValue::Udint(u) => Ok(u.into_py(py)),
-            PlcValue::Ulint(u) => Ok(u.into_py(py)),
-            PlcValue::Real(f) => Ok(f.into_py(py)),
-            PlcValue::Lreal(f) => Ok(f.into_py(py)),
-            PlcValue::String(s) => Ok(s.into_py(py)),
+            PlcValue::Bool(b) => Ok(b.into_bound_py_any(py)?.unbind()),
+            PlcValue::Sint(i) => Ok(i.into_bound_py_any(py)?.unbind()),
+            PlcValue::Int(i) => Ok(i.into_bound_py_any(py)?.unbind()),
+            PlcValue::Dint(i) => Ok(i.into_bound_py_any(py)?.unbind()),
+            PlcValue::Lint(i) => Ok(i.into_bound_py_any(py)?.unbind()),
+            PlcValue::Usint(u) => Ok(u.into_bound_py_any(py)?.unbind()),
+            PlcValue::Uint(u) => Ok(u.into_bound_py_any(py)?.unbind()),
+            PlcValue::Udint(u) => Ok(u.into_bound_py_any(py)?.unbind()),
+            PlcValue::Ulint(u) => Ok(u.into_bound_py_any(py)?.unbind()),
+            PlcValue::Real(f) => Ok(f.into_bound_py_any(py)?.unbind()),
+            PlcValue::Lreal(f) => Ok(f.into_bound_py_any(py)?.unbind()),
+            PlcValue::String(s) => Ok(s.into_bound_py_any(py)?.unbind()),
             PlcValue::Udt(map) => {
                 let dict = PyDict::new(py);
                 for (k, v) in map.iter() {
                     let v_py = PyPlcValue { value: v.clone() }.value(py)?;
                     dict.set_item(k, v_py)?;
                 }
-                Ok(dict.into_py(py))
+                Ok(dict.unbind().into())
             }
         }
     }
@@ -346,7 +344,7 @@ struct PySubscriptionOptions {
 }
 
 impl FromPyObject<'_> for PySubscriptionOptions {
-    fn extract(ob: &PyAny) -> PyResult<Self> {
+    fn extract_bound(ob: &Bound<'_, PyAny>) -> PyResult<Self> {
         let update_rate = ob.getattr("update_rate")?.extract::<u32>()?;
         let change_threshold = ob.getattr("change_threshold")?.extract::<f32>()?;
         let timeout = ob.getattr("timeout")?.extract::<u32>()?;

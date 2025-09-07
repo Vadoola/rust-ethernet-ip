@@ -58,7 +58,7 @@ impl PyEipClient {
 }
 
 #[pymodule]
-fn _rust_ethernet_ip(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+fn _rust_ethernet_ip(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEipClient>()?;
     Ok(())
 }

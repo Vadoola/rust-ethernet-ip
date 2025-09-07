@@ -13,7 +13,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 rust-ethernet-ip = { path = ".." }
-pyo3 = { version = "0.20", features = ["extension-module"] }
+pyo3 = { version = "0.26", features = ["extension-module"] }
 tokio = { version = "1.36", features = ["full"] }
 async-trait = "0.1"
 futures = "0.3" 

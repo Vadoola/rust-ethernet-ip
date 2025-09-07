@@ -1,7 +1,7 @@
 [workspace]
 members = [
     ".",  # Main library (current directory)
-    # "pywrapper"  # Python wrapper - temporarily disabled due to version conflict
+    "pywrapper"  # Python wrapper
 ]
 
 [package]
@@ -81,7 +81,7 @@ log = "0.4"
 env_logger = "0.10"
 lazy_static = "1.4"
 vergen = { version = "8.3", features = ["build", "git", "gitcl"] }
-pyo3 = { version = "0.20", features = ["extension-module"] }
+pyo3 = { version = "0.26", features = ["extension-module"] }
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
 
