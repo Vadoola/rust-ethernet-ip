@@ -1,7 +1,7 @@
 [workspace]
 members = [
     ".",  # Main library (current directory)
-    "pywrapper"  # Python wrapper
+    # "pywrapper"  # Python wrapper - temporarily disabled due to version conflict
 ]
 
 [package]
@@ -67,6 +67,10 @@ crate-type = ["rlib", "cdylib", "staticlib"]  # Added staticlib for Python bindi
 name = "enip-test"
 path = "src/main.rs"
 
+[[bench]]
+name = "performance_benchmark"
+harness = false
+
 [dependencies]
 tokio = { version = "1.0", features = ["full"] }
 bytes = "1.0"
@@ -78,6 +82,8 @@ env_logger = "0.10"
 lazy_static = "1.4"
 vergen = { version = "8.3", features = ["build", "git", "gitcl"] }
 pyo3 = { version = "0.20", features = ["extension-module"] }
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
 
 [dev-dependencies]
 tokio-test = "0.4"

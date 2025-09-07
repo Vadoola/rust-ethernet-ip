@@ -1,8 +1,8 @@
-use tokio::sync::{mpsc, Mutex};
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
-use crate::error::{Result, EtherNetIpError};
+use crate::error::{EtherNetIpError, Result};
 use crate::PlcValue;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+use tokio::sync::{mpsc, Mutex};
 
 /// Configuration options for tag subscriptions
 #[derive(Debug, Clone)]
@@ -18,9 +18,9 @@ pub struct SubscriptionOptions {
 impl Default for SubscriptionOptions {
     fn default() -> Self {
         Self {
-            update_rate: 100, // 100ms default update rate
+            update_rate: 100,        // 100ms default update rate
             change_threshold: 0.001, // 0.1% change threshold
-            timeout: 5000, // 5 second timeout
+            timeout: 5000,           // 5 second timeout
         }
     }
 }
@@ -63,13 +63,14 @@ impl TagSubscription {
 
     /// Stops the subscription
     pub fn stop(&self) {
-        self.is_active.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.is_active
+            .store(false, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Updates the subscription value
     pub async fn update_value(&self, value: &PlcValue) -> Result<()> {
         let mut last_value = self.last_value.lock().await;
-        
+
         // Check if value has changed significantly
         if let (Some(PlcValue::Real(old)), PlcValue::Real(new)) = (last_value.as_ref(), value) {
             if (*new - *old).abs() < self.options.change_threshold {
@@ -80,16 +81,20 @@ impl TagSubscription {
         // Update value and send notification
         *last_value = Some(value.clone());
         let sender = self.sender.lock().await;
-        sender.send(value.clone()).await
+        sender
+            .send(value.clone())
+            .await
             .map_err(|e| EtherNetIpError::Subscription(format!("Failed to send update: {}", e)))?;
-        
+
         Ok(())
     }
 
     /// Waits for the next value update
     pub async fn wait_for_update(&self) -> Result<PlcValue> {
         let mut receiver = self.receiver.lock().await;
-        receiver.recv().await
+        receiver
+            .recv()
+            .await
             .ok_or_else(|| EtherNetIpError::Subscription("Channel closed".to_string()))
     }
 
@@ -103,6 +108,12 @@ impl TagSubscription {
 #[derive(Debug, Clone)]
 pub struct SubscriptionManager {
     subscriptions: Arc<Mutex<Vec<TagSubscription>>>,
+}
+
+impl Default for SubscriptionManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SubscriptionManager {
@@ -145,7 +156,8 @@ impl SubscriptionManager {
     /// Gets a specific subscription by tag name
     pub async fn get_subscription(&self, tag_name: &str) -> Option<TagSubscription> {
         let subscriptions = self.subscriptions.lock().await;
-        subscriptions.iter()
+        subscriptions
+            .iter()
             .find(|sub| sub.tag_path == tag_name)
             .cloned()
     }

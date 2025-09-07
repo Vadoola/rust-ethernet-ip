@@ -1,6 +1,5 @@
-use std::collections::HashMap;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
+use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::RwLock;
 use tokio::time::interval;
 
@@ -87,6 +86,12 @@ pub struct ProductionMonitor {
     system_start_time: SystemTime,
 }
 
+impl Default for ProductionMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProductionMonitor {
     pub fn new() -> Self {
         Self {
@@ -145,13 +150,14 @@ impl ProductionMonitor {
         let mut metrics = self.metrics.write().await;
         metrics.operations.total_reads += 1;
         metrics.operations.successful_reads += 1;
-        
+
         // Update latency metrics
         let latency_ms = latency.as_millis() as f64;
-        metrics.performance.avg_read_latency_ms = 
-            (metrics.performance.avg_read_latency_ms * (metrics.operations.successful_reads - 1) as f64 + latency_ms) 
+        metrics.performance.avg_read_latency_ms = (metrics.performance.avg_read_latency_ms
+            * (metrics.operations.successful_reads - 1) as f64
+            + latency_ms)
             / metrics.operations.successful_reads as f64;
-        
+
         if latency_ms > metrics.performance.max_read_latency_ms {
             metrics.performance.max_read_latency_ms = latency_ms;
         }
@@ -170,13 +176,14 @@ impl ProductionMonitor {
         let mut metrics = self.metrics.write().await;
         metrics.operations.total_writes += 1;
         metrics.operations.successful_writes += 1;
-        
+
         // Update latency metrics
         let latency_ms = latency.as_millis() as f64;
-        metrics.performance.avg_write_latency_ms = 
-            (metrics.performance.avg_write_latency_ms * (metrics.operations.successful_writes - 1) as f64 + latency_ms) 
+        metrics.performance.avg_write_latency_ms = (metrics.performance.avg_write_latency_ms
+            * (metrics.operations.successful_writes - 1) as f64
+            + latency_ms)
             / metrics.operations.successful_writes as f64;
-        
+
         if latency_ms > metrics.performance.max_write_latency_ms {
             metrics.performance.max_write_latency_ms = latency_ms;
         }
@@ -220,7 +227,7 @@ impl ProductionMonitor {
             "data_type" => metrics.errors.data_type_errors += 1,
             _ => {}
         }
-        
+
         metrics.errors.last_error_time = Some(SystemTime::now());
         metrics.errors.last_error_message = Some(error_type.to_string());
         metrics.health.consecutive_failures += 1;
@@ -229,29 +236,31 @@ impl ProductionMonitor {
     /// Get current metrics
     pub async fn get_metrics(&self) -> MonitoringMetrics {
         let mut metrics = self.metrics.read().await.clone();
-        
+
         // Update system uptime
         metrics.health.system_uptime = self.start_time.elapsed();
-        
+
         // Calculate operations per second
         let total_time = metrics.health.system_uptime.as_secs_f64();
         if total_time > 0.0 {
-            metrics.performance.reads_per_second = metrics.operations.successful_reads as f64 / total_time;
-            metrics.performance.writes_per_second = metrics.operations.successful_writes as f64 / total_time;
+            metrics.performance.reads_per_second =
+                metrics.operations.successful_reads as f64 / total_time;
+            metrics.performance.writes_per_second =
+                metrics.operations.successful_writes as f64 / total_time;
         }
-        
+
         // Update health status
         metrics.health.overall_health = self.calculate_health_status(&metrics);
         metrics.health.last_health_check = SystemTime::now();
-        
+
         metrics
     }
 
     /// Calculate overall health status
     fn calculate_health_status(&self, metrics: &MonitoringMetrics) -> HealthStatus {
         let error_rate = if metrics.operations.total_reads + metrics.operations.total_writes > 0 {
-            (metrics.operations.failed_reads + metrics.operations.failed_writes) as f64 
-            / (metrics.operations.total_reads + metrics.operations.total_writes) as f64
+            (metrics.operations.failed_reads + metrics.operations.failed_writes) as f64
+                / (metrics.operations.total_reads + metrics.operations.total_writes) as f64
         } else {
             0.0
         };
@@ -282,10 +291,10 @@ impl ProductionMonitor {
     /// Update system-level metrics
     async fn update_system_metrics(&self) {
         let mut metrics = self.metrics.write().await;
-        
+
         // Update memory usage (simplified)
         metrics.performance.memory_usage_mb = self.get_memory_usage();
-        
+
         // Update CPU usage (simplified)
         metrics.performance.cpu_usage_percent = self.get_cpu_usage();
     }

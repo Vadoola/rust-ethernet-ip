@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::Duration;
-use std::path::Path;
 use std::fs;
+use std::path::Path;
+use std::time::Duration;
 
 /// Production configuration for EtherNet/IP library
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -306,14 +306,22 @@ impl ProductionConfig {
         }
 
         // Validate security settings
-        if self.security.rate_limiting.enabled && self.security.rate_limiting.max_requests_per_second == 0 {
-            errors.push("Max requests per second must be greater than 0 when rate limiting is enabled".to_string());
+        if self.security.rate_limiting.enabled
+            && self.security.rate_limiting.max_requests_per_second == 0
+        {
+            errors.push(
+                "Max requests per second must be greater than 0 when rate limiting is enabled"
+                    .to_string(),
+            );
         }
 
         // Validate logging settings
         let valid_levels = ["trace", "debug", "info", "warn", "error"];
         if !valid_levels.contains(&self.logging.level.as_str()) {
-            errors.push(format!("Invalid log level: {}. Must be one of: {:?}", self.logging.level, valid_levels));
+            errors.push(format!(
+                "Invalid log level: {}. Must be one of: {:?}",
+                self.logging.level, valid_levels
+            ));
         }
 
         if errors.is_empty() {
