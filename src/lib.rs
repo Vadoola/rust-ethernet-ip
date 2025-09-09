@@ -1,7 +1,7 @@
 // lib.rs - Rust EtherNet/IP Driver Library with Comprehensive Documentation
 // =========================================================================
 //
-// # Rust EtherNet/IP Driver Library v0.5.2
+// # Rust EtherNet/IP Driver Library v0.5.3
 //
 // A high-performance, production-ready EtherNet/IP communication library for
 // Allen-Bradley CompactLogix and ControlLogix PLCs, written in pure Rust with
@@ -230,7 +230,7 @@
 //
 // ## Changelog
 //
-// ### v0.5.2 (January 2025) - **CURRENT**
+// ### v0.5.3 (January 2025) - **CURRENT**
 // - Enhanced safety documentation for all FFI functions
 // - Comprehensive clippy optimizations and code quality improvements
 // - Improved memory management and connection pool handling
@@ -1403,43 +1403,6 @@ impl EipClient {
         Ok(request)
     }
 
-    /// Builds the CIP tag path for a given tag name
-    ///
-    /// This function converts a human-readable tag name into the binary
-    /// path format required by the CIP protocol. The path consists of
-    /// segments that describe how to navigate to the tag in the PLC's
-    /// tag database.
-    ///
-    /// # Arguments
-    ///
-    /// * `tag_name` - The tag name to convert to a path
-    ///
-    /// # Returns
-    ///
-    /// A vector of bytes representing the CIP path
-    fn build_tag_path(&self, tag_name: &str) -> Vec<u8> {
-        // Use simple tag path for now
-        self.build_simple_tag_path(tag_name)
-    }
-
-    /// Builds a simple tag path for basic tag names (fallback method)
-    fn build_simple_tag_path(&self, tag_name: &str) -> Vec<u8> {
-        let mut path = Vec::new();
-        let tag_bytes = tag_name.as_bytes();
-
-        // ANSI Extended Symbol Segment
-        path.push(0x91);
-        path.push(tag_bytes.len() as u8);
-        path.extend_from_slice(tag_bytes);
-
-        // Pad to even length if necessary
-        if (tag_bytes.len() + 1) % 2 != 0 {
-            path.push(0x00);
-        }
-
-        path
-    }
-
     /// Serializes a PlcValue into bytes for transmission
     #[allow(dead_code)]
     fn serialize_value(&self, value: &PlcValue) -> crate::error::Result<Vec<u8>> {
@@ -1519,19 +1482,36 @@ impl EipClient {
     pub fn build_list_tags_request(&self) -> Vec<u8> {
         println!("🔧 [DEBUG] Building list tags request");
 
-        // Use Connected Explicit Messaging for consistency
-        let cip_request = vec![
-            // Service: List All Tags Service (0x55)
-            0x55, // Request Path Size (in words) - 3 words = 6 bytes
-            0x03,
-            // Request Path: Class 0x6B (Symbol Object), Instance 1
+        // Build path array for Symbol Object Class (0x6B)
+        let path_array = vec![
+            // Class segment: Symbol Object Class (0x6B)
             0x20, // Class segment identifier
             0x6B, // Symbol Object Class
-            0x24, // Instance segment identifier
-            0x01, // Instance 1
-            0x01, // Attribute segment identifier
-            0x00, // Attribute 0 (tag list)
+            
+            // Instance segment: Start at Instance 0
+            0x25, // Instance segment identifier with 0x00
+            0x00,
+            0x00,
+            0x00,
         ];
+
+        // Request data: 2 Attributes - Attribute 1 and Attribute 2
+        let request_data = vec![0x02, 0x00, 0x01, 0x00, 0x02, 0x00];
+
+        // Build CIP Message Router request
+        let mut cip_request = Vec::new();
+
+        // Service: Get Instance Attribute List (0x55)
+        cip_request.push(0x55);
+
+        // Request Path Size (in words)
+        cip_request.push((path_array.len() / 2) as u8);
+
+        // Request Path
+        cip_request.extend_from_slice(&path_array);
+
+        // Request Data
+        cip_request.extend_from_slice(&request_data);
 
         println!(
             "🔧 [DEBUG] Built CIP list tags request ({} bytes): {:02X?}",
@@ -2082,31 +2062,19 @@ impl EipClient {
     fn build_read_request(&self, tag_name: &str) -> Vec<u8> {
         println!("🔧 [DEBUG] Building read request for tag: '{}'", tag_name);
 
-        // Use Connected Explicit Messaging for better compatibility
-        // This is simpler and more widely supported across different PLC types
         let mut cip_request = Vec::new();
 
         // Service: Read Tag Service (0x4C)
         cip_request.push(0x4C);
 
+        // Build the path based on tag name format
+        let path = self.build_tag_path(tag_name);
+
         // Request Path Size (in words)
-        let tag_bytes = tag_name.as_bytes();
-        let path_len = if tag_bytes.len() % 2 == 0 {
-            tag_bytes.len() + 2
-        } else {
-            tag_bytes.len() + 3
-        };
-        cip_request.push((path_len / 2) as u8);
+        cip_request.push((path.len() / 2) as u8);
 
-        // Request Path: ANSI Extended Symbol Segment for tag name
-        cip_request.push(0x91); // ANSI Extended Symbol Segment
-        cip_request.push(tag_bytes.len() as u8); // Tag name length
-        cip_request.extend_from_slice(tag_bytes); // Tag name
-
-        // Pad to even length if necessary
-        if tag_bytes.len() % 2 != 0 {
-            cip_request.push(0x00);
-        }
+        // Request Path
+        cip_request.extend_from_slice(&path);
 
         // Element count (little-endian)
         cip_request.extend_from_slice(&[0x01, 0x00]); // Read 1 element
@@ -2118,6 +2086,71 @@ impl EipClient {
         );
 
         cip_request
+    }
+
+    /// Builds the correct path for a tag name
+    fn build_tag_path(&self, tag_name: &str) -> Vec<u8> {
+        let mut path = Vec::new();
+
+        if tag_name.starts_with("Program:") {
+            // Handle program tags: Program:ProgramName.TagName
+            let parts: Vec<&str> = tag_name.splitn(2, ':').collect();
+            if parts.len() == 2 {
+                let program_and_tag = parts[1];
+                let program_parts: Vec<&str> = program_and_tag.splitn(2, '.').collect();
+
+                if program_parts.len() == 2 {
+                    let program_name = program_parts[0];
+                    let tag_name = program_parts[1];
+
+                    // Build path: Program segment + program name + tag segment + tag name
+                    path.push(0x91); // ANSI Extended Symbol Segment
+                    path.push(program_name.len() as u8);
+                    path.extend_from_slice(program_name.as_bytes());
+
+                    // Pad to even length if necessary
+                    if program_name.len() % 2 != 0 {
+                        path.push(0x00);
+                    }
+
+                    // Add tag segment
+                    path.push(0x91); // ANSI Extended Symbol Segment
+                    path.push(tag_name.len() as u8);
+                    path.extend_from_slice(tag_name.as_bytes());
+
+                    // Pad to even length if necessary
+                    if tag_name.len() % 2 != 0 {
+                        path.push(0x00);
+                    }
+                } else {
+                    // Fallback to simple tag name
+                    path.extend_from_slice(&self.build_simple_tag_path(tag_name));
+                }
+            } else {
+                // Fallback to simple tag name
+                path.extend_from_slice(&self.build_simple_tag_path(tag_name));
+            }
+        } else {
+            // Handle simple tag names
+            path.extend_from_slice(&self.build_simple_tag_path(tag_name));
+        }
+
+        path
+    }
+
+    /// Builds a simple tag path (no program prefix)
+    fn build_simple_tag_path(&self, tag_name: &str) -> Vec<u8> {
+        let mut path = Vec::new();
+        path.push(0x91); // ANSI Extended Symbol Segment
+        path.push(tag_name.len() as u8);
+        path.extend_from_slice(tag_name.as_bytes());
+
+        // Pad to even length if necessary
+        if tag_name.len() % 2 != 0 {
+            path.push(0x00);
+        }
+
+        path
     }
 
     // =========================================================================

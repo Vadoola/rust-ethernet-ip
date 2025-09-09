@@ -183,56 +183,74 @@ impl TagManager {
             response.len(),
             response
         );
+
         let mut tags = Vec::new();
         let mut offset = 0;
+
+        // Parse the attribute list response format
+        // Each entry: [InstanceID(4)][NameLength(2)][Name][Type(2)]
         while offset < response.len() {
-            if offset + 1 > response.len() {
-                println!("[WARN] Not enough bytes for name_len at offset {}", offset);
+            // Check if we have enough bytes for instance ID
+            if offset + 4 > response.len() {
+                println!(
+                    "[WARN] Not enough bytes for instance ID at offset {}",
+                    offset
+                );
                 break;
             }
-            let name_len = response[offset] as usize;
-            offset += 1;
-            if offset + name_len > response.len() {
-                println!("[WARN] Not enough bytes for tag name at offset {}", offset);
-                break;
-            }
-            let name = String::from_utf8_lossy(&response[offset..offset + name_len]).to_string();
-            offset += name_len;
+
+            let instance_id = u32::from_le_bytes([
+                response[offset],
+                response[offset + 1],
+                response[offset + 2],
+                response[offset + 3],
+            ]);
+            offset += 4;
+
+            // Check if we have enough bytes for name length
             if offset + 2 > response.len() {
-                println!("[WARN] Not enough bytes for data_type at offset {}", offset);
+                println!(
+                    "[WARN] Not enough bytes for name length at offset {}",
+                    offset
+                );
                 break;
             }
-            let data_type = u16::from_le_bytes([response[offset], response[offset + 1]]);
+
+            let name_length = u16::from_le_bytes([response[offset], response[offset + 1]]) as usize;
             offset += 2;
-            if offset + 1 > response.len() {
-                println!("[WARN] Not enough bytes for is_array at offset {}", offset);
+
+            // Check if we have enough bytes for the tag name
+            if offset + name_length > response.len() {
+                println!(
+                    "[WARN] Not enough bytes for tag name at offset {} (need {}, have {})",
+                    offset,
+                    name_length,
+                    response.len() - offset
+                );
                 break;
             }
-            let is_array = response[offset] != 0;
-            offset += 1;
-            let mut dimensions = Vec::new();
-            if is_array {
-                if offset + 1 > response.len() {
-                    println!("[WARN] Not enough bytes for dim_count at offset {}", offset);
-                    break;
-                }
-                let dim_count = response[offset] as usize;
-                offset += 1;
-                for _ in 0..dim_count {
-                    if offset + 4 > response.len() {
-                        println!("[WARN] Not enough bytes for dimension at offset {}", offset);
-                        break;
-                    }
-                    let dim = u32::from_le_bytes([
-                        response[offset],
-                        response[offset + 1],
-                        response[offset + 2],
-                        response[offset + 3],
-                    ]);
-                    dimensions.push(dim);
-                    offset += 4;
-                }
+
+            let name = String::from_utf8_lossy(&response[offset..offset + name_length]).to_string();
+            offset += name_length;
+
+            // Check if we have enough bytes for tag type
+            if offset + 2 > response.len() {
+                println!("[WARN] Not enough bytes for tag type at offset {}", offset);
+                break;
             }
+
+            let tag_type = u16::from_le_bytes([response[offset], response[offset + 1]]);
+            offset += 2;
+
+            // Parse tag type information (similar to Node.js implementation)
+            let (type_code, _is_structure, array_dims, _reserved) = self.parse_tag_type(tag_type);
+
+            let is_array = array_dims > 0;
+            let dimensions = if is_array {
+                vec![0; array_dims as usize] // Placeholder - actual dimensions would need more parsing
+            } else {
+                Vec::new()
+            };
 
             let array_info = if is_array && !dimensions.is_empty() {
                 Some(ArrayInfo {
@@ -244,7 +262,7 @@ impl TagManager {
             };
 
             let metadata = TagMetadata {
-                data_type,
+                data_type: type_code,
                 scope: TagScope::Controller,
                 permissions: TagPermissions {
                     readable: true,
@@ -257,9 +275,31 @@ impl TagManager {
                 array_info,
                 last_updated: Instant::now(),
             };
+
+            println!(
+                "[DEBUG] Parsed tag: {} (ID: {}, Type: 0x{:04X})",
+                name, instance_id, type_code
+            );
             tags.push((name, metadata));
         }
+
+        println!("[DEBUG] Parsed {} tags from response", tags.len());
         Ok(tags)
+    }
+
+    /// Parse tag type information from the raw type value
+    fn parse_tag_type(&self, tag_type: u16) -> (u16, bool, u8, bool) {
+        let type_code = if (tag_type & 0x00ff) == 0xc1 {
+            0x00c1
+        } else {
+            tag_type & 0x0fff
+        };
+
+        let is_structure = (tag_type & 0x8000) != 0;
+        let array_dims = ((tag_type & 0x6000) >> 13) as u8;
+        let reserved = (tag_type & 0x1000) != 0;
+
+        (type_code, is_structure, array_dims, reserved)
     }
 }
 

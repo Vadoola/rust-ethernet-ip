@@ -8,7 +8,7 @@ from .rust_ethernet_ip import (
     PySubscriptionOptions,
 )
 
-__version__ = "0.5.2"
+__version__ = "0.5.3"
 
 __all__ = [
     "PyEipClient",

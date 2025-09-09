@@ -5,6 +5,21 @@ All notable changes to the rust-ethernet-ip project will be documented in this f
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] - 2025-01-15
+
+### Fixed
+- **Tag Discovery**: Fixed `discover_tags()` function to properly discover and parse tag lists from PLCs
+- **Program Tag Reading**: Fixed reading of program tags like `Program:ProgramName.TagName` that were failing with "Path segment error"
+- **CIP Request Format**: Updated tag list requests to use correct `GET_INSTANCE_ATTRIBUTE_LIST` service
+- **Response Parsing**: Fixed tag list response parsing to handle proper attribute list format
+- **Tag Path Building**: Improved tag path building to correctly handle program prefixes
+
+### Technical Details
+- Updated CIP request building to match working Node.js implementation
+- Fixed response parsing format from `[name_len][name][type]` to `[InstanceID(4)][NameLength(2)][Name][Type(2)]`
+- Added proper program tag path splitting and segment building
+- Enhanced error handling and debugging output for tag operations
+
 ## [0.5.2] - 2025-01-15
 
 ### 🔧 Code Quality & Documentation Improvements

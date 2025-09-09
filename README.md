@@ -16,7 +16,7 @@
 > [Try the HMI Demo →](#-hmi-scada-production-demo)
 
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-0.5.2-blue.svg)](https://github.com/sergiogallegos/rust-ethernet-ip/releases)
+[![Version](https://img.shields.io/badge/version-0.5.3-blue.svg)](https://github.com/sergiogallegos/rust-ethernet-ip/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Performance](https://img.shields.io/badge/performance-3000%2B%20ops%2Fsec-green.svg)]()
 [![Status](https://img.shields.io/badge/status-production--ready-brightgreen.svg)]()
@@ -163,7 +163,7 @@ The demo reads 13 industrial tags including machine status, production metrics, 
 
 Optimized for PC applications with excellent performance:
 
-> **🆕 Latest Performance Improvements (v0.5.2)**
+> **🆕 Latest Performance Improvements (v0.5.3)**
 > 
 > Recent optimizations have delivered significant performance gains:
 > - **Memory allocation improvements**: 20-30% reduction in allocation overhead for network operations
@@ -227,7 +227,7 @@ The easiest way to get started is by adding the crate to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rust-ethernet-ip = "0.5.2"
+rust-ethernet-ip = "0.5.3"
 tokio = { version = "1.0", features = ["full"] }
 
 ### Rust Library
@@ -235,7 +235,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-rust-ethernet-ip = "0.5.2"
+rust-ethernet-ip = "0.5.3"
 tokio = { version = "1.0", features = ["full"] }
 ```
 
@@ -975,7 +975,7 @@ See [BUILD.md](BUILD.md) for details.
 
 ## 🆕 Version
 
-**Current Release:** v0.5.2 ([Release Notes](RELEASE_NOTES_v0.5.0.md))
+**Current Release:** v0.5.3 ([Release Notes](RELEASE_NOTES_v0.5.3.md))
 
 ## 📝 Changelog
 
