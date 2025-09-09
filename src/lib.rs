@@ -542,10 +542,10 @@ impl ConnectedSession {
             o_to_t_connection_id: 0,
             t_to_o_connection_id: 0,
             connection_serial,
-            originator_vendor_id: 0x1337,  // Custom vendor ID
-            originator_serial: 0x12345678, // Custom serial number
-            timeout_multiplier: 0x05,      // 32 seconds timeout
-            rpi: 100000,                   // 100ms RPI
+            originator_vendor_id: 0x1337,   // Custom vendor ID
+            originator_serial: 0x1234_5678, // Custom serial number
+            timeout_multiplier: 0x05,       // 32 seconds timeout
+            rpi: 100_000,                   // 100ms RPI
             o_to_t_params: ConnectionParameters::default(),
             t_to_o_params: ConnectionParameters::default(),
             established_at: Instant::now(),
@@ -562,7 +562,7 @@ impl ConnectedSession {
             1 => {
                 // Config 1: Conservative Allen-Bradley parameters
                 session.timeout_multiplier = 0x07; // 256 seconds timeout
-                session.rpi = 200000; // 200ms RPI (slower)
+                session.rpi = 200_000; // 200ms RPI (slower)
                 session.o_to_t_params.size = 504; // Standard packet size
                 session.t_to_o_params.size = 504;
                 session.o_to_t_params.priority = 0x00; // Low priority
@@ -582,7 +582,7 @@ impl ConnectedSession {
             3 => {
                 // Config 3: Minimal parameters
                 session.timeout_multiplier = 0x01; // 4 seconds timeout
-                session.rpi = 1000000; // 1000ms RPI (very slow)
+                session.rpi = 1_000_000; // 1000ms RPI (very slow)
                 session.o_to_t_params.size = 128; // Very small packets
                 session.t_to_o_params.size = 128;
                 session.o_to_t_params.priority = 0x03; // Urgent priority
@@ -592,7 +592,7 @@ impl ConnectedSession {
             4 => {
                 // Config 4: Standard Rockwell parameters (from documentation)
                 session.timeout_multiplier = 0x05; // 32 seconds timeout
-                session.rpi = 100000; // 100ms RPI
+                session.rpi = 100_000; // 100ms RPI
                 session.o_to_t_params.size = 500; // Standard size
                 session.t_to_o_params.size = 500;
                 session.o_to_t_params.connection_type = 0x01; // Multicast
@@ -603,7 +603,7 @@ impl ConnectedSession {
             5 => {
                 // Config 5: Large buffer parameters
                 session.timeout_multiplier = 0x0A; // Very long timeout
-                session.rpi = 500000; // 500ms RPI
+                session.rpi = 500_000; // 500ms RPI
                 session.o_to_t_params.size = 1024; // Large packets
                 session.t_to_o_params.size = 1024;
                 session.o_to_t_params.variable_size = true; // Variable size
@@ -1487,12 +1487,9 @@ impl EipClient {
             // Class segment: Symbol Object Class (0x6B)
             0x20, // Class segment identifier
             0x6B, // Symbol Object Class
-            
             // Instance segment: Start at Instance 0
             0x25, // Instance segment identifier with 0x00
-            0x00,
-            0x00,
-            0x00,
+            0x00, 0x00, 0x00,
         ];
 
         // Request data: 2 Attributes - Attribute 1 and Attribute 2
@@ -3194,9 +3191,9 @@ impl EipClient {
 
             // Generate unique connection IDs for this attempt
             session.o_to_t_connection_id =
-                0x20000000 + *self.connection_sequence.lock().await + (config_id as u32 * 0x1000);
+                0x2000_0000 + *self.connection_sequence.lock().await + (config_id as u32 * 0x1000);
             session.t_to_o_connection_id =
-                0x30000000 + *self.connection_sequence.lock().await + (config_id as u32 * 0x1000);
+                0x3000_0000 + *self.connection_sequence.lock().await + (config_id as u32 * 0x1000);
 
             // Build Forward Open request with this configuration
             let forward_open_request = self.build_forward_open_request(&session)?;
