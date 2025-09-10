@@ -389,22 +389,18 @@ pub enum BatchError {
 impl std::fmt::Display for BatchError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BatchError::TagNotFound(tag) => write!(f, "Tag not found: {}", tag),
+            BatchError::TagNotFound(tag) => write!(f, "Tag not found: {tag}"),
             BatchError::DataTypeMismatch { expected, actual } => {
-                write!(
-                    f,
-                    "Data type mismatch: expected {}, got {}",
-                    expected, actual
-                )
+                write!(f, "Data type mismatch: expected {expected}, got {actual}")
             }
-            BatchError::NetworkError(msg) => write!(f, "Network error: {}", msg),
+            BatchError::NetworkError(msg) => write!(f, "Network error: {msg}"),
             BatchError::CipError { status, message } => {
-                write!(f, "CIP error (0x{:02X}): {}", status, message)
+                write!(f, "CIP error (0x{status:02X}): {message}")
             }
-            BatchError::TagPathError(msg) => write!(f, "Tag path error: {}", msg),
-            BatchError::SerializationError(msg) => write!(f, "Serialization error: {}", msg),
+            BatchError::TagPathError(msg) => write!(f, "Tag path error: {msg}"),
+            BatchError::SerializationError(msg) => write!(f, "Serialization error: {msg}"),
             BatchError::Timeout => write!(f, "Operation timeout"),
-            BatchError::Other(msg) => write!(f, "Error: {}", msg),
+            BatchError::Other(msg) => write!(f, "Error: {msg}"),
         }
     }
 }
@@ -956,7 +952,7 @@ impl EipClient {
     pub async fn new(addr: &str) -> Result<Self> {
         let addr = addr
             .parse::<SocketAddr>()
-            .map_err(|e| EtherNetIpError::Protocol(format!("Invalid address format: {}", e)))?;
+            .map_err(|e| EtherNetIpError::Protocol(format!("Invalid address format: {e}")))?;
         let stream = TcpStream::connect(addr).await?;
         let mut client = Self {
             stream: Arc::new(Mutex::new(stream)),
@@ -1016,17 +1012,14 @@ impl EipClient {
             0x00, 0x00, // Option Flags: 0
         ];
 
-        println!(
-            "📤 [DEBUG] Sending Register Session packet: {:02X?}",
-            packet
-        );
+        println!("📤 [DEBUG] Sending Register Session packet: {packet:02X?}");
         self.stream
             .lock()
             .await
             .write_all(&packet)
             .await
             .map_err(|e| {
-                println!("❌ [DEBUG] Failed to send Register Session packet: {}", e);
+                println!("❌ [DEBUG] Failed to send Register Session packet: {e}");
                 EtherNetIpError::Io(e)
             })?;
 
@@ -1039,11 +1032,11 @@ impl EipClient {
         .await
         {
             Ok(Ok(n)) => {
-                println!("📥 [DEBUG] Received {} bytes in response", n);
+                println!("📥 [DEBUG] Received {n} bytes in response");
                 n
             }
             Ok(Err(e)) => {
-                println!("❌ [DEBUG] Error reading response: {}", e);
+                println!("❌ [DEBUG] Error reading response: {e}");
                 return Err(EtherNetIpError::Io(e));
             }
             Err(_) => {
@@ -1053,7 +1046,7 @@ impl EipClient {
         };
 
         if n < 28 {
-            println!("❌ [DEBUG] Response too short: {} bytes (expected 28)", n);
+            println!("❌ [DEBUG] Response too short: {n} bytes (expected 28)");
             return Err(EtherNetIpError::Protocol("Response too short".to_string()));
         }
 
@@ -1063,16 +1056,12 @@ impl EipClient {
 
         // Check status
         let status = u32::from_le_bytes([buf[8], buf[9], buf[10], buf[11]]);
-        println!("📊 [DEBUG] Status code: 0x{:08X}", status);
+        println!("📊 [DEBUG] Status code: 0x{status:08X}");
 
         if status != 0 {
-            println!(
-                "❌ [DEBUG] Session registration failed with status: 0x{:08X}",
-                status
-            );
+            println!("❌ [DEBUG] Session registration failed with status: 0x{status:08X}");
             return Err(EtherNetIpError::Protocol(format!(
-                "Session registration failed with status: 0x{:08X}",
-                status
+                "Session registration failed with status: 0x{status:08X}"
             )));
         }
 
@@ -1206,8 +1195,8 @@ impl EipClient {
         println!(
             "📝 Writing '{}' to tag '{}'",
             match &value {
-                PlcValue::String(s) => format!("\"{}\"", s),
-                _ => format!("{:?}", value),
+                PlcValue::String(s) => format!("\"{s}\""),
+                _ => format!("{value:?}"),
             },
             tag_name
         );
@@ -1234,19 +1223,14 @@ impl EipClient {
         let general_status = cip_response[2]; // CIP status code
 
         println!(
-            "🔧 [DEBUG] Write response - Service: 0x{:02X}, Status: 0x{:02X}",
-            service_reply, general_status
+            "🔧 [DEBUG] Write response - Service: 0x{service_reply:02X}, Status: 0x{general_status:02X}"
         );
 
         if general_status != 0x00 {
             let error_msg = self.get_cip_error_message(general_status);
-            println!(
-                "❌ [WRITE] CIP Error: {} (0x{:02X})",
-                error_msg, general_status
-            );
+            println!("❌ [WRITE] CIP Error: {error_msg} (0x{general_status:02X})");
             return Err(EtherNetIpError::Protocol(format!(
-                "CIP Error 0x{:02X}: {}",
-                general_status, error_msg
+                "CIP Error 0x{general_status:02X}: {error_msg}"
             )));
         }
 
@@ -1262,8 +1246,8 @@ impl EipClient {
     ) -> crate::error::Result<Vec<u8>> {
         if let PlcValue::String(string_value) = value {
             println!(
-                "🔧 [DEBUG] Building correct Allen-Bradley string write request for tag: '{}'",
-                tag_name
+                "🔧 [DEBUG] Building correct Allen-Bradley string write request for tag: '{tag_name}'"
+
             );
 
             let mut cip_request = Vec::new();
@@ -1338,7 +1322,7 @@ impl EipClient {
         tag_name: &str,
         value: &PlcValue,
     ) -> crate::error::Result<Vec<u8>> {
-        println!("🔧 [DEBUG] Building write request for tag: '{}'", tag_name);
+        println!("🔧 [DEBUG] Building write request for tag: '{tag_name}'");
 
         // Use Connected Explicit Messaging for consistency
         let mut cip_request = Vec::new();
@@ -1575,7 +1559,7 @@ impl EipClient {
             0x2A => "Group 2 only server general failure".to_string(),
             0x2B => "Unknown Modbus error".to_string(),
             0x2C => "Attribute not gettable".to_string(),
-            _ => format!("Unknown CIP error code: 0x{:02X}", status),
+            _ => format!("Unknown CIP error code: 0x{status:02X}"),
         }
     }
 
@@ -1655,19 +1639,14 @@ impl EipClient {
         let general_status = cip_response[2]; // CIP status code
 
         println!(
-            "🔧 [DEBUG] Write response - Service: 0x{:02X}, Status: 0x{:02X}",
-            service_reply, general_status
+            "🔧 [DEBUG] Write response - Service: 0x{service_reply:02X}, Status: 0x{general_status:02X}"
         );
 
         if general_status != 0x00 {
             let error_msg = self.get_cip_error_message(general_status);
-            println!(
-                "❌ [WRITE] CIP Error: {} (0x{:02X})",
-                error_msg, general_status
-            );
+            println!("❌ [WRITE] CIP Error: {error_msg} (0x{general_status:02X})");
             return Err(EtherNetIpError::Protocol(format!(
-                "CIP Error 0x{:02X}: {}",
-                general_status, error_msg
+                "CIP Error 0x{general_status:02X}: {error_msg}"
             )));
         }
 
@@ -1738,8 +1717,7 @@ impl EipClient {
         let cmd_status = u32::from_le_bytes([header[8], header[9], header[10], header[11]]);
         if cmd_status != 0 {
             return Err(EtherNetIpError::Protocol(format!(
-                "EIP Command failed. Status: 0x{:08X}",
-                cmd_status
+                "EIP Command failed. Status: 0x{cmd_status:08X}"
             )));
         }
 
@@ -1797,7 +1775,7 @@ impl EipClient {
         // Read item count
         let item_count = u16::from_le_bytes([response[pos], response[pos + 1]]);
         pos += 2;
-        println!("🔧 [DEBUG] CPF item count: {}", item_count);
+        println!("🔧 [DEBUG] CPF item count: {item_count}");
 
         // Process items
         for i in 0..item_count {
@@ -1811,10 +1789,7 @@ impl EipClient {
             let item_length = u16::from_le_bytes([response[pos + 2], response[pos + 3]]) as usize;
             pos += 4; // Skip item header
 
-            println!(
-                "🔧 [DEBUG] Item {}: type=0x{:04X}, length={}",
-                i, item_type, item_length
-            );
+            println!("🔧 [DEBUG] Item {i}: type=0x{item_type:04X}, length={item_length}");
 
             if item_type == 0x00B2 {
                 // Unconnected Data Item
@@ -1860,21 +1835,14 @@ impl EipClient {
         let service_reply = cip_response[0]; // Should be 0xCC (0x4C + 0x80) for Read Tag reply
         let general_status = cip_response[2]; // CIP status code
 
-        println!(
-            "🔧 [DEBUG] Service reply: 0x{:02X}, Status: 0x{:02X}",
-            service_reply, general_status
-        );
+        println!("🔧 [DEBUG] Service reply: 0x{service_reply:02X}, Status: 0x{general_status:02X}");
 
         // Check for CIP errors
         if general_status != 0x00 {
             let error_msg = self.get_cip_error_message(general_status);
-            println!(
-                "🔧 [DEBUG] CIP Error - Status: 0x{:02X}, Message: {}",
-                general_status, error_msg
-            );
+            println!("🔧 [DEBUG] CIP Error - Status: 0x{general_status:02X}, Message: {error_msg}");
             return Err(EtherNetIpError::Protocol(format!(
-                "CIP Error {}: {}",
-                general_status, error_msg
+                "CIP Error {general_status}: {error_msg}"
             )));
         }
 
@@ -1907,7 +1875,7 @@ impl EipClient {
                         ));
                     }
                     let value = value_data[0] != 0;
-                    println!("🔧 [DEBUG] Parsed BOOL: {}", value);
+                    println!("🔧 [DEBUG] Parsed BOOL: {value}");
                     Ok(PlcValue::Bool(value))
                 }
                 0x00C2 => {
@@ -1918,7 +1886,7 @@ impl EipClient {
                         ));
                     }
                     let value = value_data[0] as i8;
-                    println!("🔧 [DEBUG] Parsed SINT: {}", value);
+                    println!("🔧 [DEBUG] Parsed SINT: {value}");
                     Ok(PlcValue::Sint(value))
                 }
                 0x00C3 => {
@@ -1929,7 +1897,7 @@ impl EipClient {
                         ));
                     }
                     let value = i16::from_le_bytes([value_data[0], value_data[1]]);
-                    println!("🔧 [DEBUG] Parsed INT: {}", value);
+                    println!("🔧 [DEBUG] Parsed INT: {value}");
                     Ok(PlcValue::Int(value))
                 }
                 0x00C4 => {
@@ -1945,7 +1913,7 @@ impl EipClient {
                         value_data[2],
                         value_data[3],
                     ]);
-                    println!("🔧 [DEBUG] Parsed DINT: {}", value);
+                    println!("🔧 [DEBUG] Parsed DINT: {value}");
                     Ok(PlcValue::Dint(value))
                 }
                 0x00CA => {
@@ -1961,7 +1929,7 @@ impl EipClient {
                         value_data[2],
                         value_data[3],
                     ]);
-                    println!("🔧 [DEBUG] Parsed REAL: {}", value);
+                    println!("🔧 [DEBUG] Parsed REAL: {value}");
                     Ok(PlcValue::Real(value))
                 }
                 0x00DA => {
@@ -1977,7 +1945,7 @@ impl EipClient {
                     }
                     let string_data = &value_data[1..1 + length];
                     let value = String::from_utf8_lossy(string_data).to_string();
-                    println!("🔧 [DEBUG] Parsed STRING: '{}'", value);
+                    println!("🔧 [DEBUG] Parsed STRING: '{value}'");
                     Ok(PlcValue::String(value))
                 }
                 0x02A0 => {
@@ -2001,14 +1969,13 @@ impl EipClient {
                     let string_bytes = &string_data[..string_end];
 
                     let value = String::from_utf8_lossy(string_bytes).to_string();
-                    println!("🔧 [DEBUG] Parsed alternative STRING (0x02A0): '{}'", value);
+                    println!("🔧 [DEBUG] Parsed alternative STRING (0x02A0): '{value}'");
                     Ok(PlcValue::String(value))
                 }
                 _ => {
-                    println!("🔧 [DEBUG] Unknown data type: 0x{:04X}", data_type);
+                    println!("🔧 [DEBUG] Unknown data type: 0x{data_type:04X}");
                     Err(EtherNetIpError::Protocol(format!(
-                        "Unsupported data type: 0x{:04X}",
-                        data_type
+                        "Unsupported data type: 0x{data_type:04X}"
                     )))
                 }
             }
@@ -2018,8 +1985,7 @@ impl EipClient {
             Ok(PlcValue::Bool(true)) // Indicate success
         } else {
             Err(EtherNetIpError::Protocol(format!(
-                "Unknown service reply: 0x{:02X}",
-                service_reply
+                "Unknown service reply: 0x{service_reply:02X}"
             )))
         }
     }
@@ -2057,7 +2023,7 @@ impl EipClient {
 
     /// Builds a CIP Read Tag Service request
     fn build_read_request(&self, tag_name: &str) -> Vec<u8> {
-        println!("🔧 [DEBUG] Building read request for tag: '{}'", tag_name);
+        println!("🔧 [DEBUG] Building read request for tag: '{tag_name}'");
 
         let mut cip_request = Vec::new();
 
@@ -2625,15 +2591,14 @@ impl EipClient {
         let cip_data = match self.extract_cip_from_response(response) {
             Ok(data) => data,
             Err(e) => {
-                println!("🔧 [DEBUG] Failed to extract CIP data: {}", e);
+                println!("🔧 [DEBUG] Failed to extract CIP data: {e}");
                 return Err(e);
             }
         };
 
         println!(
-            "🔧 [DEBUG] Extracted CIP data ({} bytes): {:02X?}",
-            cip_data.len(),
-            cip_data
+            "🔧 [DEBUG] Extracted CIP data ({} bytes): {cip_data:02X?}",
+            cip_data.len()
         );
 
         if cip_data.len() < 6 {
@@ -2654,14 +2619,12 @@ impl EipClient {
         let num_replies = u16::from_le_bytes([cip_data[4], cip_data[5]]) as usize;
 
         println!(
-            "🔧 [DEBUG] Multiple Service Response: service=0x{:02X}, status=0x{:02X}, replies={}",
-            service_code, general_status, num_replies
+            "🔧 [DEBUG] Multiple Service Response: service=0x{service_code:02X}, status=0x{general_status:02X}, replies={num_replies}"
         );
 
         if general_status != 0x00 {
             return Err(crate::error::EtherNetIpError::Protocol(format!(
-                "Multiple Service Response error: 0x{:02X}",
-                general_status
+                "Multiple Service Response error: 0x{general_status:02X}"
             )));
         }
 
@@ -2689,12 +2652,12 @@ impl EipClient {
             offset += 2;
         }
 
-        println!("🔧 [DEBUG] Reply offsets: {:?}", reply_offsets);
+        println!("🔧 [DEBUG] Reply offsets: {reply_offsets:?}");
 
         // The reply data starts after all the offsets
         let reply_base_offset = 6 + (num_replies * 2);
 
-        println!("🔧 [DEBUG] Reply base offset: {}", reply_base_offset);
+        println!("🔧 [DEBUG] Reply base offset: {reply_base_offset}");
 
         // Parse each reply
         for (i, &reply_offset) in reply_offsets.iter().enumerate() {
@@ -2734,7 +2697,7 @@ impl EipClient {
                 reply_end,
                 reply_data.len()
             );
-            println!("🔧 [DEBUG] Reply {} data: {:02X?}", i, reply_data);
+            println!("🔧 [DEBUG] Reply {i} data: {reply_data:02X?}");
 
             let result = self.parse_individual_reply(reply_data, &operations[i]);
             results.push(result);
@@ -2771,10 +2734,7 @@ impl EipClient {
         let service_code = reply_data[0];
         let general_status = reply_data[2];
 
-        println!(
-            "🔧 [DEBUG] Service code: 0x{:02X}, Status: 0x{:02X}",
-            service_code, general_status
-        );
+        println!("🔧 [DEBUG] Service code: 0x{service_code:02X}, Status: 0x{general_status:02X}");
 
         if general_status != 0x00 {
             let error_msg = self.get_cip_error_message(general_status);
@@ -2865,7 +2825,7 @@ impl EipClient {
                             value_data[2],
                             value_data[3],
                         ]);
-                        println!("🔧 [DEBUG] Parsed DINT: {}", value);
+                        println!("🔧 [DEBUG] Parsed DINT: {value}");
                         Ok(Some(PlcValue::Dint(value)))
                     }
                     0x00C5 => {
@@ -2949,7 +2909,7 @@ impl EipClient {
                         }
                         let bytes = [value_data[0], value_data[1], value_data[2], value_data[3]];
                         let value = f32::from_le_bytes(bytes);
-                        println!("🔧 [DEBUG] Parsed REAL: {}", value);
+                        println!("🔧 [DEBUG] Parsed REAL: {value}");
                         Ok(Some(PlcValue::Real(value)))
                     }
                     0x00CB => {
@@ -2985,7 +2945,7 @@ impl EipClient {
                         }
                         let string_data = &value_data[1..1 + length];
                         let value = String::from_utf8_lossy(string_data).to_string();
-                        println!("🔧 [DEBUG] Parsed STRING: '{}'", value);
+                        println!("🔧 [DEBUG] Parsed STRING: '{value}'");
                         Ok(Some(PlcValue::String(value)))
                     }
                     0x02A0 => {
@@ -3009,12 +2969,11 @@ impl EipClient {
                         let string_bytes = &string_data[..string_end];
 
                         let value = String::from_utf8_lossy(string_bytes).to_string();
-                        println!("🔧 [DEBUG] Parsed alternative STRING (0x02A0): '{}'", value);
+                        println!("🔧 [DEBUG] Parsed alternative STRING (0x02A0): '{value}'");
                         Ok(Some(PlcValue::String(value)))
                     }
                     _ => Err(BatchError::SerializationError(format!(
-                        "Unsupported data type: 0x{:04X}",
-                        data_type
+                        "Unsupported data type: 0x{data_type:04X}"
                     ))),
                 }
             }
@@ -3029,41 +2988,37 @@ impl EipClient {
         value: &str,
     ) -> crate::error::Result<()> {
         println!(
-            "🔧 [AB STRING] Writing string '{}' to tag '{}' using component access",
-            value, tag_name
+            "🔧 [AB STRING] Writing string '{value}' to tag '{tag_name}' using component access"
         );
 
         let string_bytes = value.as_bytes();
         let string_len = string_bytes.len() as i32;
 
         // Step 1: Write the length to TestString.LEN
-        let len_tag = format!("{}.LEN", tag_name);
-        println!("   📝 Step 1: Writing length {} to {}", string_len, len_tag);
+        let len_tag = format!("{tag_name}.LEN");
+        println!("   📝 Step 1: Writing length {string_len} to {len_tag}");
 
         match self.write_tag(&len_tag, PlcValue::Dint(string_len)).await {
             Ok(_) => println!("   ✅ Length written successfully"),
             Err(e) => {
-                println!("   ❌ Length write failed: {}", e);
+                println!("   ❌ Length write failed: {e}");
                 return Err(e);
             }
         }
 
         // Step 2: Write the string data to TestString.DATA using array access
-        println!("   📝 Step 2: Writing string data to {}.DATA", tag_name);
+        println!("   📝 Step 2: Writing string data to {tag_name}.DATA");
 
         // We need to write each character individually to the DATA array
         for (i, &byte) in string_bytes.iter().enumerate() {
-            let data_element = format!("{}.DATA[{}]", tag_name, i);
+            let data_element = format!("{tag_name}.DATA[{i}]");
             match self
                 .write_tag(&data_element, PlcValue::Sint(byte as i8))
                 .await
             {
                 Ok(_) => print!("."),
                 Err(e) => {
-                    println!(
-                        "\n   ❌ Failed to write byte {} to position {}: {}",
-                        byte, i, e
-                    );
+                    println!("\n   ❌ Failed to write byte {byte} to position {i}: {e}");
                     return Err(e);
                 }
             }
@@ -3074,7 +3029,7 @@ impl EipClient {
             let null_element = format!("{}.DATA[{}]", tag_name, string_bytes.len());
             match self.write_tag(&null_element, PlcValue::Sint(0)).await {
                 Ok(_) => println!("\n   ✅ String null-terminated successfully"),
-                Err(e) => println!("\n   ⚠️ Could not null-terminate: {}", e),
+                Err(e) => println!("\n   ⚠️ Could not null-terminate: {e}"),
             }
         }
 
@@ -3088,10 +3043,7 @@ impl EipClient {
         tag_name: &str,
         value: &str,
     ) -> crate::error::Result<()> {
-        println!(
-            "🔧 [AB STRING UDT] Writing string '{}' to tag '{}' as UDT",
-            value, tag_name
-        );
+        println!("🔧 [AB STRING UDT] Writing string '{value}' to tag '{tag_name}' as UDT");
 
         let string_bytes = value.as_bytes();
         if string_bytes.len() > 82 {
@@ -3145,8 +3097,7 @@ impl EipClient {
             } else {
                 let error_msg = self.get_cip_error_message(general_status);
                 Err(EtherNetIpError::Protocol(format!(
-                    "AB STRING UDT write failed - CIP Error 0x{:02X}: {}",
-                    general_status, error_msg
+                    "AB STRING UDT write failed - CIP Error 0x{general_status:02X}: {error_msg}"
                 )))
             }
         } else {
@@ -3165,10 +3116,7 @@ impl EipClient {
         &mut self,
         session_name: &str,
     ) -> crate::error::Result<ConnectedSession> {
-        println!(
-            "🔗 [CONNECTED] Establishing connected session: '{}'",
-            session_name
-        );
+        println!("🔗 [CONNECTED] Establishing connected session: '{session_name}'");
         println!("🔗 [CONNECTED] Will try multiple parameter configurations...");
 
         // Generate unique connection parameters
@@ -3211,7 +3159,7 @@ impl EipClient {
                     match self.parse_forward_open_response(&mut session, &response) {
                         Ok(()) => {
                             // Success! Store the session and return
-                            println!("✅ [SUCCESS] Configuration {} worked!", config_id);
+                            println!("✅ [SUCCESS] Configuration {config_id} worked!");
                             println!("   Connection ID: 0x{:08X}", session.connection_id);
                             println!("   O->T ID: 0x{:08X}", session.o_to_t_connection_id);
                             println!("   T->O ID: 0x{:08X}", session.t_to_o_connection_id);
@@ -3392,11 +3340,10 @@ impl EipClient {
                 0x0C => "Invalid attribute - Connection parameters invalid",
                 0x13 => "Path destination unknown - Target object not found",
                 0x26 => "Invalid parameter value - RPI or size out of range",
-                _ => &format!("Unknown status: 0x{:02X}", status),
+                _ => &format!("Unknown status: 0x{status:02X}"),
             };
             return Err(EtherNetIpError::Protocol(format!(
-                "Forward Open failed with status 0x{:02X}: {}",
-                status, error_msg
+                "Forward Open failed with status 0x{status:02X}: {error_msg}"
             )));
         }
 
@@ -3442,7 +3389,7 @@ impl EipClient {
         tag_name: &str,
         value: &str,
     ) -> crate::error::Result<()> {
-        let session_name = format!("string_write_{}", tag_name);
+        let session_name = format!("string_write_{tag_name}");
         let mut sessions = self.connected_sessions.lock().await;
 
         if !sessions.contains_key(&session_name) {
@@ -3467,8 +3414,7 @@ impl EipClient {
             } else {
                 let error_msg = self.get_cip_error_message(status);
                 Err(EtherNetIpError::Protocol(format!(
-                    "CIP Error 0x{:02X}: {}",
-                    status, error_msg
+                    "CIP Error 0x{status:02X}: {error_msg}"
                 )))
             }
         } else {
@@ -3530,9 +3476,9 @@ impl EipClient {
         data_array[..current_len as usize].copy_from_slice(&string_bytes[..current_len as usize]);
         request.extend_from_slice(&data_array);
 
-        println!("🔧 [DEBUG] Built connected string write request ({} bytes) for '{}' = '{}' (len={}, maxlen={})",
-                 request.len(), tag_name, value, current_len, max_len);
-        println!("🔧 [DEBUG] Request: {:02X?}", request);
+        println!("🔧 [DEBUG] Built connected string write request ({} bytes) for '{tag_name}' = '{value}' (len={current_len}, maxlen={max_len})",
+                 request.len());
+        println!("🔧 [DEBUG] Request: {request:02X?}");
 
         Ok(request)
     }
@@ -3631,8 +3577,7 @@ impl EipClient {
         let cmd_status = u32::from_le_bytes([header[8], header[9], header[10], header[11]]);
         if cmd_status != 0 {
             return Err(EtherNetIpError::Protocol(format!(
-                "Connected message failed with status: 0x{:08X}",
-                cmd_status
+                "Connected message failed with status: 0x{cmd_status:08X}"
             )));
         }
 
@@ -3678,7 +3623,7 @@ impl EipClient {
         // [4-5]: Timeout
         // [6-7]: Item count
         let item_count = u16::from_le_bytes([response[6], response[7]]) as usize;
-        println!("🔗 [CONNECTED] CPF item count: {}", item_count);
+        println!("🔗 [CONNECTED] CPF item count: {item_count}");
 
         let mut pos = 8; // Start after CPF header
 
@@ -3715,7 +3660,7 @@ impl EipClient {
                 }
 
                 let sequence_count = u16::from_le_bytes([response[pos], response[pos + 1]]);
-                println!("🔗 [CONNECTED] Sequence count: {}", sequence_count);
+                println!("🔗 [CONNECTED] Sequence count: {sequence_count}");
 
                 // Extract CIP data (skip 2-byte sequence count)
                 let cip_data = response[pos + 2..pos + item_length].to_vec();
@@ -3748,10 +3693,7 @@ impl EipClient {
             // Send Forward Close request
             let _response = self.send_cip_request(&forward_close_request).await?;
 
-            println!(
-                "🔗 [CONNECTED] Session '{}' closed successfully",
-                session_name
-            );
+            println!("🔗 [CONNECTED] Session '{session_name}' closed successfully");
         }
 
         // Remove session from our tracking
@@ -3837,8 +3779,7 @@ impl EipClient {
         value: &str,
     ) -> crate::error::Result<()> {
         println!(
-            "📝 [UNCONNECTED] Writing string '{}' to tag '{}' using unconnected messaging",
-            value, tag_name
+            "📝 [UNCONNECTED] Writing string '{value}' to tag '{tag_name}' using unconnected messaging"
         );
 
         self.validate_session().await?;
@@ -3927,8 +3868,7 @@ impl EipClient {
             let status = cip_response[2]; // CIP status code at position 2
 
             println!(
-                "🔧 [DEBUG] Write response - Service: 0x{:02X}, Status: 0x{:02X}",
-                service_reply, status
+                "🔧 [DEBUG] Write response - Service: 0x{service_reply:02X}, Status: 0x{status:02X}"
             );
 
             if status == 0x00 {
@@ -3936,10 +3876,7 @@ impl EipClient {
                 Ok(())
             } else {
                 let error_msg = self.get_cip_error_message(status);
-                println!(
-                    "❌ [UNCONNECTED] String write failed: {} (0x{:02X})",
-                    error_msg, status
-                );
+                println!("❌ [UNCONNECTED] String write failed: {error_msg} (0x{status:02X})");
                 Err(EtherNetIpError::Protocol(format!(
                     "CIP Error 0x{:02X}: {}",
                     status, error_msg
@@ -4059,12 +3996,12 @@ impl EipClient {
                 match client.read_tag(&tag_path).await {
                     Ok(value) => {
                         if let Err(e) = client.update_subscription(&tag_path, &value).await {
-                            eprintln!("Error updating subscription: {}", e);
+                            eprintln!("Error updating subscription: {e}");
                             break;
                         }
                     }
                     Err(e) => {
-                        eprintln!("Error reading tag {}: {}", tag_path, e);
+                        eprintln!("Error reading tag {tag_path}: {e}");
                         break;
                     }
                 }

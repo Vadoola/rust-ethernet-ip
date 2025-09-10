@@ -963,8 +963,8 @@ pub unsafe extern "C" fn eip_read_tags_batch(
                 formatted.push_str(tag_name);
                 formatted.push(':');
                 match result {
-                    Ok(value) => formatted.push_str(&format!("{:?}", value)),
-                    Err(e) => formatted.push_str(&format!("ERROR:{}", e)),
+                    Ok(value) => formatted.push_str(&format!("{value:?}")),
+                    Err(e) => formatted.push_str(&format!("ERROR:{e}")),
                 }
             }
             formatted

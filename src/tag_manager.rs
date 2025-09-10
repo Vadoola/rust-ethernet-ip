@@ -135,22 +135,17 @@ impl TagManager {
         if let Some(metadata) = self.get_metadata(tag_name).await {
             if !metadata.permissions.readable && required_permissions.readable {
                 return Err(EtherNetIpError::Permission(format!(
-                    "Tag '{}' is not readable",
-                    tag_name
+                    "Tag '{tag_name}' is not readable"
                 )));
             }
             if !metadata.permissions.writable && required_permissions.writable {
                 return Err(EtherNetIpError::Permission(format!(
-                    "Tag '{}' is not writable",
-                    tag_name
+                    "Tag '{tag_name}' is not writable"
                 )));
             }
             Ok(())
         } else {
-            Err(EtherNetIpError::Tag(format!(
-                "Tag '{}' not found",
-                tag_name
-            )))
+            Err(EtherNetIpError::Tag(format!("Tag '{tag_name}' not found")))
         }
     }
 
@@ -192,10 +187,7 @@ impl TagManager {
         while offset < response.len() {
             // Check if we have enough bytes for instance ID
             if offset + 4 > response.len() {
-                println!(
-                    "[WARN] Not enough bytes for instance ID at offset {}",
-                    offset
-                );
+                println!("[WARN] Not enough bytes for instance ID at offset {offset}");
                 break;
             }
 
@@ -209,10 +201,7 @@ impl TagManager {
 
             // Check if we have enough bytes for name length
             if offset + 2 > response.len() {
-                println!(
-                    "[WARN] Not enough bytes for name length at offset {}",
-                    offset
-                );
+                println!("[WARN] Not enough bytes for name length at offset {offset}",);
                 break;
             }
 
@@ -235,7 +224,7 @@ impl TagManager {
 
             // Check if we have enough bytes for tag type
             if offset + 2 > response.len() {
-                println!("[WARN] Not enough bytes for tag type at offset {}", offset);
+                println!("[WARN] Not enough bytes for tag type at offset {offset}");
                 break;
             }
 
@@ -276,10 +265,7 @@ impl TagManager {
                 last_updated: Instant::now(),
             };
 
-            println!(
-                "[DEBUG] Parsed tag: {} (ID: {}, Type: 0x{:04X})",
-                name, instance_id, type_code
-            );
+            println!("[DEBUG] Parsed tag: {name} (ID: {instance_id}, Type: 0x{type_code:04X})");
             tags.push((name, metadata));
         }
 

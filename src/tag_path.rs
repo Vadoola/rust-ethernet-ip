@@ -97,7 +97,7 @@ impl TagPath {
                 program_name,
                 tag_name,
             } => {
-                format!("Program:{}.{}", program_name, tag_name)
+                format!("Program:{program_name}.{tag_name}")
             }
             TagPath::Array { base_path, indices } => {
                 let base = base_path.as_string();
@@ -106,25 +106,25 @@ impl TagPath {
                     .map(|i| i.to_string())
                     .collect::<Vec<_>>()
                     .join(",");
-                format!("{}[{}]", base, indices_str)
+                format!("{base}[{indices_str}]")
             }
             TagPath::Bit {
                 base_path,
                 bit_index,
             } => {
-                format!("{}.{}", base_path, bit_index)
+                format!("{base_path}.{bit_index}")
             }
             TagPath::Member {
                 base_path,
                 member_name,
             } => {
-                format!("{}.{}", base_path, member_name)
+                format!("{base_path}.{member_name}")
             }
             TagPath::StringLength { base_path } => {
-                format!("{}.LEN", base_path)
+                format!("{base_path}.LEN")
             }
             TagPath::StringData { base_path, index } => {
-                format!("{}.DATA[{}]", base_path, index)
+                format!("{base_path}.DATA[{index}]")
             }
         }
     }
@@ -162,7 +162,7 @@ impl TagPath {
                 // Program scope requires special handling
                 // First add program name segment
                 path.push(0x91);
-                let program_path = format!("Program:{}", program_name);
+                let program_path = format!("Program:{program_name}");
                 path.push(program_path.len() as u8);
                 path.extend_from_slice(program_path.as_bytes());
 
