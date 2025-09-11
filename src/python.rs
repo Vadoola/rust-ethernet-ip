@@ -106,7 +106,7 @@ impl PyEipClient {
             let results = runtime
                 .block_on(async {
                     self.client
-                        .read_tags_batch(&tag_names.iter().map(|s| s.as_str()).collect::<Vec<_>>())
+                        .read_tags_batch(&tag_names.iter().map(String::as_str).collect::<Vec<_>>())
                         .await
                 })
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;

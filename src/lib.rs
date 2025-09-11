@@ -2294,7 +2294,9 @@ impl EipClient {
             .map(|result| {
                 let tag_name = match &result.operation {
                     BatchOperation::Read { tag_name } => tag_name.clone(),
-                    _ => unreachable!("Should only have read operations"),
+                    BatchOperation::Write { .. } => {
+                        unreachable!("Should only have read operations")
+                    }
                 };
 
                 let value_result = match result.result {
@@ -2369,7 +2371,9 @@ impl EipClient {
             .map(|result| {
                 let tag_name = match &result.operation {
                     BatchOperation::Write { tag_name, .. } => tag_name.clone(),
-                    _ => unreachable!("Should only have write operations"),
+                    BatchOperation::Read { .. } => {
+                        unreachable!("Should only have write operations")
+                    }
                 };
 
                 let write_result = match result.result {
@@ -3330,8 +3334,7 @@ impl EipClient {
         // Check if this is a Forward Open Reply (0xD4)
         if service != 0xD4 {
             return Err(EtherNetIpError::Protocol(format!(
-                "Unexpected service in Forward Open response: 0x{:02X}",
-                service
+                "Unexpected service in Forward Open response: 0x{service:02X}"
             )));
         }
 
@@ -3645,10 +3648,7 @@ impl EipClient {
             let item_length = u16::from_le_bytes([response[pos + 2], response[pos + 3]]) as usize;
             pos += 4; // Skip item header
 
-            println!(
-                "🔗 [CONNECTED] Found item: type=0x{:04X}, length={}",
-                item_type, item_length
-            );
+            println!("🔗 [CONNECTED] Found item: type=0x{item_type:04X}, length={item_length}");
 
             if item_type == 0x00B1 {
                 // Connected Data Item

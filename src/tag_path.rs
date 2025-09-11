@@ -103,7 +103,7 @@ impl TagPath {
                 let base = base_path.as_string();
                 let indices_str = indices
                     .iter()
-                    .map(|i| i.to_string())
+                    .map(u32::to_string)
                     .collect::<Vec<_>>()
                     .join(",");
                 format!("{base}[{indices_str}]")
@@ -258,7 +258,7 @@ impl TagPath {
             TagPath::Member { base_path, .. } => base_path.is_program_scoped(),
             TagPath::StringLength { base_path } => base_path.is_program_scoped(),
             TagPath::StringData { base_path, .. } => base_path.is_program_scoped(),
-            _ => false,
+            TagPath::Controller { .. } => false,
         }
     }
 

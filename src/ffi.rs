@@ -641,7 +641,7 @@ pub unsafe extern "C" fn eip_read_real(
         Some(client) => match RUNTIME.block_on(client.read_tag(tag_name_str)) {
             Ok(PlcValue::Real(value)) => {
                 unsafe {
-                    *result = value as f64;
+                    *result = f64::from(value);
                 }
                 0
             }
@@ -926,9 +926,7 @@ pub unsafe extern "C" fn eip_read_tags_batch(
             if tag_name_ptr.is_null() {
                 return -1;
             }
-            let tag_name = if let Ok(s) = CStr::from_ptr(tag_name_ptr).to_str() {
-                s
-            } else {
+            let Ok(tag_name) = CStr::from_ptr(tag_name_ptr).to_str() else {
                 return -1;
             };
             tag_name_strs.push(tag_name);
@@ -989,9 +987,7 @@ pub unsafe extern "C" fn eip_write_tags_batch(
     }
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
-    let _client = if let Some(client) = clients.get_mut(&client_id) {
-        client
-    } else {
+    let Some(client) = clients.get_mut(&client_id) else {
         return -1;
     };
 
