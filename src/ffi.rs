@@ -30,14 +30,12 @@ pub unsafe extern "C" fn eip_connect(ip_address: *const c_char) -> c_int {
         return -1;
     }
 
-    let ip_str = match unsafe { CStr::from_ptr(ip_address) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(ip_str) = unsafe { CStr::from_ptr(ip_address) }.to_str() else {
+        return -1;
     };
 
-    let client = match RUNTIME.block_on(EipClient::new(ip_str)) {
-        Ok(client) => client,
-        Err(_) => return -1,
+    let Ok(client) = RUNTIME.block_on(EipClient::new(ip_str)) else {
+        return -1;
     };
 
     let client_id = {
@@ -90,9 +88,8 @@ pub unsafe extern "C" fn eip_read_bool(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
@@ -100,7 +97,7 @@ pub unsafe extern "C" fn eip_read_bool(
         Some(client) => match RUNTIME.block_on(client.read_tag(tag_name_str)) {
             Ok(PlcValue::Bool(value)) => {
                 unsafe {
-                    *result = if value { 1 } else { 0 };
+                    *result = i32::from(value);
                 }
                 0
             }
@@ -129,18 +126,21 @@ pub unsafe extern "C" fn eip_write_bool(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
     match clients.get_mut(&client_id) {
         Some(client) => {
             let bool_value = value != 0;
-            match RUNTIME.block_on(client.write_tag(tag_name_str, PlcValue::Bool(bool_value))) {
-                Ok(_) => 0,
-                Err(_) => -1,
+            if RUNTIME
+                .block_on(client.write_tag(tag_name_str, PlcValue::Bool(bool_value)))
+                .is_ok()
+            {
+                0
+            } else {
+                -1
             }
         }
         None => -1,
@@ -167,9 +167,8 @@ pub unsafe extern "C" fn eip_read_sint(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
@@ -205,17 +204,20 @@ pub unsafe extern "C" fn eip_write_sint(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
     match clients.get_mut(&client_id) {
         Some(client) => {
-            match RUNTIME.block_on(client.write_tag(tag_name_str, PlcValue::Sint(value))) {
-                Ok(_) => 0,
-                Err(_) => -1,
+            if RUNTIME
+                .block_on(client.write_tag(tag_name_str, PlcValue::Sint(value)))
+                .is_ok()
+            {
+                0
+            } else {
+                -1
             }
         }
         None => -1,
@@ -233,9 +235,8 @@ pub unsafe extern "C" fn eip_read_int(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
@@ -263,9 +264,8 @@ pub unsafe extern "C" fn eip_write_int(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
@@ -291,9 +291,8 @@ pub unsafe extern "C" fn eip_read_dint(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
@@ -322,9 +321,8 @@ pub unsafe extern "C" fn eip_write_dint(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
@@ -350,9 +348,8 @@ pub unsafe extern "C" fn eip_read_lint(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
@@ -380,9 +377,8 @@ pub unsafe extern "C" fn eip_write_lint(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
@@ -408,9 +404,8 @@ pub unsafe extern "C" fn eip_read_usint(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
@@ -438,9 +433,8 @@ pub unsafe extern "C" fn eip_write_usint(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
@@ -466,9 +460,8 @@ pub unsafe extern "C" fn eip_read_uint(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
@@ -496,9 +489,8 @@ pub unsafe extern "C" fn eip_write_uint(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
@@ -524,9 +516,8 @@ pub unsafe extern "C" fn eip_read_udint(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
@@ -554,9 +545,8 @@ pub unsafe extern "C" fn eip_write_udint(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
@@ -582,9 +572,8 @@ pub unsafe extern "C" fn eip_read_ulint(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
@@ -612,17 +601,20 @@ pub unsafe extern "C" fn eip_write_ulint(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
     match clients.get_mut(&client_id) {
         Some(client) => {
-            match RUNTIME.block_on(client.write_tag(tag_name_str, PlcValue::Ulint(value))) {
-                Ok(_) => 0,
-                Err(_) => -1,
+            if RUNTIME
+                .block_on(client.write_tag(tag_name_str, PlcValue::Ulint(value)))
+                .is_ok()
+            {
+                0
+            } else {
+                -1
             }
         }
         None => -1,
@@ -640,9 +632,8 @@ pub unsafe extern "C" fn eip_read_real(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
@@ -671,9 +662,8 @@ pub unsafe extern "C" fn eip_write_real(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
@@ -699,9 +689,8 @@ pub unsafe extern "C" fn eip_read_lreal(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
@@ -729,17 +718,20 @@ pub unsafe extern "C" fn eip_write_lreal(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
     match clients.get_mut(&client_id) {
         Some(client) => {
-            match RUNTIME.block_on(client.write_tag(tag_name_str, PlcValue::Lreal(value))) {
-                Ok(_) => 0,
-                Err(_) => -1,
+            if RUNTIME
+                .block_on(client.write_tag(tag_name_str, PlcValue::Lreal(value)))
+                .is_ok()
+            {
+                0
+            } else {
+                -1
             }
         }
         None => -1,
@@ -767,15 +759,13 @@ pub unsafe extern "C" fn eip_read_string(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(client) => client,
-        None => return -1,
+    let Some(client) = clients.get_mut(&client_id) else {
+        return -1;
     };
 
     let value = match RUNTIME.block_on(client.read_tag(tag_name_str)) {
@@ -784,9 +774,8 @@ pub unsafe extern "C" fn eip_read_string(
         Err(_) => return -1, // Error reading tag
     };
 
-    let c_string = match CString::new(value) {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(c_string) = CString::new(value) else {
+        return -1;
     };
 
     let bytes = c_string.as_bytes_with_nul();
@@ -811,26 +800,26 @@ pub unsafe extern "C" fn eip_write_string(
         return -1;
     }
 
-    let tag_name_str = match unsafe { CStr::from_ptr(tag_name) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
     };
 
-    let value_str = match unsafe { CStr::from_ptr(value) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return -1,
+    let Ok(value_str) = unsafe { CStr::from_ptr(value) }.to_str() else {
+        return -1;
     };
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(client) => client,
-        None => return -1,
+    let Some(client) = clients.get_mut(&client_id) else {
+        return -1;
     };
 
-    match RUNTIME.block_on(client.write_tag(tag_name_str, PlcValue::String(value_str.to_string())))
+    if RUNTIME
+        .block_on(client.write_tag(tag_name_str, PlcValue::String(value_str.to_string())))
+        .is_ok()
     {
-        Ok(_) => 0,
-        Err(_) => -1,
+        0
+    } else {
+        -1
     }
 }
 
@@ -889,19 +878,16 @@ pub unsafe extern "C" fn eip_check_health(client_id: c_int, is_healthy: *mut c_i
     }
 
     let clients = FFI_CLIENTS.lock().unwrap();
-    match clients.get(&client_id) {
-        Some(_) => {
-            unsafe {
-                *is_healthy = 1;
-            }
-            0
+    if clients.get(&client_id).is_some() {
+        unsafe {
+            *is_healthy = 1;
         }
-        None => {
-            unsafe {
-                *is_healthy = 0;
-            }
-            -1
+        0
+    } else {
+        unsafe {
+            *is_healthy = 0;
         }
+        -1
     }
 }
 
@@ -928,9 +914,8 @@ pub unsafe extern "C" fn eip_read_tags_batch(
     }
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
-    let client = match clients.get_mut(&client_id) {
-        Some(client) => client,
-        None => return -1,
+    let Some(client) = clients.get_mut(&client_id) else {
+        return -1;
     };
 
     // Convert C strings to Rust strings
@@ -941,9 +926,10 @@ pub unsafe extern "C" fn eip_read_tags_batch(
             if tag_name_ptr.is_null() {
                 return -1;
             }
-            let tag_name = match CStr::from_ptr(tag_name_ptr).to_str() {
-                Ok(s) => s,
-                Err(_) => return -1,
+            let tag_name = if let Ok(s) = CStr::from_ptr(tag_name_ptr).to_str() {
+                s
+            } else {
+                return -1;
             };
             tag_name_strs.push(tag_name);
         }
@@ -1003,9 +989,10 @@ pub unsafe extern "C" fn eip_write_tags_batch(
     }
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
-    let _client = match clients.get_mut(&client_id) {
-        Some(client) => client,
-        None => return -1,
+    let _client = if let Some(client) = clients.get_mut(&client_id) {
+        client
+    } else {
+        return -1;
     };
 
     // Parse input (simplified implementation)
@@ -1050,9 +1037,8 @@ pub unsafe extern "C" fn eip_execute_batch(
     }
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
-    let _client = match clients.get_mut(&client_id) {
-        Some(client) => client,
-        None => return -1,
+    let Some(_client) = clients.get_mut(&client_id) else {
+        return -1;
     };
 
     // Parse input (simplified implementation)

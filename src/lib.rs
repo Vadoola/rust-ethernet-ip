@@ -255,6 +255,12 @@
 //
 // =========================================================================
 
+#![warn(
+    clippy::all,
+    clippy::pedantic,
+    //clippy::cargo,
+)]
+
 use crate::udt::UdtManager;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
@@ -3878,8 +3884,7 @@ impl EipClient {
                 let error_msg = self.get_cip_error_message(status);
                 println!("❌ [UNCONNECTED] String write failed: {error_msg} (0x{status:02X})");
                 Err(EtherNetIpError::Protocol(format!(
-                    "CIP Error 0x{:02X}: {}",
-                    status, error_msg
+                    "CIP Error 0x{status:02X}: {error_msg}"
                 )))
             }
         } else {
