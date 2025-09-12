@@ -59,7 +59,7 @@ pub unsafe extern "C" fn eip_connect(ip_address: *const c_char) -> c_int {
 ///
 /// This function is unsafe because:
 /// - `client_id` must be a valid client ID returned from `eip_connect`
-/// - The caller must not use the client_id after this call
+/// - The caller must not use the `client_id` after this call
 #[no_mangle]
 pub unsafe extern "C" fn eip_disconnect(client_id: c_int) -> c_int {
     let mut clients = FFI_CLIENTS.lock().unwrap();
@@ -75,7 +75,7 @@ pub unsafe extern "C" fn eip_disconnect(client_id: c_int) -> c_int {
 ///
 /// This function is unsafe because:
 /// - `tag_name` must be a valid null-terminated C string pointer
-/// - `result` must be a valid mutable pointer to a c_int
+/// - `result` must be a valid mutable pointer to a `c_int`
 /// - The caller must ensure both pointers remain valid for the duration of the call
 /// - `client_id` must be a valid client ID returned from `eip_connect`
 #[no_mangle]
@@ -987,7 +987,7 @@ pub unsafe extern "C" fn eip_write_tags_batch(
     }
 
     let mut clients = FFI_CLIENTS.lock().unwrap();
-    let Some(client) = clients.get_mut(&client_id) else {
+    let Some(_client) = clients.get_mut(&client_id) else {
         return -1;
     };
 

@@ -109,7 +109,7 @@ impl UserDefinedType {
         })
     }
 
-    /// Converts a UDT instance to a HashMap of member values
+    /// Converts a UDT instance to a `HashMap` of member values
     pub fn to_hash_map(&self, data: &[u8]) -> crate::error::Result<HashMap<String, PlcValue>> {
         let mut result = HashMap::new();
 

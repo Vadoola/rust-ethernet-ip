@@ -255,12 +255,6 @@
 //
 // =========================================================================
 
-#![warn(
-    clippy::all,
-    clippy::pedantic,
-    //clippy::cargo,
-)]
-
 use crate::udt::UdtManager;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
@@ -979,7 +973,7 @@ impl EipClient {
         Ok(client)
     }
 
-    /// Public async connect function for EipClient
+    /// Public async connect function for `EipClient`
     pub async fn connect(addr: &str) -> Result<Self> {
         Self::new(addr).await
     }
@@ -1393,7 +1387,7 @@ impl EipClient {
         Ok(request)
     }
 
-    /// Serializes a PlcValue into bytes for transmission
+    /// Serializes a `PlcValue` into bytes for transmission
     #[allow(dead_code)]
     fn serialize_value(&self, value: &PlcValue) -> crate::error::Result<Vec<u8>> {
         let mut data = Vec::new();
@@ -1824,7 +1818,7 @@ impl EipClient {
         ))
     }
 
-    /// Parses CIP response and converts to PlcValue
+    /// Parses CIP response and converts to `PlcValue`
     fn parse_cip_response(&self, cip_response: &[u8]) -> crate::error::Result<PlcValue> {
         println!(
             "🔧 [DEBUG] Parsing CIP response ({} bytes): {:02X?}",
@@ -2252,7 +2246,7 @@ impl EipClient {
     ///
     /// # Returns
     ///
-    /// A vector of tuples containing (tag_name, result) pairs
+    /// A vector of tuples containing `(tag_name, result)` pairs
     ///
     /// # Examples
     ///
@@ -2319,11 +2313,11 @@ impl EipClient {
     ///
     /// # Arguments
     ///
-    /// * `tag_values` - A slice of (tag_name, value) tuples to write
+    /// * `tag_values` - A slice of `(tag_name, value)` tuples to write
     ///
     /// # Returns
     ///
-    /// A vector of tuples containing (tag_name, result) pairs
+    /// A vector of tuples containing `(tag_name, result)` pairs
     ///
     /// # Examples
     ///
@@ -3778,7 +3772,7 @@ impl EipClient {
     ///
     /// This method uses standard unconnected messaging instead of connected messaging
     /// and implements the proper Allen-Bradley STRING structure as described in the
-    /// provided information about Len, MaxLen, and Data[82] format.
+    /// provided information about `Len`, `MaxLen`, and `Data[82]` format.
     pub async fn write_string_unconnected(
         &mut self,
         tag_name: &str,

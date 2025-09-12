@@ -18,16 +18,16 @@ use std::fmt;
 /// Represents different types of tag addressing supported by Allen-Bradley PLCs
 #[derive(Debug, Clone, PartialEq)]
 pub enum TagPath {
-    /// Simple controller-scoped tag: "MyTag"
+    /// Simple controller-scoped tag: `MyTag`
     Controller { tag_name: String },
 
-    /// Program-scoped tag: "Program:MainProgram.MyTag"
+    /// Program-scoped tag: `Program:MainProgram.MyTag`
     Program {
         program_name: String,
         tag_name: String,
     },
 
-    /// Array element access: "MyArray[5]" or "MyArray[1,2,3]"
+    /// Array element access: `MyArray[5]` or `MyArray[1,2,3]`
     Array {
         base_path: Box<TagPath>,
         indices: Vec<u32>,
@@ -53,7 +53,7 @@ pub enum TagPath {
 }
 
 impl TagPath {
-    /// Parses a tag path string into a structured TagPath
+    /// Parses a tag path string into a structured `TagPath`
     ///
     /// # Examples
     ///
@@ -89,7 +89,7 @@ impl TagPath {
         parser.parse()
     }
 
-    /// Converts the TagPath back to a string representation
+    /// Converts the `TagPath` back to a string representation
     pub fn as_string(&self) -> String {
         match self {
             TagPath::Controller { tag_name } => tag_name.clone(),
@@ -271,7 +271,7 @@ impl TagPath {
             TagPath::Member { base_path, .. } => base_path.program_name(),
             TagPath::StringLength { base_path } => base_path.program_name(),
             TagPath::StringData { base_path, .. } => base_path.program_name(),
-            _ => None,
+            TagPath::Controller { .. } => None,
         }
     }
 }
