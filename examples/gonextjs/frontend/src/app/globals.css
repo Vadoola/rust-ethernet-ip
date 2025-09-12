@@ -2,126 +2,157 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Professional Industrial HMI/SCADA Styling */
+/* Modern Minimalistic Design - Go + Next.js Application */
 :root {
-  /* Industrial Color Palette - Clean & Minimalistic */
-  --hmi-bg-primary: #ffffff;         /* Pure white background */
-  --hmi-bg-secondary: #f8f9fa;       /* Light gray background */
-  --hmi-bg-panel: #ffffff;           /* White panel background */
-  --hmi-bg-card: #f8f9fa;            /* Light gray card background */
-  --hmi-text-primary: #2c3e50;       /* Dark blue-gray text */
-  --hmi-text-secondary: #5a6c7d;     /* Medium gray text */
-  --hmi-text-muted: #95a5a6;         /* Light gray text */
-  --hmi-border: #bdc3c7;             /* Light border */
-  --hmi-border-light: #ecf0f1;       /* Very light border */
+  /* Modern Minimalistic Color Palette */
+  --bg-primary: #ffffff;             /* Pure white */
+  --bg-secondary: #f8fafc;           /* Very light gray */
+  --bg-tertiary: #f1f5f9;            /* Light gray */
+  --bg-accent: #f8fafc;              /* Accent background */
   
-  /* Status Colors */
-  --hmi-success: #00ff00;            /* Green - OK/Running */
-  --hmi-warning: #ffaa00;            /* Orange - Warning */
-  --hmi-error: #ff0000;              /* Red - Error/Stop */
-  --hmi-info: #00aaff;               /* Blue - Info */
-  --hmi-neutral: #888888;            /* Gray - Neutral */
+  /* Text Colors */
+  --text-primary: #0f172a;           /* Dark slate */
+  --text-secondary: #475569;         /* Medium slate */
+  --text-muted: #64748b;             /* Light slate */
+  --text-light: #94a3b8;             /* Very light slate */
   
-  /* Process Colors */
-  --hmi-process-running: #00ff00;    /* Green - Running */
-  --hmi-process-stopped: #ff0000;    /* Red - Stopped */
-  --hmi-process-maintenance: #ffaa00; /* Orange - Maintenance */
-  --hmi-process-alarm: #ff0000;      /* Red - Alarm */
+  /* Border Colors */
+  --border-primary: #e2e8f0;         /* Light border */
+  --border-secondary: #cbd5e1;       /* Medium border */
+  --border-accent: #d1d5db;          /* Accent border */
   
-  /* Data Colors */
-  --hmi-data-normal: #00aaff;        /* Blue - Normal values */
-  --hmi-data-high: #ffaa00;          /* Orange - High values */
-  --hmi-data-critical: #ff0000;      /* Red - Critical values */
-  --hmi-data-low: #00ff00;           /* Green - Low values */
+  /* Status Colors - Clean & Modern */
+  --success: #059669;                /* Green */
+  --success-light: #d1fae5;          /* Light green */
+  --warning: #d97706;                /* Amber */
+  --warning-light: #fef3c7;          /* Light amber */
+  --error: #dc2626;                  /* Red */
+  --error-light: #fee2e2;            /* Light red */
+  --info: #0284c7;                   /* Blue */
+  --info-light: #dbeafe;             /* Light blue */
+  
+  /* Accent Colors */
+  --accent-primary: #3b82f6;         /* Primary blue */
+  --accent-secondary: #6366f1;       /* Secondary purple */
+  --accent-tertiary: #06b6d4;        /* Cyan */
+  
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
 }
 
-/* Base styling */
+/* Base styling - Modern Minimalistic */
 body {
-  background: var(--hmi-bg-primary);
-  color: var(--hmi-text-primary);
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
   min-height: 100vh;
   margin: 0;
   padding: 0;
+  line-height: 1.6;
 }
 
-/* Professional HMI Components */
+/* Modern Container - Full Width, Clean White */
 .hmi-container {
   width: 100%;
   margin: 0;
   padding: 0;
   min-height: 100vh;
+  background: #ffffff;
 }
 
+/* Modern Panel */
 .hmi-panel {
-  background: var(--hmi-bg-panel);
-  border: 1px solid var(--hmi-border);
-  border-radius: 4px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(10px);
 }
 
+/* Modern Card */
 .hmi-card {
-  background: var(--hmi-bg-card);
-  border: 1px solid var(--hmi-border-light);
-  border-radius: 4px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.2s ease;
 }
 
+.hmi-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-secondary);
+}
+
+/* Modern Button */
 .hmi-button {
-  background: var(--hmi-bg-secondary);
-  border: 1px solid var(--hmi-border);
-  color: var(--hmi-text-primary);
-  padding: 8px 16px;
-  border-radius: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  padding: 10px 20px;
+  border-radius: 8px;
   font-weight: 500;
+  font-size: 14px;
   transition: all 0.2s ease;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .hmi-button:hover {
-  background: #f8f9fa;
-  border-color: #adb5bd;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background: var(--bg-secondary);
+  border-color: var(--border-secondary);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.hmi-button:active {
+  transform: translateY(0);
 }
 
 .hmi-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
 }
 
-/* Status Indicators */
+/* Modern Status Indicators */
 .status-indicator {
   display: inline-flex;
   align-items: center;
-  padding: 4px 12px;
+  padding: 6px 12px;
   border-radius: 20px;
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .status-running {
-  background: rgba(0, 255, 0, 0.1);
-  color: #28a745;
-  border: 1px solid #28a745;
+  background: var(--success-light);
+  color: var(--success);
+  border: 1px solid var(--success);
 }
 
 .status-stopped {
-  background: rgba(255, 0, 0, 0.1);
-  color: #dc3545;
-  border: 1px solid #dc3545;
+  background: var(--error-light);
+  color: var(--error);
+  border: 1px solid var(--error);
 }
 
 .status-warning {
-  background: rgba(255, 170, 0, 0.1);
-  color: #fd7e14;
-  border: 1px solid #fd7e14;
+  background: var(--warning-light);
+  color: var(--warning);
+  border: 1px solid var(--warning);
 }
 
 .status-maintenance {
-  background: rgba(255, 170, 0, 0.1);
-  color: #fd7e14;
-  border: 1px solid #fd7e14;
+  background: var(--warning-light);
+  color: var(--warning);
+  border: 1px solid var(--warning);
 }
 
 /* Data Display */
@@ -202,60 +233,82 @@ body {
   background: #f8f9fa;
 }
 
-/* Input Fields */
+/* Modern Input Fields */
 .hmi-input {
-  background: var(--hmi-bg-card);
-  border: 1px solid var(--hmi-border);
-  color: var(--hmi-text-primary);
-  padding: 8px 12px;
-  border-radius: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  padding: 12px 16px;
+  border-radius: 8px;
   font-size: 14px;
+  transition: all 0.2s ease;
+  width: 100%;
 }
 
 .hmi-input:focus {
   outline: none;
-  border-color: #007bff;
-  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.hmi-input::placeholder {
+  color: var(--text-light);
 }
 
 .hmi-select {
-  background: var(--hmi-bg-card);
-  border: 1px solid var(--hmi-border);
-  color: var(--hmi-text-primary);
-  padding: 8px 12px;
-  border-radius: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  padding: 12px 16px;
+  border-radius: 8px;
   font-size: 14px;
+  transition: all 0.2s ease;
+  width: 100%;
+  cursor: pointer;
 }
 
-/* Tabs */
+.hmi-select:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* Modern Tabs */
 .hmi-tabs {
   display: flex;
-  background: var(--hmi-bg-secondary);
-  border-radius: 6px;
-  padding: 4px;
-  border: 1px solid var(--hmi-border);
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  padding: 6px;
+  border: 1px solid var(--border-primary);
+  gap: 4px;
 }
 
 .hmi-tab {
   flex: 1;
   padding: 12px 16px;
   text-align: center;
-  border-radius: 4px;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
   font-weight: 500;
-  color: var(--hmi-text-secondary);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .hmi-tab.active {
-  background: var(--hmi-bg-panel);
-  color: var(--hmi-text-primary);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-primary);
 }
 
 .hmi-tab:hover:not(.active) {
-  background: #f8f9fa;
-  color: var(--hmi-text-primary);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
 }
 
 /* Grid Layouts */
@@ -342,4 +395,278 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #adb5bd;
+}
+
+/* Advanced Features Styling */
+.real-time-indicator {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+  border: 1px solid #3b82f6;
+}
+
+.subscription-active {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  border: 1px solid #10b981;
+}
+
+.subscription-inactive {
+  background: rgba(107, 114, 128, 0.1);
+  color: #6b7280;
+  border: 1px solid #6b7280;
+}
+
+.feature-card {
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--hmi-border);
+  padding: 24px;
+  transition: box-shadow 0.2s ease;
+}
+
+.feature-card:hover {
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.metric-card {
+  background: var(--hmi-bg-card);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--hmi-border-light);
+  padding: 16px;
+}
+
+.metric-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--hmi-text-primary);
+  font-family: 'Courier New', monospace;
+}
+
+.metric-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--hmi-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* WebSocket Status */
+.websocket-connected {
+  color: #10b981;
+}
+
+.websocket-disconnected {
+  color: #ef4444;
+}
+
+.websocket-connecting {
+  color: #f59e0b;
+}
+
+/* Modern Button Variants */
+.btn-primary {
+  background: var(--accent-primary);
+  color: white;
+  border: 1px solid var(--accent-primary);
+}
+
+.btn-primary:hover {
+  background: #2563eb;
+  border-color: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-secondary {
+  background: var(--text-secondary);
+  color: white;
+  border: 1px solid var(--text-secondary);
+}
+
+.btn-secondary:hover {
+  background: var(--text-primary);
+  border-color: var(--text-primary);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-success {
+  background: var(--success);
+  color: white;
+  border: 1px solid var(--success);
+}
+
+.btn-success:hover {
+  background: #047857;
+  border-color: #047857;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-danger {
+  background: var(--error);
+  color: white;
+  border: 1px solid var(--error);
+}
+
+.btn-danger:hover {
+  background: #b91c1c;
+  border-color: #b91c1c;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-warning {
+  background: var(--warning);
+  color: white;
+  border: 1px solid var(--warning);
+}
+
+.btn-warning:hover {
+  background: #b45309;
+  border-color: #b45309;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-info {
+  background: var(--info);
+  color: white;
+  border: 1px solid var(--info);
+}
+
+.btn-info:hover {
+  background: #0369a1;
+  border-color: #0369a1;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+/* Data Type Indicators */
+.data-type-bool {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #f59e0b;
+}
+
+.data-type-int {
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #3b82f6;
+}
+
+.data-type-real {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #10b981;
+}
+
+.data-type-string {
+  background: #fdf2f8;
+  color: #be185d;
+  border: 1px solid #ec4899;
+}
+
+/* Advanced Tag Path Styling */
+.tag-path {
+  font-family: 'Courier New', monospace;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #475569;
+}
+
+.tag-path-complex {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  color: #92400e;
+}
+
+/* Subscription Management */
+.subscription-item {
+  background: var(--hmi-bg-card);
+  border: 1px solid var(--hmi-border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+  transition: all 0.2s ease;
+}
+
+.subscription-item:hover {
+  background: #f8fafc;
+  border-color: #3b82f6;
+}
+
+.subscription-item.active {
+  background: rgba(59, 130, 246, 0.05);
+  border-color: #3b82f6;
+}
+
+/* Performance Metrics */
+.performance-metric {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--hmi-border-light);
+}
+
+.performance-metric:last-child {
+  border-bottom: none;
+}
+
+.performance-value {
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+  color: var(--hmi-text-primary);
+}
+
+/* System Health Indicators */
+.health-excellent {
+  color: #10b981;
+}
+
+.health-good {
+  color: #3b82f6;
+}
+
+.health-warning {
+  color: #f59e0b;
+}
+
+.health-critical {
+  color: #ef4444;
+}
+
+/* Responsive Grid Enhancements */
+@media (max-width: 1024px) {
+  .hmi-grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .hmi-grid-3,
+  .hmi-grid-4 {
+    grid-template-columns: 1fr;
+  }
+  
+  .feature-card {
+    padding: 16px;
+  }
+  
+  .metric-value {
+    font-size: 20px;
+  }
 } 
