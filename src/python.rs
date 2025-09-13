@@ -7,7 +7,7 @@ use pyo3::IntoPyObjectExt;
 use std::collections::HashMap;
 use tokio::runtime::Runtime;
 
-/// Python module for rust_ethernet_ip
+/// Python module for `rust_ethernet_ip`
 #[pymodule]
 fn rust_ethernet_ip(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyEipClient>()?;
@@ -16,7 +16,7 @@ fn rust_ethernet_ip(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
-/// Python wrapper for EipClient
+/// Python wrapper for `EipClient`
 #[pyclass]
 struct PyEipClient {
     client: EipClient,
@@ -65,7 +65,7 @@ impl<'a> FromPyObject<'a> for TagSubOptArg {
 
 #[pymethods]
 impl PyEipClient {
-    /// Create a new EipClient instance
+    /// Create a new `EipClient` instance
     #[new]
     fn new(addr: &str) -> PyResult<Self> {
         let runtime = Runtime::new().unwrap();
@@ -106,7 +106,7 @@ impl PyEipClient {
             let results = runtime
                 .block_on(async {
                     self.client
-                        .read_tags_batch(&tag_names.iter().map(|s| s.as_str()).collect::<Vec<_>>())
+                        .read_tags_batch(&tag_names.iter().map(String::as_str).collect::<Vec<_>>())
                         .await
                 })
                 .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
@@ -195,7 +195,7 @@ impl PyEipClient {
     }
 }
 
-/// Python wrapper for PlcValue
+/// Python wrapper for `PlcValue`
 #[pyclass]
 struct PyPlcValue {
     value: PlcValue,
@@ -337,7 +337,7 @@ impl PyPlcValue {
     }
 }
 
-/// Python wrapper for SubscriptionOptions
+/// Python wrapper for `SubscriptionOptions`
 #[pyclass]
 struct PySubscriptionOptions {
     options: SubscriptionOptions,

@@ -84,7 +84,7 @@ impl TagSubscription {
         sender
             .send(value.clone())
             .await
-            .map_err(|e| EtherNetIpError::Subscription(format!("Failed to send update: {}", e)))?;
+            .map_err(|e| EtherNetIpError::Subscription(format!("Failed to send update: {e}")))?;
 
         Ok(())
     }

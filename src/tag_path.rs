@@ -18,16 +18,16 @@ use std::fmt;
 /// Represents different types of tag addressing supported by Allen-Bradley PLCs
 #[derive(Debug, Clone, PartialEq)]
 pub enum TagPath {
-    /// Simple controller-scoped tag: "MyTag"
+    /// Simple controller-scoped tag: `MyTag`
     Controller { tag_name: String },
 
-    /// Program-scoped tag: "Program:MainProgram.MyTag"
+    /// Program-scoped tag: `Program:MainProgram.MyTag`
     Program {
         program_name: String,
         tag_name: String,
     },
 
-    /// Array element access: "MyArray[5]" or "MyArray[1,2,3]"
+    /// Array element access: `MyArray[5]` or `MyArray[1,2,3]`
     Array {
         base_path: Box<TagPath>,
         indices: Vec<u32>,
@@ -53,7 +53,7 @@ pub enum TagPath {
 }
 
 impl TagPath {
-    /// Parses a tag path string into a structured TagPath
+    /// Parses a tag path string into a structured `TagPath`
     ///
     /// # Examples
     ///
@@ -89,7 +89,7 @@ impl TagPath {
         parser.parse()
     }
 
-    /// Converts the TagPath back to a string representation
+    /// Converts the `TagPath` back to a string representation
     pub fn as_string(&self) -> String {
         match self {
             TagPath::Controller { tag_name } => tag_name.clone(),
@@ -97,34 +97,34 @@ impl TagPath {
                 program_name,
                 tag_name,
             } => {
-                format!("Program:{}.{}", program_name, tag_name)
+                format!("Program:{program_name}.{tag_name}")
             }
             TagPath::Array { base_path, indices } => {
                 let base = base_path.as_string();
                 let indices_str = indices
                     .iter()
-                    .map(|i| i.to_string())
+                    .map(u32::to_string)
                     .collect::<Vec<_>>()
                     .join(",");
-                format!("{}[{}]", base, indices_str)
+                format!("{base}[{indices_str}]")
             }
             TagPath::Bit {
                 base_path,
                 bit_index,
             } => {
-                format!("{}.{}", base_path, bit_index)
+                format!("{base_path}.{bit_index}")
             }
             TagPath::Member {
                 base_path,
                 member_name,
             } => {
-                format!("{}.{}", base_path, member_name)
+                format!("{base_path}.{member_name}")
             }
             TagPath::StringLength { base_path } => {
-                format!("{}.LEN", base_path)
+                format!("{base_path}.LEN")
             }
             TagPath::StringData { base_path, index } => {
-                format!("{}.DATA[{}]", base_path, index)
+                format!("{base_path}.DATA[{index}]")
             }
         }
     }
@@ -162,7 +162,7 @@ impl TagPath {
                 // Program scope requires special handling
                 // First add program name segment
                 path.push(0x91);
-                let program_path = format!("Program:{}", program_name);
+                let program_path = format!("Program:{program_name}");
                 path.push(program_path.len() as u8);
                 path.extend_from_slice(program_path.as_bytes());
 
@@ -258,7 +258,7 @@ impl TagPath {
             TagPath::Member { base_path, .. } => base_path.is_program_scoped(),
             TagPath::StringLength { base_path } => base_path.is_program_scoped(),
             TagPath::StringData { base_path, .. } => base_path.is_program_scoped(),
-            _ => false,
+            TagPath::Controller { .. } => false,
         }
     }
 
@@ -271,7 +271,7 @@ impl TagPath {
             TagPath::Member { base_path, .. } => base_path.program_name(),
             TagPath::StringLength { base_path } => base_path.program_name(),
             TagPath::StringData { base_path, .. } => base_path.program_name(),
-            _ => None,
+            TagPath::Controller { .. } => None,
         }
     }
 }
