@@ -649,12 +649,11 @@ impl TagManager {
                 last_updated: Instant::now(),
             };
 
-
             println!(
                 "[DEBUG] Parsed tag: {} (ID: {}, Type: 0x{:04X}, Structure: {})",
                 name, instance_id, type_code, is_structure
             );
-          
+
             tags.push((name, metadata));
         }
 
