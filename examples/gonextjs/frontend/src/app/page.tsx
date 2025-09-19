@@ -525,7 +525,7 @@ export default function Page() {
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`tab-button ${activeTab === tab ? 'active' : ''}`}
+              className={`hmi-tab ${activeTab === tab ? 'active' : ''}`}
             >
               {tab}
             </button>
