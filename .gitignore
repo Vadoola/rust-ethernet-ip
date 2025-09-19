@@ -90,3 +90,31 @@ ENV/
 env.bak/
 venv.bak/
 .python-version
+
+# Code coverage and documentation reports
+tarpaulin-report.html
+*.html
+!examples/**/index.html
+!examples/**/public/index.html
+
+# Frontend build artifacts
+**/dist/
+**/build/
+**/out/
+**/.next/
+**/coverage/
+**/htmlcov/
+
+# Generated documentation
+**/API.html
+**/report.html
+**/directory.html
+**/props.html
+**/runner.html
+**/angular.html
+**/tslib*.html
+
+# Test and coverage reports
+coverage/
+*.lcov
+*.coverage
