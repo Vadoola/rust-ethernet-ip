@@ -512,7 +512,6 @@ impl TagManager {
         );
 
         let mut tags = Vec::new();
-        let mut offset = 0;
 
         // Allen-Bradley tag list response format:
         // [Status(4)][ItemCount(4)][Items...]
@@ -528,7 +527,7 @@ impl TagManager {
         let item_count = u32::from_le_bytes([response[4], response[5], response[6], response[7]]);
         println!("[DEBUG] Detected item count: {}", item_count);
 
-        offset = 8; // Skip status and item count
+        let mut offset = 8; // Skip status and item count
 
         // Parse each tag entry
         while offset < response.len() {
@@ -739,19 +738,18 @@ impl TagManager {
         if metadata.is_structure() && !metadata.is_array {
             // For now, just add the structure tag itself
             // UDT member discovery would require async calls which we'll handle separately
-            if self.validate_tag_name(&new_name) {
-                if !tag_names.contains(&new_name) {
-                    all_tags.push((new_name.clone(), metadata.clone()));
-                    tag_names.insert(new_name);
-                }
+            if self.validate_tag_name(&new_name) && !tag_names.contains(&new_name) {
+                all_tags.push((new_name.clone(), metadata.clone()));
+                tag_names.insert(new_name);
             }
         } else {
             // This is a leaf tag - add it if it's a valid type
-            if self.is_valid_tag_type(metadata.data_type) && self.validate_tag_name(&new_name) {
-                if !tag_names.contains(&new_name) {
-                    all_tags.push((new_name.clone(), metadata.clone()));
-                    tag_names.insert(new_name);
-                }
+            if self.is_valid_tag_type(metadata.data_type)
+                && self.validate_tag_name(&new_name)
+                && !tag_names.contains(&new_name)
+            {
+                all_tags.push((new_name.clone(), metadata.clone()));
+                tag_names.insert(new_name);
             }
         }
 
