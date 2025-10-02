@@ -1,26 +1,25 @@
-///! # Batch Operations Demo
-///!
-///! This example demonstrates the powerful batch operations feature of the rust-ethernet-ip library.
-///! Batch operations allow you to perform multiple read/write operations in a single network packet,
-///! dramatically improving performance for scenarios involving multiple PLC operations.
-///!
-///! ## Performance Benefits
-///!
-///! - **3-10x faster** than individual operations
-///! - **Reduced network traffic** (1-5 packets instead of N packets for N operations)
-///! - **Lower PLC CPU usage** due to fewer connection handling overheads
-///! - **Better throughput** for data collection and control applications
-///!
-///! ## Use Cases
-///!
-///! - **Data acquisition**: Reading multiple sensor values simultaneously
-///! - **Recipe management**: Writing multiple setpoints at once
-///! - **Status monitoring**: Reading multiple status flags efficiently
-///! - **Coordinated control**: Atomic operations across multiple tags
+//! # Batch Operations Demo
+//!
+//! This example demonstrates the powerful batch operations feature of the rust-ethernet-ip library.
+//! Batch operations allow you to perform multiple read/write operations in a single network packet,
+//! dramatically improving performance for scenarios involving multiple PLC operations.
+//!
+//! ## Performance Benefits
+//!
+//! - **3-10x faster** than individual operations
+//! - **Reduced network traffic** (1-5 packets instead of N packets for N operations)
+//! - **Lower PLC CPU usage** due to fewer connection handling overheads
+//! - **Better throughput** for data collection and control applications
+//!
+//! ## Use Cases
+//!
+//! - **Data acquisition**: Reading multiple sensor values simultaneously
+//! - **Recipe management**: Writing multiple setpoints at once
+//! - **Status monitoring**: Reading multiple status flags efficiently
+//! - **Coordinated control**: Atomic operations across multiple tags
 use rust_ethernet_ip::EipClient;
 use rust_ethernet_ip::{BatchConfig, BatchOperation, PlcValue};
 use std::time::Instant;
-use tokio;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

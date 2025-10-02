@@ -4,10 +4,7 @@ use std::time::Duration;
 
 /// Helper function to check if a PLC is available at the given address
 async fn is_plc_available(address: &str) -> bool {
-    match EipClient::connect(address).await {
-        Ok(_) => true,
-        Err(_) => false,
-    }
+    EipClient::connect(address).await.is_ok()
 }
 
 #[tokio::test]

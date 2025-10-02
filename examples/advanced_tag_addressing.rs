@@ -52,7 +52,7 @@ async fn demonstrate_tag_path_parsing() -> Result<(), Box<dyn Error>> {
     println!(
         "   Simple tag: {} -> {}",
         simple_tag,
-        simple_tag.to_string()
+        simple_tag
     );
 
     // 2. Program-scoped tags (CompactLogix/ControlLogix)

@@ -101,9 +101,9 @@ async fn test_basic_tag_operations() -> Result<(), Box<dyn Error>> {
     assert_eq!(dint_value, PlcValue::Dint(42));
 
     // Test REAL operations
-    client.write_tag("TestReal", PlcValue::Real(3.14)).await?;
+    client.write_tag("TestReal", PlcValue::Real(std::f32::consts::PI)).await?;
     let real_value = client.read_tag("TestReal").await?;
-    assert_eq!(real_value, PlcValue::Real(3.14));
+    assert_eq!(real_value, PlcValue::Real(std::f32::consts::PI));
 
     // Test STRING operations
     let test_string = "Hello, PLC!".to_string();
@@ -144,7 +144,7 @@ async fn test_udt_operations() -> Result<(), Box<dyn Error>> {
     let mut members = HashMap::new();
     members.insert("Bool1".to_string(), PlcValue::Bool(true));
     members.insert("Dint1".to_string(), PlcValue::Dint(42));
-    members.insert("Real1".to_string(), PlcValue::Real(3.14));
+    members.insert("Real1".to_string(), PlcValue::Real(std::f32::consts::PI));
 
     client
         .write_tag("TestUDT", PlcValue::Udt(members.clone()))
@@ -237,7 +237,7 @@ async fn test_large_data_operations() -> Result<(), Box<dyn Error>> {
     // Test large UDT
     let mut members = HashMap::new();
     for i in 0..100 {
-        members.insert(format!("Field{}", i), PlcValue::Dint(i as i32));
+        members.insert(format!("Field{}", i), PlcValue::Dint(i));
     }
     client
         .write_tag("LargeUDT", PlcValue::Udt(members.clone()))

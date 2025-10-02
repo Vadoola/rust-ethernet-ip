@@ -148,7 +148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         BatchOperation::Write {
             tag_name: "TestWrite_2".to_string(),
-            value: PlcValue::Real(3.14),
+            value: PlcValue::Real(std::f32::consts::PI),
         },
         BatchOperation::Write {
             tag_name: "TestWrite_3".to_string(),

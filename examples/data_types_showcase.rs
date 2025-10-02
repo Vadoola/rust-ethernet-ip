@@ -298,7 +298,7 @@ async fn demonstrate_real_plc_data_types(client: &mut EipClient) -> Result<(), B
     // UDT operations
     let mut test_udt = HashMap::new();
     test_udt.insert("Value1".to_string(), PlcValue::Dint(42));
-    test_udt.insert("Value2".to_string(), PlcValue::Real(3.14159));
+    test_udt.insert("Value2".to_string(), PlcValue::Real(std::f32::consts::PI));
     test_udt.insert("Status".to_string(), PlcValue::Bool(true));
 
     match client.write_tag("TestUdt", PlcValue::Udt(test_udt)).await {

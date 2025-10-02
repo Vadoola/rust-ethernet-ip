@@ -21,7 +21,7 @@ fn bench_batch_read(c: &mut Criterion) {
                 // Mock batch read implementation
                 let mut results = Vec::new();
                 for i in 0..count {
-                    results.push(PlcValue::Dint(i as i32));
+                    results.push(PlcValue::Dint(i));
                 }
                 black_box(results)
             })

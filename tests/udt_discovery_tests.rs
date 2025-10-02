@@ -101,7 +101,7 @@ fn test_hierarchical_tag_names() {
 
     // Test MotorData UDT member names
     let motor_data = client.udt_definitions.get("MotorData").unwrap();
-    let expected_names = vec!["MotorData.Running", "MotorData.Speed", "MotorData.Position"];
+    let expected_names = ["MotorData.Running", "MotorData.Speed", "MotorData.Position"];
 
     for (i, member) in motor_data.members.iter().enumerate() {
         let full_name = format!("{}.{}", motor_data.name, member.name);
@@ -337,7 +337,7 @@ fn test_udt_tag_name_validation() {
 fn test_udt_definition_request_building() {
     // Test request for simple UDT
     let _udt_name = "MotorData";
-    let expected_request = vec![
+    let expected_request = [
         0x4C, // Service: Read Tag
         0x05, // Path size
         0x91, // Symbolic segment
@@ -358,7 +358,7 @@ fn test_udt_definition_request_building() {
 #[test]
 fn test_udt_response_parsing() {
     // Mock response data containing UDT structure information
-    let mock_response = vec![
+    let mock_response = [
         0xC1, 0x00, 0x01, 0x00, // BOOL member
         0xCA, 0x00, 0x04, 0x00, // REAL member
         0xC4, 0x00, 0x04, 0x00, // DINT member
