@@ -941,25 +941,29 @@ namespace RustEtherNetIp
         #region UDT Operations
 
         /// <summary>
-        /// Reads a UDT (User Defined Type) tag from the PLC.
+        /// Reads a UDT (User Defined Type) tag from the PLC with full nested support.
         /// </summary>
         /// <param name="tagName">Name of the PLC tag to read.</param>
-        /// <returns>Dictionary containing UDT member values.</returns>
-        public Dictionary<string, object> ReadUdt(string tagName)
+        /// <returns>PlcValue containing the UDT with nested structure support.</returns>
+        public PlcValue ReadUdt(string tagName)
         {
             return ExecuteWithLock(() =>
             {
                 CheckConnection();
                 IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-                IntPtr resultPtr = Marshal.AllocHGlobal(4096); // Allocate buffer for UDT data
+                IntPtr resultPtr = Marshal.AllocHGlobal(8192); // Increased buffer for complex UDTs
                 try
                 {
-                    int result = eip_read_udt(_clientId, tagPtr, resultPtr, 4096);
+                    int result = eip_read_udt(_clientId, tagPtr, resultPtr, 8192);
                     if (result != 0)
                         throw new Exception($"Failed to read UDT tag '{tagName}'. Check tag exists and is UDT type.");
                     
-                    // For now, return empty dictionary - UDT parsing would need more complex marshaling
-                    return new Dictionary<string, object>();
+                    // Convert the JSON result to PlcValue
+                    string jsonResult = Marshal.PtrToStringAnsi(resultPtr);
+                    if (string.IsNullOrEmpty(jsonResult))
+                        throw new Exception($"Empty response when reading UDT tag '{tagName}'.");
+                    
+                    return PlcValue.FromJson(jsonResult);
                 }
                 finally
                 {
@@ -970,30 +974,192 @@ namespace RustEtherNetIp
         }
 
         /// <summary>
-        /// Writes a UDT (User Defined Type) tag to the PLC.
+        /// Writes a UDT (User Defined Type) tag to the PLC with full nested support.
+        /// </summary>
+        /// <param name="tagName">Name of the PLC tag to write to.</param>
+        /// <param name="value">PlcValue containing the UDT with nested structure support.</param>
+        public void WriteUdt(string tagName, PlcValue value)
+        {
+            if (value == null)
+                throw new ArgumentNullException(nameof(value));
+            
+            if (!value.IsUdt)
+                throw new ArgumentException("Value must be a UDT type", nameof(value));
+
+            ExecuteWithLock(() =>
+            {
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                try
+                {
+                    // Serialize the UDT to JSON
+                    string jsonValue = value.ToJson();
+                    IntPtr valuePtr = Marshal.StringToHGlobalAnsi(jsonValue);
+                    try
+                    {
+                        int result = eip_write_udt(_clientId, tagPtr, valuePtr, jsonValue.Length);
+                        if (result != 0)
+                            throw new Exception($"Failed to write UDT tag '{tagName}'. Check tag exists and is writable.");
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(valuePtr);
+                    }
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                }
+            });
+        }
+
+        /// <summary>
+        /// Writes a UDT (User Defined Type) tag to the PLC using a dictionary.
+        /// This is a convenience method for backward compatibility.
         /// </summary>
         /// <param name="tagName">Name of the PLC tag to write to.</param>
         /// <param name="value">Dictionary containing UDT member values.</param>
         public void WriteUdt(string tagName, Dictionary<string, object> value)
         {
-            ExecuteWithLock(() =>
+            if (value == null)
+                throw new ArgumentNullException(nameof(value));
+
+            // Convert Dictionary<string, object> to Dictionary<string, PlcValue>
+            var udtValue = new Dictionary<string, PlcValue>();
+            foreach (var kvp in value)
             {
-                CheckConnection();
-                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
-                IntPtr valuePtr = Marshal.AllocHGlobal(4096); // Allocate buffer for UDT data
-                try
-                {
-                    // For now, just call the function - UDT serialization would need more complex marshaling
-                    int result = eip_write_udt(_clientId, tagPtr, valuePtr, 0);
-                    if (result != 0)
-                        throw new Exception($"Failed to write UDT tag '{tagName}'. Check tag exists and is writable.");
-                }
-                finally
-                {
-                    Marshal.FreeHGlobal(tagPtr);
-                    Marshal.FreeHGlobal(valuePtr);
-                }
-            });
+                udtValue[kvp.Key] = ConvertObjectToPlcValue(kvp.Value);
+            }
+
+            WriteUdt(tagName, PlcValue.Udt(udtValue));
+        }
+
+        /// <summary>
+        /// Reads a UDT (User Defined Type) tag from the PLC and returns it as a dictionary.
+        /// This is a convenience method for backward compatibility.
+        /// </summary>
+        /// <param name="tagName">Name of the PLC tag to read.</param>
+        /// <returns>Dictionary containing UDT member values.</returns>
+        public Dictionary<string, object> ReadUdtAsDictionary(string tagName)
+        {
+            var udtValue = ReadUdt(tagName);
+            if (!udtValue.IsUdt)
+                throw new Exception($"Tag '{tagName}' is not a UDT type.");
+
+            return ConvertUdtToDictionary(udtValue.UdtMembers);
+        }
+
+        /// <summary>
+        /// Gets a nested value from a UDT using dot notation (e.g., "Status.Running").
+        /// </summary>
+        /// <param name="tagName">Name of the UDT tag.</param>
+        /// <param name="memberPath">Dot-separated path to the nested member (e.g., "Status.Running").</param>
+        /// <returns>PlcValue of the nested member, or null if not found.</returns>
+        public PlcValue GetUdtMember(string tagName, string memberPath)
+        {
+            var udtValue = ReadUdt(tagName);
+            return udtValue?.GetNestedValue(memberPath);
+        }
+
+        /// <summary>
+        /// Sets a nested value in a UDT using dot notation (e.g., "Status.Running").
+        /// </summary>
+        /// <param name="tagName">Name of the UDT tag.</param>
+        /// <param name="memberPath">Dot-separated path to the nested member (e.g., "Status.Running").</param>
+        /// <param name="value">Value to set.</param>
+        public void SetUdtMember(string tagName, string memberPath, PlcValue value)
+        {
+            var udtValue = ReadUdt(tagName);
+            if (udtValue == null || !udtValue.IsUdt)
+                throw new Exception($"Tag '{tagName}' is not a UDT type or could not be read.");
+
+            var members = udtValue.UdtMembers;
+            var parts = memberPath.Split('.');
+            
+            // Navigate to the parent of the target member
+            for (int i = 0; i < parts.Length - 1; i++)
+            {
+                if (!members.ContainsKey(parts[i]))
+                    throw new Exception($"Member path '{memberPath}' is invalid. '{parts[i]}' not found.");
+                
+                var nestedValue = members[parts[i]];
+                if (!nestedValue.IsUdt)
+                    throw new Exception($"Member path '{memberPath}' is invalid. '{parts[i]}' is not a UDT.");
+                
+                members = nestedValue.UdtMembers;
+            }
+
+            // Set the final member
+            members[parts[parts.Length - 1]] = value;
+
+            // Write the updated UDT back
+            WriteUdt(tagName, udtValue);
+        }
+
+        #endregion
+
+        #region Helper Methods
+
+        /// <summary>
+        /// Converts a .NET object to a PlcValue
+        /// </summary>
+        private PlcValue ConvertObjectToPlcValue(object value)
+        {
+            return value switch
+            {
+                bool b => PlcValue.Bool(b),
+                sbyte sb => PlcValue.Sint(sb),
+                short s => PlcValue.Int(s),
+                int i => PlcValue.Dint(i),
+                long l => PlcValue.Lint(l),
+                byte b => PlcValue.Usint(b),
+                ushort us => PlcValue.Uint(us),
+                uint ui => PlcValue.Udint(ui),
+                ulong ul => PlcValue.Ulint(ul),
+                float f => PlcValue.Real(f),
+                double d => PlcValue.Lreal(d),
+                string str => PlcValue.String(str),
+                Dictionary<string, object> dict => PlcValue.Udt(ConvertDictionaryToPlcValueDict(dict)),
+                _ => throw new ArgumentException($"Unsupported object type: {value?.GetType()}")
+            };
+        }
+
+        /// <summary>
+        /// Converts a dictionary of objects to a dictionary of PlcValues
+        /// </summary>
+        private Dictionary<string, PlcValue> ConvertDictionaryToPlcValueDict(Dictionary<string, object> dict)
+        {
+            var result = new Dictionary<string, PlcValue>();
+            foreach (var kvp in dict)
+            {
+                result[kvp.Key] = ConvertObjectToPlcValue(kvp.Value);
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Converts a UDT dictionary to a regular object dictionary
+        /// </summary>
+        private Dictionary<string, object> ConvertUdtToDictionary(Dictionary<string, PlcValue> udtMembers)
+        {
+            var result = new Dictionary<string, object>();
+            foreach (var kvp in udtMembers)
+            {
+                result[kvp.Key] = ConvertPlcValueToObject(kvp.Value);
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Converts a PlcValue to a .NET object
+        /// </summary>
+        private object ConvertPlcValueToObject(PlcValue value)
+        {
+            return value.Type switch
+            {
+                PlcValueType.Udt => ConvertUdtToDictionary(value.UdtMembers),
+                _ => value.Value
+            };
         }
 
         #endregion

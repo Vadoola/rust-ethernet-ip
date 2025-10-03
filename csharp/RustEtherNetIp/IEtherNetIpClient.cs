@@ -57,8 +57,12 @@ namespace RustEtherNetIp
         void WriteString(string tagName, string value);
         
         // UDT Operations
-        Dictionary<string, object> ReadUdt(string tagName);
+        PlcValue ReadUdt(string tagName);
+        void WriteUdt(string tagName, PlcValue value);
         void WriteUdt(string tagName, Dictionary<string, object> value);
+        Dictionary<string, object> ReadUdtAsDictionary(string tagName);
+        PlcValue GetUdtMember(string tagName, string memberPath);
+        void SetUdtMember(string tagName, string memberPath, PlcValue value);
         
         // Batch Operations - High Performance Multi-Tag Operations
         

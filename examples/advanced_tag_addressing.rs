@@ -49,11 +49,7 @@ async fn demonstrate_tag_path_parsing() -> Result<(), Box<dyn Error>> {
     // 1. Controller-scoped tags (traditional)
     println!("\n1. Controller-Scoped Tags:");
     let simple_tag = TagPath::parse("MotorRunning")?;
-    println!(
-        "   Simple tag: {} -> {}",
-        simple_tag,
-        simple_tag
-    );
+    println!("   Simple tag: {} -> {}", simple_tag, simple_tag);
 
     // 2. Program-scoped tags (CompactLogix/ControlLogix)
     println!("\n2. Program-Scoped Tags:");

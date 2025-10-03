@@ -101,7 +101,9 @@ async fn test_basic_tag_operations() -> Result<(), Box<dyn Error>> {
     assert_eq!(dint_value, PlcValue::Dint(42));
 
     // Test REAL operations
-    client.write_tag("TestReal", PlcValue::Real(std::f32::consts::PI)).await?;
+    client
+        .write_tag("TestReal", PlcValue::Real(std::f32::consts::PI))
+        .await?;
     let real_value = client.read_tag("TestReal").await?;
     assert_eq!(real_value, PlcValue::Real(std::f32::consts::PI));
 

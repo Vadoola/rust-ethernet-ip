@@ -48,7 +48,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     // Write TestReal
-    match client.write_tag("TestReal", PlcValue::Real(std::f32::consts::PI)).await {
+    match client
+        .write_tag("TestReal", PlcValue::Real(std::f32::consts::PI))
+        .await
+    {
         Ok(_) => println!("✅ Wrote TestReal: 3.14159"),
         Err(e) => println!("❌ Failed to write TestReal: {}", e),
     }

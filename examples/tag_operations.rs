@@ -33,7 +33,10 @@ async fn main() {
         Err(e) => eprintln!("Failed to write DINT: {e}"),
     }
     // Write REAL
-    match client.write_tag("TestREAL", PlcValue::Real(std::f32::consts::PI)).await {
+    match client
+        .write_tag("TestREAL", PlcValue::Real(std::f32::consts::PI))
+        .await
+    {
         Ok(_) => println!("Wrote REAL value"),
         Err(e) => eprintln!("Failed to write REAL: {e}"),
     }

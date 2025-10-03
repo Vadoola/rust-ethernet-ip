@@ -644,7 +644,7 @@ impl ConnectedSession {
 /// - **BOOL**: Boolean value (true/false)
 /// - **STRING**: Variable-length string
 /// - **UDT**: User Defined Type (structured data)
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PlcValue {
     /// Boolean value (single bit)
     ///

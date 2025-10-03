@@ -4,6 +4,7 @@ use crate::EipClient;
 use crate::PlcValue;
 use crate::RUNTIME;
 use lazy_static::lazy_static;
+use serde_json;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int};
@@ -826,24 +827,89 @@ pub unsafe extern "C" fn eip_write_string(
 // UDT operations
 #[no_mangle]
 pub unsafe extern "C" fn eip_read_udt(
-    _client_id: c_int,
-    _tag_name: *const c_char,
-    _result: *mut c_char,
-    _max_size: c_int,
+    client_id: c_int,
+    tag_name: *const c_char,
+    result: *mut c_char,
+    max_size: c_int,
 ) -> c_int {
-    // For now, return error - UDT support can be added later
-    -1
+    if tag_name.is_null() || result.is_null() || max_size <= 0 {
+        return -1;
+    }
+
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
+    };
+
+    let mut clients = FFI_CLIENTS.lock().unwrap();
+    let Some(client) = clients.get_mut(&client_id) else {
+        return -1;
+    };
+
+    let value = match RUNTIME.block_on(client.read_tag(tag_name_str)) {
+        Ok(PlcValue::Udt(udt_data)) => udt_data,
+        Ok(_) => return -1,  // Wrong data type
+        Err(_) => return -1, // Error reading tag
+    };
+
+    // Serialize UDT to JSON for C# consumption
+    let json_result = match serde_json::to_string(&value) {
+        Ok(json) => json,
+        Err(_) => return -1,
+    };
+
+    let Ok(c_string) = CString::new(json_result) else {
+        return -1;
+    };
+
+    let bytes = c_string.as_bytes_with_nul();
+    if bytes.len() > max_size as usize {
+        return -1; // JSON too long
+    }
+
+    unsafe {
+        ptr::copy_nonoverlapping(bytes.as_ptr(), result as *mut u8, bytes.len());
+    }
+    0
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn eip_write_udt(
-    _client_id: c_int,
-    _tag_name: *const c_char,
-    _value: *const c_char,
-    _size: c_int,
+    client_id: c_int,
+    tag_name: *const c_char,
+    value: *const c_char,
+    size: c_int,
 ) -> c_int {
-    // For now, return error - UDT support can be added later
-    -1
+    if tag_name.is_null() || value.is_null() || size <= 0 {
+        return -1;
+    }
+
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
+    };
+
+    let Ok(value_str) = unsafe { CStr::from_ptr(value) }.to_str() else {
+        return -1;
+    };
+
+    // Deserialize JSON to UDT
+    let udt_data: HashMap<String, PlcValue> = match serde_json::from_str(value_str) {
+        Ok(data) => data,
+        Err(_) => return -1,
+    };
+
+    let mut clients = FFI_CLIENTS.lock().unwrap();
+    let Some(client) = clients.get_mut(&client_id) else {
+        return -1;
+    };
+
+    if RUNTIME
+        .block_on(client.write_tag(tag_name_str, PlcValue::Udt(udt_data)))
+        .is_ok()
+    {
+        0
+    } else {
+        -1
+    }
 }
 
 // Tag discovery and metadata

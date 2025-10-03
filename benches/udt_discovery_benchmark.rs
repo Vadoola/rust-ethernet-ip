@@ -202,7 +202,7 @@ fn benchmark_hierarchical_discovery(c: &mut Criterion) {
 
                         for member_num in 0..5 {
                             let member_name = format!("Member{}", member_num);
-                    let full_name = format!("{}.{}", base_name, member_name);
+                            let full_name = format!("{}.{}", base_name, member_name);
 
                             if !tag_names.contains(&full_name) {
                                 let metadata = TagMetadata {

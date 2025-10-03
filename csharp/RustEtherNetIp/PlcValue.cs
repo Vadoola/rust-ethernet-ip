@@ -1,0 +1,249 @@
+using System;
+using System.Collections.Generic;
+using System.Text.Json;
+
+namespace RustEtherNetIp
+{
+    /// <summary>
+    /// Represents a PLC value that can be of various data types including nested UDTs.
+    /// This class provides type-safe access to PLC data with full support for nested structures.
+    /// </summary>
+    public class PlcValue
+    {
+        private readonly object _value;
+        private readonly PlcValueType _type;
+
+        private PlcValue(object value, PlcValueType type)
+        {
+            _value = value;
+            _type = type;
+        }
+
+        /// <summary>
+        /// Creates a boolean value
+        /// </summary>
+        public static PlcValue Bool(bool value) => new PlcValue(value, PlcValueType.Bool);
+
+        /// <summary>
+        /// Creates a signed 8-bit integer value
+        /// </summary>
+        public static PlcValue Sint(sbyte value) => new PlcValue(value, PlcValueType.Sint);
+
+        /// <summary>
+        /// Creates a signed 16-bit integer value
+        /// </summary>
+        public static PlcValue Int(short value) => new PlcValue(value, PlcValueType.Int);
+
+        /// <summary>
+        /// Creates a signed 32-bit integer value
+        /// </summary>
+        public static PlcValue Dint(int value) => new PlcValue(value, PlcValueType.Dint);
+
+        /// <summary>
+        /// Creates a signed 64-bit integer value
+        /// </summary>
+        public static PlcValue Lint(long value) => new PlcValue(value, PlcValueType.Lint);
+
+        /// <summary>
+        /// Creates an unsigned 8-bit integer value
+        /// </summary>
+        public static PlcValue Usint(byte value) => new PlcValue(value, PlcValueType.Usint);
+
+        /// <summary>
+        /// Creates an unsigned 16-bit integer value
+        /// </summary>
+        public static PlcValue Uint(ushort value) => new PlcValue(value, PlcValueType.Uint);
+
+        /// <summary>
+        /// Creates an unsigned 32-bit integer value
+        /// </summary>
+        public static PlcValue Udint(uint value) => new PlcValue(value, PlcValueType.Udint);
+
+        /// <summary>
+        /// Creates an unsigned 64-bit integer value
+        /// </summary>
+        public static PlcValue Ulint(ulong value) => new PlcValue(value, PlcValueType.Ulint);
+
+        /// <summary>
+        /// Creates a 32-bit floating point value
+        /// </summary>
+        public static PlcValue Real(float value) => new PlcValue(value, PlcValueType.Real);
+
+        /// <summary>
+        /// Creates a 64-bit floating point value
+        /// </summary>
+        public static PlcValue Lreal(double value) => new PlcValue(value, PlcValueType.Lreal);
+
+        /// <summary>
+        /// Creates a string value
+        /// </summary>
+        public static PlcValue String(string value) => new PlcValue(value, PlcValueType.String);
+
+        /// <summary>
+        /// Creates a UDT (User Defined Type) value with nested support
+        /// </summary>
+        public static PlcValue Udt(Dictionary<string, PlcValue> value) => new PlcValue(value, PlcValueType.Udt);
+
+        /// <summary>
+        /// Gets the value as the specified type
+        /// </summary>
+        public T As<T>() => (T)_value;
+
+        /// <summary>
+        /// Gets the value as the specified type with a default if conversion fails
+        /// </summary>
+        public T AsOrDefault<T>(T defaultValue = default(T))
+        {
+            try
+            {
+                return (T)_value;
+            }
+            catch
+            {
+                return defaultValue;
+            }
+        }
+
+        /// <summary>
+        /// Gets the underlying value
+        /// </summary>
+        public object Value => _value;
+
+        /// <summary>
+        /// Gets the value type
+        /// </summary>
+        public PlcValueType Type => _type;
+
+        /// <summary>
+        /// Checks if this is a UDT value
+        /// </summary>
+        public bool IsUdt => _type == PlcValueType.Udt;
+
+        /// <summary>
+        /// Gets the UDT members if this is a UDT value
+        /// </summary>
+        public Dictionary<string, PlcValue> UdtMembers => IsUdt ? As<Dictionary<string, PlcValue>>() : null;
+
+        /// <summary>
+        /// Gets a nested UDT member by path (e.g., "Status.Running")
+        /// </summary>
+        public PlcValue GetNestedValue(string path)
+        {
+            if (!IsUdt) return null;
+
+            var parts = path.Split('.');
+            var current = this;
+
+            foreach (var part in parts)
+            {
+                if (!current.IsUdt) return null;
+                
+                var members = current.UdtMembers;
+                if (members == null || !members.ContainsKey(part)) return null;
+                
+                current = members[part];
+            }
+
+            return current;
+        }
+
+        /// <summary>
+        /// Serializes the value to JSON for transmission to the Rust library
+        /// </summary>
+        public string ToJson()
+        {
+            return JsonSerializer.Serialize(_value, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                WriteIndented = false
+            });
+        }
+
+        /// <summary>
+        /// Deserializes a JSON string to a PlcValue
+        /// </summary>
+        public static PlcValue FromJson(string json)
+        {
+            try
+            {
+                var jsonDoc = JsonDocument.Parse(json);
+                return FromJsonElement(jsonDoc.RootElement);
+            }
+            catch
+            {
+                throw new ArgumentException("Invalid JSON format", nameof(json));
+            }
+        }
+
+        private static PlcValue FromJsonElement(JsonElement element)
+        {
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.True:
+                case JsonValueKind.False:
+                    return Bool(element.GetBoolean());
+
+                case JsonValueKind.Number:
+                    if (element.TryGetInt32(out var intVal))
+                        return Dint(intVal);
+                    if (element.TryGetSingle(out var floatVal))
+                        return Real(floatVal);
+                    if (element.TryGetDouble(out var doubleVal))
+                        return Lreal(doubleVal);
+                    break;
+
+                case JsonValueKind.String:
+                    return String(element.GetString());
+
+                case JsonValueKind.Object:
+                    var dict = new Dictionary<string, PlcValue>();
+                    foreach (var prop in element.EnumerateObject())
+                    {
+                        dict[prop.Name] = FromJsonElement(prop.Value);
+                    }
+                    return Udt(dict);
+            }
+
+            throw new ArgumentException("Unsupported JSON value type");
+        }
+
+        public override string ToString()
+        {
+            return _value?.ToString() ?? "null";
+        }
+
+        public override bool Equals(object obj)
+        {
+            if (obj is PlcValue other)
+            {
+                return _type == other._type && Equals(_value, other._value);
+            }
+            return false;
+        }
+
+        public override int GetHashCode()
+        {
+            return HashCode.Combine(_value, _type);
+        }
+    }
+
+    /// <summary>
+    /// Represents the type of a PLC value
+    /// </summary>
+    public enum PlcValueType
+    {
+        Bool,
+        Sint,
+        Int,
+        Dint,
+        Lint,
+        Usint,
+        Uint,
+        Udint,
+        Ulint,
+        Real,
+        Lreal,
+        String,
+        Udt
+    }
+}
