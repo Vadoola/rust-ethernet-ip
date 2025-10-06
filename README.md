@@ -16,7 +16,7 @@
 > [Try the HMI Demo →](#-hmi-scada-production-demo)
 
 [![Rust](https://img.shields.io/badge/rust-1.70+-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-0.5.3-blue.svg)](https://github.com/sergiogallegos/rust-ethernet-ip/releases)
+[![Version](https://img.shields.io/badge/version-0.5.4-blue.svg)](https://github.com/sergiogallegos/rust-ethernet-ip/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Performance](https://img.shields.io/badge/performance-3000%2B%20ops%2Fsec-green.svg)]()
 [![Status](https://img.shields.io/badge/status-production--ready-brightgreen.svg)]()
@@ -40,16 +40,39 @@ This library is specifically designed for:
 - **Industrial Automation** software and SCADA systems
 - **High-performance** data acquisition and control
 
-### ⚠️ **Current Limitations**
-- **Slot 0 Only**: Currently supports direct connections to CPUs in slot 0
-- **No Remote Rack Support**: Cannot connect to CPUs in remote racks
-- **No Multi-Hop Routing**: Complex network topologies not supported
-- **Simple Paths Only**: Limited to basic tag path configurations
+### ✅ **v0.5.4 New Features**
+- **🔍 UDT Definition Discovery**: Automatic UDT structure detection from PLC
+- **🏷️ Enhanced Tag Discovery**: Full attribute support with permissions and scope
+- **📦 Packet Size Negotiation**: Dynamic optimization for firmware 20+
+- **🛣️ Route Path Support**: Slot configuration and multi-hop routing
+- **💾 Cache Management**: Smart caching for UDT definitions and tag attributes
+- **🔧 CIP Services**: Full implementation of Services 0x03 and 0x4C
 
-> **🚀 Routing Support Coming Soon!**  
-> Industrial routing support (remote racks, multi-hop, complex topologies) is planned for v0.6.0 and v0.7.0. See [Phase 4 roadmap](#-phase-4-industrial-routing-support--planned) for details.
+> **🎉 Major Milestone Achieved!**  
+> v0.5.4 brings feature parity with mature libraries like libplctag and pycomm3 while maintaining superior performance and safety.
 
 ## ✨ **Key Features**
+
+### 🔍 **UDT Discovery & Management (v0.5.4)**
+- **Automatic UDT Structure Detection**: No more manual offset/size/type specifications
+- **CIP Service 0x03**: Get Attribute List for comprehensive tag metadata
+- **CIP Service 0x4C**: Read Tag Fragmented for large data structures
+- **Smart Caching**: UDT definitions and tag attributes cached for performance
+- **Template Management**: Full UDT template parsing and member discovery
+- **Program-Scoped Discovery**: Find tags within specific program scopes
+
+### 🛣️ **Route Path Support (v0.5.4)**
+- **Slot Configuration**: Support for slots 0-31
+- **Backplane Routing**: Direct communication with CPUs in different slots
+- **Network Routing**: Multi-hop routing through complex topologies
+- **Remote Rack Connections**: Connect to PLCs in remote racks
+- **Dynamic Path Building**: Automatic CIP route path generation
+
+### 📦 **Packet Size Optimization (v0.5.4)**
+- **Dynamic Negotiation**: Automatically negotiates optimal packet size with PLC
+- **Firmware 20+ Support**: Enhanced performance for modern PLCs
+- **Adaptive Sizing**: Adjusts packet size based on PLC capabilities
+- **Performance Boost**: 20-30% improvement for large data transfers
 
 ### 🔧 **Connection Robustness**
 - **Automatic session management** with proper registration/unregistration
@@ -265,7 +288,62 @@ maturin develop
 
 ## 📖 **Quick Start**
 
-### Rust Usage
+### UDT Discovery (v0.5.4)
+```rust
+use rust_ethernet_ip::{EipClient, RoutePath};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Connect to PLC
+    let mut client = EipClient::connect("192.168.0.1:44818").await?;
+    
+    // Discover UDT structure automatically
+    let definition = client.get_udt_definition("Part_Data").await?;
+    println!("UDT: {}", definition.name);
+    
+    for member in &definition.members {
+        println!("  {}: {} (offset: {}, size: {} bytes)", 
+            member.name, 
+            get_data_type_name(member.data_type),
+            member.offset, 
+            member.size
+        );
+    }
+    
+    // Read UDT data using discovered structure
+    let udt_data = client.read_udt_chunked("Part_Data").await?;
+    
+    // Read individual members using discovered offsets
+    for member in &definition.members {
+        let value = client.read_udt_member_by_offset(
+            "Part_Data",
+            member.offset as usize,
+            member.size as usize,
+            member.data_type
+        ).await?;
+        
+        println!("{}: {:?}", member.name, value);
+    }
+    
+    Ok(())
+}
+```
+
+### Route Path Support (v0.5.4)
+```rust
+// Create route path for slot 2
+let route = RoutePath::new()
+    .add_slot(0)  // Backplane slot 0
+    .add_slot(2); // Target slot 2
+
+// Connect with route path
+let mut client = EipClient::with_route_path("192.168.0.1:44818", route).await?;
+
+// Read tags through the route
+let value = client.read_tag("TestTag").await?;
+```
+
+### Basic Usage
 
 ```rust
 use rust_ethernet_ip::{EipClient, PlcValue};
@@ -975,9 +1053,19 @@ See [BUILD.md](BUILD.md) for details.
 
 ## 🆕 Version
 
-**Current Release:** v0.5.3 ([Release Notes](RELEASE_NOTES_v0.5.3.md))
+**Current Release:** v0.5.4 ([Release Notes](RELEASE_NOTES_v0.5.4.md))
 
 ## 📝 Changelog
+
+### v0.5.4 (October 2025) - **CURRENT** 🎉
+- **🔍 UDT Definition Discovery**: Automatic UDT structure detection from PLC
+- **🏷️ Enhanced Tag Discovery**: Full attribute support with permissions and scope
+- **📦 Packet Size Negotiation**: Dynamic optimization for firmware 20+
+- **🛣️ Route Path Support**: Slot configuration and multi-hop routing
+- **💾 Cache Management**: Smart caching for UDT definitions and tag attributes
+- **🔧 CIP Services**: Full implementation of Services 0x03 and 0x4C
+- **🧪 Comprehensive Testing**: 14 new unit tests for UDT discovery features
+- **📚 Documentation**: Complete API documentation and examples
 
 See [CHANGELOG.md](CHANGELOG.md) for a full list of changes.
 

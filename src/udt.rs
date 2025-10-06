@@ -1,4 +1,4 @@
-use crate::error::Result;
+use crate::error::{EtherNetIpError, Result};
 use crate::PlcValue;
 use std::collections::HashMap;
 
@@ -18,16 +18,336 @@ pub struct UdtMember {
     pub size: u32,
 }
 
+/// UDT Template information from PLC
+#[derive(Debug, Clone)]
+pub struct UdtTemplate {
+    pub template_id: u32,
+    pub name: String,
+    pub size: u32,
+    pub member_count: u16,
+    pub members: Vec<UdtMember>,
+}
+
+/// Tag attributes from PLC
+#[derive(Debug, Clone)]
+pub struct TagAttributes {
+    pub name: String,
+    pub data_type: u16,
+    pub data_type_name: String,
+    pub dimensions: Vec<u32>,
+    pub permissions: TagPermissions,
+    pub scope: TagScope,
+    pub template_instance_id: Option<u32>,
+    pub size: u32,
+}
+
+/// Tag permissions
+#[derive(Debug, Clone, PartialEq)]
+pub enum TagPermissions {
+    ReadOnly,
+    ReadWrite,
+    WriteOnly,
+    Unknown,
+}
+
+/// Tag scope
+#[derive(Debug, Clone, PartialEq)]
+pub enum TagScope {
+    Controller,
+    Program(String),
+    Unknown,
+}
+
 /// Manager for UDT operations
 #[derive(Debug)]
 pub struct UdtManager {
-    _definitions: HashMap<String, UdtDefinition>,
+    definitions: HashMap<String, UdtDefinition>,
+    templates: HashMap<u32, UdtTemplate>,
+    tag_attributes: HashMap<String, TagAttributes>,
 }
 
 impl UdtManager {
     pub fn new() -> Self {
         Self {
-            _definitions: HashMap::new(),
+            definitions: HashMap::new(),
+            templates: HashMap::new(),
+            tag_attributes: HashMap::new(),
+        }
+    }
+
+    /// Adds a UDT definition to the cache
+    pub fn add_definition(&mut self, definition: UdtDefinition) {
+        self.definitions.insert(definition.name.clone(), definition);
+    }
+
+    /// Gets a cached UDT definition
+    pub fn get_definition(&self, name: &str) -> Option<&UdtDefinition> {
+        self.definitions.get(name)
+    }
+
+    /// Adds a UDT template to the cache
+    pub fn add_template(&mut self, template: UdtTemplate) {
+        self.templates.insert(template.template_id, template);
+    }
+
+    /// Gets a cached UDT template
+    pub fn get_template(&self, template_id: u32) -> Option<&UdtTemplate> {
+        self.templates.get(&template_id)
+    }
+
+    /// Adds tag attributes to the cache
+    pub fn add_tag_attributes(&mut self, attributes: TagAttributes) {
+        self.tag_attributes
+            .insert(attributes.name.clone(), attributes);
+    }
+
+    /// Gets cached tag attributes
+    pub fn get_tag_attributes(&self, name: &str) -> Option<&TagAttributes> {
+        self.tag_attributes.get(name)
+    }
+
+    /// Lists all cached UDT definitions
+    pub fn list_definitions(&self) -> Vec<String> {
+        self.definitions.keys().cloned().collect()
+    }
+
+    /// Lists all cached templates
+    pub fn list_templates(&self) -> Vec<u32> {
+        self.templates.keys().cloned().collect()
+    }
+
+    /// Lists all cached tag attributes
+    pub fn list_tag_attributes(&self) -> Vec<String> {
+        self.tag_attributes.keys().cloned().collect()
+    }
+
+    /// Clears all caches
+    pub fn clear_cache(&mut self) {
+        self.definitions.clear();
+        self.templates.clear();
+        self.tag_attributes.clear();
+    }
+
+    /// Parses UDT template data from CIP response
+    pub fn parse_udt_template(&self, template_id: u32, data: &[u8]) -> Result<UdtTemplate> {
+        if data.len() < 8 {
+            return Err(EtherNetIpError::Protocol(
+                "UDT template data too short".to_string(),
+            ));
+        }
+
+        let mut offset = 0;
+
+        // Parse template header
+        let structure_size = u32::from_le_bytes([
+            data[offset],
+            data[offset + 1],
+            data[offset + 2],
+            data[offset + 3],
+        ]);
+        offset += 4;
+
+        let member_count = u16::from_le_bytes([data[offset], data[offset + 1]]);
+        offset += 2;
+
+        // Skip reserved bytes
+        offset += 2;
+
+        let mut members = Vec::new();
+        let mut current_offset = 0u32;
+
+        // Parse each member
+        for i in 0..member_count {
+            if offset + 8 > data.len() {
+                return Err(EtherNetIpError::Protocol(format!(
+                    "UDT template member {} data incomplete",
+                    i
+                )));
+            }
+
+            // Parse member info
+            let member_info = u32::from_le_bytes([
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
+            ]);
+            offset += 4;
+
+            let member_name_length = u16::from_le_bytes([data[offset], data[offset + 1]]);
+            offset += 2;
+
+            // Skip reserved bytes
+            offset += 2;
+
+            // Extract member properties from member_info
+            let data_type = (member_info & 0xFFFF) as u16;
+            let _dimensions = ((member_info >> 16) & 0xFF) as u8;
+
+            // Read member name
+            if offset + member_name_length as usize > data.len() {
+                return Err(EtherNetIpError::Protocol(format!(
+                    "UDT template member {} name data incomplete",
+                    i
+                )));
+            }
+
+            let name_bytes = &data[offset..offset + member_name_length as usize];
+            let member_name = String::from_utf8_lossy(name_bytes).to_string();
+            offset += member_name_length as usize;
+
+            // Align to 4-byte boundary
+            offset = (offset + 3) & !3;
+
+            // Calculate member size based on data type
+            let member_size = self.get_data_type_size(data_type);
+
+            // Create member
+            let member = UdtMember {
+                name: member_name,
+                data_type,
+                offset: current_offset,
+                size: member_size,
+            };
+
+            members.push(member);
+            current_offset += member_size;
+        }
+
+        Ok(UdtTemplate {
+            template_id,
+            name: format!("Template_{}", template_id),
+            size: structure_size,
+            member_count,
+            members,
+        })
+    }
+
+    /// Gets the size of a data type in bytes
+    fn get_data_type_size(&self, data_type: u16) -> u32 {
+        match data_type {
+            0x00C1 => 1,  // BOOL
+            0x00C2 => 2,  // INT
+            0x00C3 => 4,  // DINT
+            0x00C4 => 4,  // DINT
+            0x00C5 => 8,  // LINT
+            0x00C6 => 2,  // UINT
+            0x00C7 => 4,  // UDINT
+            0x00C8 => 8,  // ULINT
+            0x00CA => 4,  // REAL
+            0x00CB => 8,  // LREAL
+            0x00CE => 84, // STRING (max 82 chars + 2 length bytes)
+            0x00CF => 1,  // SINT
+            0x00D0 => 1,  // USINT
+            0x00D1 => 2,  // UINT
+            0x00D2 => 4,  // UDINT
+            0x00D3 => 8,  // ULINT
+            _ => 4,       // Default to 4 bytes for unknown types
+        }
+    }
+
+    /// Parses tag attributes from CIP response
+    pub fn parse_tag_attributes(&self, tag_name: &str, data: &[u8]) -> Result<TagAttributes> {
+        if data.len() < 8 {
+            return Err(EtherNetIpError::Protocol(
+                "Tag attributes data too short".to_string(),
+            ));
+        }
+
+        let mut offset = 0;
+
+        // Parse data type
+        let data_type = u16::from_le_bytes([data[offset], data[offset + 1]]);
+        offset += 2;
+
+        // Parse size
+        let size = u32::from_le_bytes([
+            data[offset],
+            data[offset + 1],
+            data[offset + 2],
+            data[offset + 3],
+        ]);
+        offset += 4;
+
+        // Parse dimensions (if present)
+        let mut dimensions = Vec::new();
+        if data.len() > offset {
+            let dimension_count = data[offset] as usize;
+            offset += 1;
+
+            for _ in 0..dimension_count {
+                if offset + 4 <= data.len() {
+                    let dim = u32::from_le_bytes([
+                        data[offset],
+                        data[offset + 1],
+                        data[offset + 2],
+                        data[offset + 3],
+                    ]);
+                    dimensions.push(dim);
+                    offset += 4;
+                }
+            }
+        }
+
+        // Parse permissions (simplified - would need more CIP data)
+        let permissions = TagPermissions::ReadWrite; // Default assumption
+
+        // Parse scope (simplified - would need more CIP data)
+        let scope = if tag_name.contains(':') {
+            let parts: Vec<&str> = tag_name.split(':').collect();
+            if parts.len() >= 2 {
+                TagScope::Program(parts[0].to_string())
+            } else {
+                TagScope::Controller
+            }
+        } else {
+            TagScope::Controller
+        };
+
+        // Get data type name
+        let data_type_name = self.get_data_type_name(data_type);
+
+        // Check if this is a UDT (has template instance ID)
+        let template_instance_id = if data_type == 0x00A0 {
+            // UDT type
+            Some(0) // Would need to extract from additional CIP data
+        } else {
+            None
+        };
+
+        Ok(TagAttributes {
+            name: tag_name.to_string(),
+            data_type,
+            data_type_name,
+            dimensions,
+            permissions,
+            scope,
+            template_instance_id,
+            size,
+        })
+    }
+
+    /// Gets the human-readable name of a data type
+    fn get_data_type_name(&self, data_type: u16) -> String {
+        match data_type {
+            0x00C1 => "BOOL".to_string(),
+            0x00C2 => "INT".to_string(),
+            0x00C3 => "DINT".to_string(),
+            0x00C4 => "DINT".to_string(),
+            0x00C5 => "LINT".to_string(),
+            0x00C6 => "UINT".to_string(),
+            0x00C7 => "UDINT".to_string(),
+            0x00C8 => "ULINT".to_string(),
+            0x00CA => "REAL".to_string(),
+            0x00CB => "LREAL".to_string(),
+            0x00CE => "STRING".to_string(),
+            0x00CF => "SINT".to_string(),
+            0x00D0 => "USINT".to_string(),
+            0x00D1 => "UINT".to_string(),
+            0x00D2 => "UDINT".to_string(),
+            0x00D3 => "ULINT".to_string(),
+            0x00A0 => "UDT".to_string(),
+            _ => format!("UNKNOWN(0x{:04X})", data_type),
         }
     }
 
@@ -37,7 +357,10 @@ impl UdtManager {
         // In a real implementation, this would use the UDT definition from the PLC
         // For now, we'll return the raw data as a generic UDT with unknown structure
         let mut result = HashMap::new();
-        result.insert("raw_data".to_string(), PlcValue::String(format!("{:02X?}", data)));
+        result.insert(
+            "raw_data".to_string(),
+            PlcValue::String(format!("{:02X?}", data)),
+        );
         result.insert("size".to_string(), PlcValue::Dint(data.len() as i32));
         Ok(PlcValue::Udt(result))
     }
@@ -58,6 +381,8 @@ impl Default for UdtManager {
         Self::new()
     }
 }
+
+// Note: Types are already defined above, no need to re-export
 
 /// Represents a User Defined Type (UDT)
 #[derive(Debug, Clone)]
@@ -136,7 +461,10 @@ impl UserDefinedType {
     }
 
     /// Converts a `HashMap` of member values to raw UDT bytes
-    pub fn from_hash_map(&self, values: &HashMap<String, PlcValue>) -> crate::error::Result<Vec<u8>> {
+    pub fn from_hash_map(
+        &self,
+        values: &HashMap<String, PlcValue>,
+    ) -> crate::error::Result<Vec<u8>> {
         let mut data = vec![0u8; self.size as usize];
 
         for member in &self.members {
@@ -144,13 +472,14 @@ impl UserDefinedType {
                 let member_data = self.serialize_member_value(member, value)?;
                 let offset = member.offset as usize;
                 let end_offset = offset + member_data.len();
-                
+
                 if end_offset <= data.len() {
                     data[offset..end_offset].copy_from_slice(&member_data);
                 } else {
-                    return Err(crate::error::EtherNetIpError::Protocol(
-                        format!("Member {} data exceeds UDT size", member.name),
-                    ));
+                    return Err(crate::error::EtherNetIpError::Protocol(format!(
+                        "Member {} data exceeds UDT size",
+                        member.name
+                    )));
                 }
             }
         }
@@ -166,14 +495,16 @@ impl UserDefinedType {
                 let member_data = &data[offset..offset + member.size as usize];
                 self.parse_member_value(member, member_data)
             } else {
-                Err(crate::error::EtherNetIpError::Protocol(
-                    format!("Member {} data incomplete", member_name),
-                ))
+                Err(crate::error::EtherNetIpError::Protocol(format!(
+                    "Member {} data incomplete",
+                    member_name
+                )))
             }
         } else {
-            Err(crate::error::EtherNetIpError::TagNotFound(
-                format!("UDT member '{}' not found", member_name),
-            ))
+            Err(crate::error::EtherNetIpError::TagNotFound(format!(
+                "UDT member '{}' not found",
+                member_name
+            )))
         }
     }
 
@@ -188,19 +519,21 @@ impl UserDefinedType {
             let member_data = self.serialize_member_value(member, value)?;
             let offset = member.offset as usize;
             let end_offset = offset + member_data.len();
-            
+
             if end_offset <= data.len() {
                 data[offset..end_offset].copy_from_slice(&member_data);
                 Ok(())
             } else {
-                Err(crate::error::EtherNetIpError::Protocol(
-                    format!("Member {} data exceeds UDT size", member_name),
-                ))
+                Err(crate::error::EtherNetIpError::Protocol(format!(
+                    "Member {} data exceeds UDT size",
+                    member_name
+                )))
             }
         } else {
-            Err(crate::error::EtherNetIpError::TagNotFound(
-                format!("UDT member '{}' not found", member_name),
-            ))
+            Err(crate::error::EtherNetIpError::TagNotFound(format!(
+                "UDT member '{}' not found",
+                member_name
+            )))
         }
     }
 
@@ -356,9 +689,10 @@ impl UserDefinedType {
                 bytes.copy_from_slice(&data[..8]);
                 Ok(PlcValue::Ulint(u64::from_le_bytes(bytes)))
             }
-            _ => Err(crate::error::EtherNetIpError::Protocol(
-                format!("Unsupported UDT data type: 0x{:04X}", member.data_type),
-            )),
+            _ => Err(crate::error::EtherNetIpError::Protocol(format!(
+                "Unsupported UDT data type: 0x{:04X}",
+                member.data_type
+            ))),
         }
     }
 
@@ -369,87 +703,69 @@ impl UserDefinedType {
         value: &PlcValue,
     ) -> crate::error::Result<Vec<u8>> {
         match member.data_type {
-            0x00C1 => {
-                match value {
-                    PlcValue::Bool(b) => Ok(vec![if *b { 1 } else { 0 }]),
-                    _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
-                        expected: "BOOL".to_string(),
-                        actual: format!("{:?}", value),
-                    }),
-                }
-            }
-            0x00C2 => {
-                match value {
-                    PlcValue::Int(i) => Ok(i.to_le_bytes().to_vec()),
-                    _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
-                        expected: "INT".to_string(),
-                        actual: format!("{:?}", value),
-                    }),
-                }
-            }
-            0x00C3 | 0x00C4 => {
-                match value {
-                    PlcValue::Dint(d) => Ok(d.to_le_bytes().to_vec()),
-                    _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
-                        expected: "DINT".to_string(),
-                        actual: format!("{:?}", value),
-                    }),
-                }
-            }
-            0x00C5 => {
-                match value {
-                    PlcValue::Lint(l) => Ok(l.to_le_bytes().to_vec()),
-                    _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
-                        expected: "LINT".to_string(),
-                        actual: format!("{:?}", value),
-                    }),
-                }
-            }
-            0x00C6 => {
-                match value {
-                    PlcValue::Uint(w) => Ok(w.to_le_bytes().to_vec()),
-                    _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
-                        expected: "UINT".to_string(),
-                        actual: format!("{:?}", value),
-                    }),
-                }
-            }
-            0x00C7 => {
-                match value {
-                    PlcValue::Udint(d) => Ok(d.to_le_bytes().to_vec()),
-                    _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
-                        expected: "UDINT".to_string(),
-                        actual: format!("{:?}", value),
-                    }),
-                }
-            }
-            0x00C8 => {
-                match value {
-                    PlcValue::Ulint(l) => Ok(l.to_le_bytes().to_vec()),
-                    _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
-                        expected: "ULINT".to_string(),
-                        actual: format!("{:?}", value),
-                    }),
-                }
-            }
-            0x00CA => {
-                match value {
-                    PlcValue::Real(r) => Ok(r.to_le_bytes().to_vec()),
-                    _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
-                        expected: "REAL".to_string(),
-                        actual: format!("{:?}", value),
-                    }),
-                }
-            }
-            0x00CB => {
-                match value {
-                    PlcValue::Lreal(l) => Ok(l.to_le_bytes().to_vec()),
-                    _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
-                        expected: "LREAL".to_string(),
-                        actual: format!("{:?}", value),
-                    }),
-                }
-            }
+            0x00C1 => match value {
+                PlcValue::Bool(b) => Ok(vec![if *b { 1 } else { 0 }]),
+                _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
+                    expected: "BOOL".to_string(),
+                    actual: format!("{:?}", value),
+                }),
+            },
+            0x00C2 => match value {
+                PlcValue::Int(i) => Ok(i.to_le_bytes().to_vec()),
+                _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
+                    expected: "INT".to_string(),
+                    actual: format!("{:?}", value),
+                }),
+            },
+            0x00C3 | 0x00C4 => match value {
+                PlcValue::Dint(d) => Ok(d.to_le_bytes().to_vec()),
+                _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
+                    expected: "DINT".to_string(),
+                    actual: format!("{:?}", value),
+                }),
+            },
+            0x00C5 => match value {
+                PlcValue::Lint(l) => Ok(l.to_le_bytes().to_vec()),
+                _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
+                    expected: "LINT".to_string(),
+                    actual: format!("{:?}", value),
+                }),
+            },
+            0x00C6 => match value {
+                PlcValue::Uint(w) => Ok(w.to_le_bytes().to_vec()),
+                _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
+                    expected: "UINT".to_string(),
+                    actual: format!("{:?}", value),
+                }),
+            },
+            0x00C7 => match value {
+                PlcValue::Udint(d) => Ok(d.to_le_bytes().to_vec()),
+                _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
+                    expected: "UDINT".to_string(),
+                    actual: format!("{:?}", value),
+                }),
+            },
+            0x00C8 => match value {
+                PlcValue::Ulint(l) => Ok(l.to_le_bytes().to_vec()),
+                _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
+                    expected: "ULINT".to_string(),
+                    actual: format!("{:?}", value),
+                }),
+            },
+            0x00CA => match value {
+                PlcValue::Real(r) => Ok(r.to_le_bytes().to_vec()),
+                _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
+                    expected: "REAL".to_string(),
+                    actual: format!("{:?}", value),
+                }),
+            },
+            0x00CB => match value {
+                PlcValue::Lreal(l) => Ok(l.to_le_bytes().to_vec()),
+                _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
+                    expected: "LREAL".to_string(),
+                    actual: format!("{:?}", value),
+                }),
+            },
             0x00CE => {
                 match value {
                     PlcValue::String(s) => {
@@ -469,54 +785,45 @@ impl UserDefinedType {
                     }),
                 }
             }
-            0x00CF => {
-                match value {
-                    PlcValue::Sint(s) => Ok(vec![*s as u8]),
-                    _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
-                        expected: "SINT".to_string(),
-                        actual: format!("{:?}", value),
-                    }),
-                }
-            }
-            0x00D0 => {
-                match value {
-                    PlcValue::Usint(u) => Ok(vec![*u]),
-                    _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
-                        expected: "USINT".to_string(),
-                        actual: format!("{:?}", value),
-                    }),
-                }
-            }
-            0x00D1 => {
-                match value {
-                    PlcValue::Uint(u) => Ok(u.to_le_bytes().to_vec()),
-                    _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
-                        expected: "UINT".to_string(),
-                        actual: format!("{:?}", value),
-                    }),
-                }
-            }
-            0x00D2 => {
-                match value {
-                    PlcValue::Udint(u) => Ok(u.to_le_bytes().to_vec()),
-                    _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
-                        expected: "UDINT".to_string(),
-                        actual: format!("{:?}", value),
-                    }),
-                }
-            }
-            0x00D3 => {
-                match value {
-                    PlcValue::Ulint(u) => Ok(u.to_le_bytes().to_vec()),
-                    _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
-                        expected: "ULINT".to_string(),
-                        actual: format!("{:?}", value),
-                    }),
-                }
-            }
-            _ => Err(crate::error::EtherNetIpError::Protocol(
-                format!("Unsupported UDT data type for serialization: 0x{:04X}", member.data_type),
-            )),
+            0x00CF => match value {
+                PlcValue::Sint(s) => Ok(vec![*s as u8]),
+                _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
+                    expected: "SINT".to_string(),
+                    actual: format!("{:?}", value),
+                }),
+            },
+            0x00D0 => match value {
+                PlcValue::Usint(u) => Ok(vec![*u]),
+                _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
+                    expected: "USINT".to_string(),
+                    actual: format!("{:?}", value),
+                }),
+            },
+            0x00D1 => match value {
+                PlcValue::Uint(u) => Ok(u.to_le_bytes().to_vec()),
+                _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
+                    expected: "UINT".to_string(),
+                    actual: format!("{:?}", value),
+                }),
+            },
+            0x00D2 => match value {
+                PlcValue::Udint(u) => Ok(u.to_le_bytes().to_vec()),
+                _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
+                    expected: "UDINT".to_string(),
+                    actual: format!("{:?}", value),
+                }),
+            },
+            0x00D3 => match value {
+                PlcValue::Ulint(u) => Ok(u.to_le_bytes().to_vec()),
+                _ => Err(crate::error::EtherNetIpError::DataTypeMismatch {
+                    expected: "ULINT".to_string(),
+                    actual: format!("{:?}", value),
+                }),
+            },
+            _ => Err(crate::error::EtherNetIpError::Protocol(format!(
+                "Unsupported UDT data type for serialization: 0x{:04X}",
+                member.data_type
+            ))),
         }
     }
 }

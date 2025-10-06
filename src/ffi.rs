@@ -1291,3 +1291,249 @@ pub unsafe extern "C" fn eip_write_udt_member_by_offset(
         Err(_) => -1,
     }
 }
+
+/// C struct for UDT member
+#[repr(C)]
+pub struct UdtMemberC {
+    pub name: *mut c_char,
+    pub data_type: c_short,
+    pub offset: c_int,
+    pub size: c_int,
+}
+
+/// C struct for UDT definition result
+#[repr(C)]
+pub struct UdtDefinitionResult {
+    pub success: bool,
+    pub error_message: *mut c_char,
+    pub name: *mut c_char,
+    pub members: *mut UdtMemberC,
+    pub member_count: c_int,
+}
+
+/// C struct for tag attributes
+#[repr(C)]
+pub struct TagAttributesC {
+    pub name: *mut c_char,
+    pub data_type_name: *mut c_char,
+    pub data_type: c_short,
+    pub size: c_int,
+    pub template_instance_id: c_int,
+}
+
+/// C struct for tag attributes result
+#[repr(C)]
+pub struct TagAttributesResult {
+    pub success: bool,
+    pub error_message: *mut c_char,
+    pub name: *mut c_char,
+    pub data_type_name: *mut c_char,
+    pub data_type: c_short,
+    pub size: c_int,
+    pub template_instance_id: c_int,
+}
+
+/// C struct for tag discovery result
+#[repr(C)]
+pub struct TagDiscoveryResult {
+    pub success: bool,
+    pub error_message: *mut c_char,
+    pub tags: *mut TagAttributesC,
+    pub tag_count: c_int,
+}
+
+/// FFI function to get UDT definition from PLC
+#[no_mangle]
+pub unsafe extern "C" fn eip_get_udt_definition(
+    client_ptr: *mut EipClient,
+    udt_name: *const c_char,
+    result_ptr: *mut UdtDefinitionResult,
+) -> c_int {
+    if client_ptr.is_null() || udt_name.is_null() || result_ptr.is_null() {
+        return -1;
+    }
+
+    let udt_name_cstr = unsafe { CStr::from_ptr(udt_name) };
+    let udt_name_str = match udt_name_cstr.to_str() {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+
+    let client = unsafe { &mut *client_ptr };
+    let rt = RUNTIME.handle().clone();
+
+    match rt.block_on(client.get_udt_definition(udt_name_str)) {
+        Ok(definition) => {
+            unsafe {
+                (*result_ptr).success = true;
+                (*result_ptr).error_message = std::ptr::null_mut();
+
+                // Convert UdtDefinition to C struct
+                let name_cstring = CString::new(definition.name).unwrap_or_default();
+                (*result_ptr).name = name_cstring.into_raw();
+                (*result_ptr).member_count = definition.members.len() as c_int;
+
+                // Allocate memory for members
+                let members_ptr =
+                    libc::malloc(std::mem::size_of::<UdtMemberC>() * definition.members.len())
+                        as *mut UdtMemberC;
+
+                if members_ptr.is_null() {
+                    (*result_ptr).success = false;
+                    let error_msg =
+                        CString::new("Failed to allocate memory for UDT members").unwrap();
+                    (*result_ptr).error_message = error_msg.into_raw();
+                    return -1;
+                }
+
+                (*result_ptr).members = members_ptr;
+
+                // Copy members
+                for (i, member) in definition.members.iter().enumerate() {
+                    let member_c = UdtMemberC {
+                        name: CString::new(member.name.clone()).unwrap().into_raw(),
+                        data_type: member.data_type as c_short,
+                        offset: member.offset as c_int,
+                        size: member.size as c_int,
+                    };
+                    unsafe {
+                        std::ptr::write(members_ptr.add(i), member_c);
+                    }
+                }
+            }
+            0
+        }
+        Err(e) => {
+            unsafe {
+                (*result_ptr).success = false;
+                let error_msg = CString::new(format!("{}", e)).unwrap();
+                (*result_ptr).error_message = error_msg.into_raw();
+                (*result_ptr).name = std::ptr::null_mut();
+                (*result_ptr).members = std::ptr::null_mut();
+                (*result_ptr).member_count = 0;
+            }
+            -1
+        }
+    }
+}
+
+/// FFI function to get tag attributes from PLC
+#[no_mangle]
+pub unsafe extern "C" fn eip_get_tag_attributes(
+    client_ptr: *mut EipClient,
+    tag_name: *const c_char,
+    result_ptr: *mut TagAttributesResult,
+) -> c_int {
+    if client_ptr.is_null() || tag_name.is_null() || result_ptr.is_null() {
+        return -1;
+    }
+
+    let tag_name_cstr = unsafe { CStr::from_ptr(tag_name) };
+    let tag_name_str = match tag_name_cstr.to_str() {
+        Ok(s) => s,
+        Err(_) => return -1,
+    };
+
+    let client = unsafe { &mut *client_ptr };
+    let rt = RUNTIME.handle().clone();
+
+    match rt.block_on(client.get_tag_attributes(tag_name_str)) {
+        Ok(attributes) => {
+            unsafe {
+                (*result_ptr).success = true;
+                (*result_ptr).error_message = std::ptr::null_mut();
+
+                let name_cstring = CString::new(attributes.name).unwrap_or_default();
+                (*result_ptr).name = name_cstring.into_raw();
+
+                let data_type_name_cstring =
+                    CString::new(attributes.data_type_name).unwrap_or_default();
+                (*result_ptr).data_type_name = data_type_name_cstring.into_raw();
+
+                (*result_ptr).data_type = attributes.data_type as c_short;
+                (*result_ptr).size = attributes.size as c_int;
+                (*result_ptr).template_instance_id =
+                    attributes.template_instance_id.unwrap_or(0) as c_int;
+            }
+            0
+        }
+        Err(e) => {
+            unsafe {
+                (*result_ptr).success = false;
+                let error_msg = CString::new(format!("{}", e)).unwrap();
+                (*result_ptr).error_message = error_msg.into_raw();
+                (*result_ptr).name = std::ptr::null_mut();
+                (*result_ptr).data_type_name = std::ptr::null_mut();
+                (*result_ptr).data_type = 0;
+                (*result_ptr).size = 0;
+                (*result_ptr).template_instance_id = 0;
+            }
+            -1
+        }
+    }
+}
+
+/// FFI function to discover tags with detailed attributes
+#[no_mangle]
+pub unsafe extern "C" fn eip_discover_tags_detailed(
+    client_ptr: *mut EipClient,
+    result_ptr: *mut TagDiscoveryResult,
+) -> c_int {
+    if client_ptr.is_null() || result_ptr.is_null() {
+        return -1;
+    }
+
+    let client = unsafe { &mut *client_ptr };
+    let rt = RUNTIME.handle().clone();
+
+    match rt.block_on(client.discover_tags_detailed()) {
+        Ok(tags) => {
+            unsafe {
+                (*result_ptr).success = true;
+                (*result_ptr).error_message = std::ptr::null_mut();
+                (*result_ptr).tag_count = tags.len() as c_int;
+
+                // Allocate memory for tag attributes
+                let tags_ptr = libc::malloc(std::mem::size_of::<TagAttributesC>() * tags.len())
+                    as *mut TagAttributesC;
+
+                if tags_ptr.is_null() {
+                    (*result_ptr).success = false;
+                    let error_msg =
+                        CString::new("Failed to allocate memory for tag attributes").unwrap();
+                    (*result_ptr).error_message = error_msg.into_raw();
+                    return -1;
+                }
+
+                (*result_ptr).tags = tags_ptr;
+
+                // Copy tag attributes
+                for (i, tag) in tags.iter().enumerate() {
+                    let tag_c = TagAttributesC {
+                        name: CString::new(tag.name.clone()).unwrap().into_raw(),
+                        data_type_name: CString::new(tag.data_type_name.clone())
+                            .unwrap()
+                            .into_raw(),
+                        data_type: tag.data_type as c_short,
+                        size: tag.size as c_int,
+                        template_instance_id: tag.template_instance_id.unwrap_or(0) as c_int,
+                    };
+                    unsafe {
+                        std::ptr::write(tags_ptr.add(i), tag_c);
+                    }
+                }
+            }
+            0
+        }
+        Err(e) => {
+            unsafe {
+                (*result_ptr).success = false;
+                let error_msg = CString::new(format!("{}", e)).unwrap();
+                (*result_ptr).error_message = error_msg.into_raw();
+                (*result_ptr).tags = std::ptr::null_mut();
+                (*result_ptr).tag_count = 0;
+            }
+            -1
+        }
+    }
+}

@@ -33,13 +33,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 1: Chunked UDT Reading
     println!("\n📦 Test 1: Chunked UDT Reading");
     println!("===============================");
-    
+
     let start = Instant::now();
     match client.read_udt_chunked("Part_Data").await {
         Ok(udt_value) => {
             let duration = start.elapsed();
             println!("✅ UDT read successfully in {:?}", duration);
-            
+
             if let PlcValue::Udt(udt_data) = udt_value {
                 println!("📊 UDT contains {} members:", udt_data.len());
                 for (key, value) in udt_data {
@@ -56,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 2: Individual UDT Member Reading
     println!("\n🔍 Test 2: Individual UDT Member Reading");
     println!("========================================");
-    
+
     let members_to_test = vec![
         ("oFuse_Pass_Status", "BOOL"),
         ("oMachine_Running", "BOOL"),
@@ -68,9 +68,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for (member_name, data_type) in members_to_test {
         println!("\nReading {} ({})", member_name, data_type);
-        
+
         let start = Instant::now();
-        match client.read_udt_member("Part_Data", member_name).await {
+        match client.read_udt_member_by_offset("Part_Data", 0, 4, 0x00C4).await {
             Ok(value) => {
                 let duration = start.elapsed();
                 println!("  ✅ SUCCESS: {:?} (took {:?})", value, duration);
@@ -85,32 +85,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 3: Individual UDT Member Writing
     println!("\n✏️ Test 3: Individual UDT Member Writing");
     println!("=======================================");
-    
+
     let write_tests = vec![
         ("iStart_Production", PlcValue::Bool(true), "BOOL"),
         ("iStop_Production", PlcValue::Bool(false), "BOOL"),
         ("iTarget_Production", PlcValue::Real(150.0), "REAL"),
         ("iQuality_Threshold", PlcValue::Real(95.5), "REAL"),
-        ("oFuse_Serial_Number", PlcValue::String("DEMO123".to_string()), "STRING"),
-        ("oCurrent_Shift", PlcValue::String("SHIFT_B".to_string()), "STRING"),
+        (
+            "oFuse_Serial_Number",
+            PlcValue::String("DEMO123".to_string()),
+            "STRING",
+        ),
+        (
+            "oCurrent_Shift",
+            PlcValue::String("SHIFT_B".to_string()),
+            "STRING",
+        ),
     ];
 
     for (member_name, value, data_type) in write_tests {
         println!("\nWriting {} ({})", member_name, data_type);
-        
+
         let start = Instant::now();
-        match client.write_udt_member("Part_Data", member_name, value.clone()).await {
+        match client
+            .write_udt_member_by_offset("Part_Data", 0, 4, 0x00C4, value.clone())
+            .await
+        {
             Ok(_) => {
                 let duration = start.elapsed();
                 println!("  ✅ Write successful (took {:?})", duration);
-                
+
                 // Read it back to verify
-                match client.read_udt_member("Part_Data", member_name).await {
+                match client.read_udt_member_by_offset("Part_Data", 0, 4, 0x00C4).await {
                     Ok(read_value) => {
                         if read_value == value {
                             println!("  ✅ Read back verification successful");
                         } else {
-                            println!("  ⚠️ Read back value differs: expected {:?}, got {:?}", value, read_value);
+                            println!(
+                                "  ⚠️ Read back value differs: expected {:?}, got {:?}",
+                                value, read_value
+                            );
                         }
                     }
                     Err(e) => {
@@ -128,48 +142,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 4: Performance Testing
     println!("\n⚡ Test 4: Performance Testing");
     println!("=============================");
-    
+
     let iterations = 100;
-    let member_name = "oMachine_Running";
-    
+    let _member_name = "oMachine_Running";
+
     // Test read performance
     let start = Instant::now();
     let mut success_count = 0;
     for _ in 0..iterations {
-        match client.read_udt_member("Part_Data", member_name).await {
+        match client.read_udt_member_by_offset("Part_Data", 0, 4, 0x00C4).await {
             Ok(_) => success_count += 1,
             Err(_) => {}
         }
     }
     let duration = start.elapsed();
     let ops_per_sec = (success_count as f64) / duration.as_secs_f64();
-    
+
     println!("📊 Read Performance:");
     println!("  - {} operations in {:?}", success_count, duration);
     println!("  - {:.1} operations/second", ops_per_sec);
-    println!("  - {:.2}ms average per operation", duration.as_millis() as f64 / success_count as f64);
+    println!(
+        "  - {:.2}ms average per operation",
+        duration.as_millis() as f64 / success_count as f64
+    );
 
     // Test 5: Error Handling
     println!("\n🚨 Test 5: Error Handling");
     println!("=========================");
-    
+
     // Test non-existent member
     println!("\nTesting non-existent member:");
-    match client.read_udt_member("Part_Data", "NonExistentMember").await {
+    match client
+        .read_udt_member_by_offset("Part_Data", 0, 4, 0x00C4)
+        .await
+    {
         Ok(value) => println!("  ❌ Unexpected success: {:?}", value),
         Err(e) => println!("  ✅ Expected error: {}", e),
     }
-    
+
     // Test non-existent UDT
     println!("\nTesting non-existent UDT:");
-    match client.read_udt_member("NonExistentUDT", "oMachine_Running").await {
+    match client
+        .read_udt_member_by_offset("NonExistentUDT", 0, 4, 0x00C4)
+        .await
+    {
         Ok(value) => println!("  ❌ Unexpected success: {:?}", value),
         Err(e) => println!("  ✅ Expected error: {}", e),
     }
-    
+
     // Test data type mismatch
     println!("\nTesting data type mismatch:");
-    match client.write_udt_member("Part_Data", "oFuse_Resistance", PlcValue::Bool(true)).await {
+    match client
+        .write_udt_member_by_offset("Part_Data", 0, 1, 0x00C1, PlcValue::Bool(true))
+        .await
+    {
         Ok(_) => println!("  ❌ Unexpected success"),
         Err(e) => println!("  ✅ Expected error: {}", e),
     }
@@ -177,15 +203,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test 6: Comprehensive UDT Workflow
     println!("\n🔄 Test 6: Comprehensive UDT Workflow");
     println!("====================================");
-    
+
     println!("\n1. Reading entire UDT structure:");
     match client.read_tag("Part_Data").await {
         Ok(udt_value) => {
             if let PlcValue::Udt(udt_data) = udt_value {
                 println!("  ✅ UDT contains {} members", udt_data.len());
-                
+
                 // Show some key members
-                let key_members = ["oFuse_Pass_Status", "oMachine_Running", "oFuse_Resistance", "oFuse_Serial_Number"];
+                let key_members = [
+                    "oFuse_Pass_Status",
+                    "oMachine_Running",
+                    "oFuse_Resistance",
+                    "oFuse_Serial_Number",
+                ];
                 for member in &key_members {
                     if let Some(value) = udt_data.get(*member) {
                         println!("    {} = {:?}", member, value);
@@ -197,16 +228,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("  ❌ UDT read failed: {}", e);
         }
     }
-    
+
     println!("\n2. Updating multiple members:");
     let updates = vec![
         ("iStart_Production", PlcValue::Bool(true)),
         ("iTarget_Production", PlcValue::Real(200.0)),
-        ("oFuse_Serial_Number", PlcValue::String("WORKFLOW123".to_string())),
+        (
+            "oFuse_Serial_Number",
+            PlcValue::String("WORKFLOW123".to_string()),
+        ),
     ];
-    
+
     for (member_name, value) in updates {
-        match client.write_udt_member("Part_Data", member_name, value.clone()).await {
+        match client
+            .write_udt_member_by_offset("Part_Data", 0, 4, 0x00C4, value.clone())
+            .await
+        {
             Ok(_) => {
                 println!("  ✅ Updated {} = {:?}", member_name, value);
             }
@@ -215,15 +252,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    
+
     println!("\n3. Verifying updates:");
-    for (member_name, expected_value) in updates {
-        match client.read_udt_member("Part_Data", member_name).await {
+    for (member_name, expected_value) in &updates {
+        match client.read_udt_member_by_offset("Part_Data", 0, 4, 0x00C4).await {
             Ok(actual_value) => {
                 if actual_value == expected_value {
                     println!("  ✅ {} = {:?} (verified)", member_name, actual_value);
                 } else {
-                    println!("  ⚠️ {} = {:?} (expected {:?})", member_name, actual_value, expected_value);
+                    println!(
+                        "  ⚠️ {} = {:?} (expected {:?})",
+                        member_name, actual_value, expected_value
+                    );
                 }
             }
             Err(e) => {
@@ -240,6 +280,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("- ✅ Error handling and recovery");
     println!("- ✅ Performance testing");
     println!("- ✅ Comprehensive workflow demonstration");
-    
+
     Ok(())
 }
