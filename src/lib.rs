@@ -996,14 +996,15 @@ impl PlcValue {
 /// async fn read_with_retry(client: &mut EipClient, tag: &str, retries: u32) -> Result<PlcValue, EtherNetIpError> {
 ///     for attempt in 0..retries {
 ///         match client.read_tag(tag).await {
-///             Ok(value) => Ok(value),
+///             Ok(value) => return Ok(value),
 ///             Err(EtherNetIpError::Connection(_)) => {
 ///                 if attempt < retries - 1 {
 ///                     tokio::time::sleep(Duration::from_secs(1)).await;
 ///                     continue;
 ///                 }
+///                 return Err(EtherNetIpError::Protocol("Max retries exceeded".to_string()));
 ///             }
-///             Err(e) => Err(e),
+///             Err(e) => return Err(e),
 ///         }
 ///     }
 ///     Err(EtherNetIpError::Protocol("Max retries exceeded".to_string()))
@@ -1611,6 +1612,7 @@ impl EipClient {
     ///
     /// ```no_run
     /// # async fn example() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    /// # use rust_ethernet_ip::PlcValue;
     /// # let mut client = rust_ethernet_ip::EipClient::connect("192.168.1.100:44818").await?;
     /// client.write_udt_member_by_offset("MyUDT", 0, 1, 0x00C1, PlcValue::Bool(true)).await?;
     /// # Ok(())

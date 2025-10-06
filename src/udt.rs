@@ -770,12 +770,18 @@ impl UserDefinedType {
                 match value {
                     PlcValue::String(s) => {
                         let mut result = Vec::new();
-                        let length = (s.len() as u16).min(82); // Max STRING length is 82
+                        let max_data_len = member.size.saturating_sub(2); // Subtract 2 for length bytes
+                        let max_chars = (max_data_len as usize).min(82); // Max STRING length is 82
+                        let length = (s.len() as u16).min(max_chars as u16);
                         result.extend_from_slice(&length.to_le_bytes());
-                        result.extend_from_slice(s.as_bytes());
-                        // Pad to even byte boundary
-                        if result.len() % 2 != 0 {
+                        result.extend_from_slice(&s.as_bytes()[..length as usize]);
+                        // Pad to even byte boundary, but don't exceed member size
+                        while result.len() < member.size as usize && result.len() % 2 != 0 {
                             result.push(0);
+                        }
+                        // Ensure we don't exceed member size
+                        if result.len() > member.size as usize {
+                            result.truncate(member.size as usize);
                         }
                         Ok(result)
                     }

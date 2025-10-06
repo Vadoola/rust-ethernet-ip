@@ -103,12 +103,15 @@ impl MockEipClient {
         udt_name: &str,
         member_name: &str,
     ) -> Result<PlcValue, Box<dyn std::error::Error>> {
-        if udt_name.ends_with("UDT")
-            || udt_name == "Part_Data"
-            || udt_name == "MyUDT"
-            || udt_name == "TestUDT"
-        {
+        if udt_name == "TestUDT" || udt_name == "MyUDT" || udt_name == "Part_Data" {
             let udt = create_test_udt_definition();
+            // Check if member exists first
+            if !udt.members.iter().any(|m| m.name == member_name) {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Member not found",
+                )));
+            }
             udt.read_member(&self.udt_data, member_name).map_err(|e| {
                 Box::new(std::io::Error::new(
                     std::io::ErrorKind::Other,
@@ -129,12 +132,15 @@ impl MockEipClient {
         member_name: &str,
         value: PlcValue,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        if udt_name.ends_with("UDT")
-            || udt_name == "Part_Data"
-            || udt_name == "MyUDT"
-            || udt_name == "TestUDT"
-        {
+        if udt_name == "TestUDT" || udt_name == "MyUDT" || udt_name == "Part_Data" {
             let udt = create_test_udt_definition();
+            // Check if member exists first
+            if !udt.members.iter().any(|m| m.name == member_name) {
+                return Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Member not found",
+                )));
+            }
             udt.write_member(&mut self.udt_data, member_name, &value)
                 .map_err(|e| {
                     Box::new(std::io::Error::new(
@@ -634,7 +640,7 @@ async fn test_udt_edge_cases() {
     let string_data = udt
         .serialize_member_value(&string_member, &PlcValue::String(max_string))
         .unwrap();
-    assert_eq!(string_data.len(), 84); // Should be exactly 84 bytes
+    assert_eq!(string_data.len(), 84); // Should be exactly 84 bytes (2 length + 82 data)
 
     // Test STRING with length exceeding maximum
     let too_long_string = "X".repeat(100);

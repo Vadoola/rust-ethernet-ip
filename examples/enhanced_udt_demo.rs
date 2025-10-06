@@ -70,7 +70,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("\nReading {} ({})", member_name, data_type);
 
         let start = Instant::now();
-        match client.read_udt_member_by_offset("Part_Data", 0, 4, 0x00C4).await {
+        match client
+            .read_udt_member_by_offset("Part_Data", 0, 4, 0x00C4)
+            .await
+        {
             Ok(value) => {
                 let duration = start.elapsed();
                 println!("  ✅ SUCCESS: {:?} (took {:?})", value, duration);
@@ -116,7 +119,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("  ✅ Write successful (took {:?})", duration);
 
                 // Read it back to verify
-                match client.read_udt_member_by_offset("Part_Data", 0, 4, 0x00C4).await {
+                match client
+                    .read_udt_member_by_offset("Part_Data", 0, 4, 0x00C4)
+                    .await
+                {
                     Ok(read_value) => {
                         if read_value == value {
                             println!("  ✅ Read back verification successful");
@@ -150,7 +156,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start = Instant::now();
     let mut success_count = 0;
     for _ in 0..iterations {
-        match client.read_udt_member_by_offset("Part_Data", 0, 4, 0x00C4).await {
+        match client
+            .read_udt_member_by_offset("Part_Data", 0, 4, 0x00C4)
+            .await
+        {
             Ok(_) => success_count += 1,
             Err(_) => {}
         }
@@ -239,7 +248,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     ];
 
-    for (member_name, value) in updates {
+    for (member_name, value) in &updates {
         match client
             .write_udt_member_by_offset("Part_Data", 0, 4, 0x00C4, value.clone())
             .await
@@ -255,9 +264,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n3. Verifying updates:");
     for (member_name, expected_value) in &updates {
-        match client.read_udt_member_by_offset("Part_Data", 0, 4, 0x00C4).await {
+        match client
+            .read_udt_member_by_offset("Part_Data", 0, 4, 0x00C4)
+            .await
+        {
             Ok(actual_value) => {
-                if actual_value == expected_value {
+                if actual_value == *expected_value {
                     println!("  ✅ {} = {:?} (verified)", member_name, actual_value);
                 } else {
                     println!(
