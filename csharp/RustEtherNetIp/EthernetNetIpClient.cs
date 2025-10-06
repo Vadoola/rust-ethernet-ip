@@ -153,6 +153,16 @@ namespace RustEtherNetIp
         [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_write_udt(int client_id, IntPtr tag_name, IntPtr value, int size);
 
+        // Enhanced UDT operations
+        [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int eip_read_udt_chunked(int client_id, IntPtr tag_name, IntPtr result, int max_size);
+
+        [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int eip_read_udt_member_by_offset(int client_id, IntPtr udt_name, int member_offset, int member_size, short data_type, IntPtr result, int max_size);
+
+        [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int eip_write_udt_member_by_offset(int client_id, IntPtr udt_name, int member_offset, int member_size, short data_type, IntPtr value, int size);
+
         // Tag management
         [DllImport("rust_ethernet_ip", CallingConvention = CallingConvention.Cdecl)]
         private static extern int eip_discover_tags(int client_id);
@@ -1094,6 +1104,118 @@ namespace RustEtherNetIp
 
             // Write the updated UDT back
             WriteUdt(tagName, udtValue);
+        }
+
+        /// <summary>
+        /// Reads a UDT using chunked reading to handle large structures that exceed packet size limits.
+        /// This method automatically handles partial transfer errors by reading the UDT in smaller chunks.
+        /// </summary>
+        /// <param name="tagName">Name of the UDT tag to read.</param>
+        /// <returns>PlcValue containing the UDT with nested structure support.</returns>
+        public PlcValue ReadUdtChunked(string tagName)
+        {
+            return ExecuteWithLock(() =>
+            {
+                CheckConnection();
+                IntPtr tagPtr = Marshal.StringToHGlobalAnsi(tagName);
+                IntPtr resultPtr = Marshal.AllocHGlobal(16384); // Larger buffer for chunked reading
+                try
+                {
+                    int result = eip_read_udt_chunked(_clientId, tagPtr, resultPtr, 16384);
+                    if (result != 0)
+                        throw new Exception($"Failed to read UDT tag '{tagName}' with chunked reading. Check tag exists and is UDT type.");
+                    
+                    // Convert the JSON result to PlcValue
+                    string jsonResult = Marshal.PtrToStringAnsi(resultPtr);
+                    if (string.IsNullOrEmpty(jsonResult))
+                        throw new Exception($"Empty response when reading UDT tag '{tagName}' with chunked reading.");
+                    
+                    return PlcValue.FromJson(jsonResult);
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(tagPtr);
+                    Marshal.FreeHGlobal(resultPtr);
+                }
+            });
+        }
+
+        /// <summary>
+        /// Reads a specific UDT member by offset, size, and data type.
+        /// This method allows direct access to UDT members without needing the full UDT structure.
+        /// </summary>
+        /// <param name="udtName">Name of the UDT tag.</param>
+        /// <param name="memberOffset">Byte offset of the member in the UDT.</param>
+        /// <param name="memberSize">Size of the member in bytes.</param>
+        /// <param name="dataType">CIP data type code (e.g., 0x00C1 for BOOL, 0x00CA for REAL).</param>
+        /// <returns>PlcValue containing the member value.</returns>
+        public PlcValue ReadUdtMemberByOffset(string udtName, int memberOffset, int memberSize, short dataType)
+        {
+            return ExecuteWithLock(() =>
+            {
+                CheckConnection();
+                IntPtr udtPtr = Marshal.StringToHGlobalAnsi(udtName);
+                IntPtr resultPtr = Marshal.AllocHGlobal(1024);
+                try
+                {
+                    int result = eip_read_udt_member_by_offset(_clientId, udtPtr, memberOffset, memberSize, dataType, resultPtr, 1024);
+                    if (result != 0)
+                        throw new Exception($"Failed to read UDT member at offset {memberOffset} from '{udtName}'. Check UDT exists and offset is valid.");
+                    
+                    // Convert the JSON result to PlcValue
+                    string jsonResult = Marshal.PtrToStringAnsi(resultPtr);
+                    if (string.IsNullOrEmpty(jsonResult))
+                        throw new Exception($"Empty response when reading UDT member from '{udtName}' at offset {memberOffset}.");
+                    
+                    return PlcValue.FromJson(jsonResult);
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(udtPtr);
+                    Marshal.FreeHGlobal(resultPtr);
+                }
+            });
+        }
+
+        /// <summary>
+        /// Writes a specific UDT member by offset, size, and data type.
+        /// This method allows direct writing to UDT members without needing the full UDT structure.
+        /// </summary>
+        /// <param name="udtName">Name of the UDT tag.</param>
+        /// <param name="memberOffset">Byte offset of the member in the UDT.</param>
+        /// <param name="memberSize">Size of the member in bytes.</param>
+        /// <param name="dataType">CIP data type code (e.g., 0x00C1 for BOOL, 0x00CA for REAL).</param>
+        /// <param name="value">PlcValue containing the value to write.</param>
+        public void WriteUdtMemberByOffset(string udtName, int memberOffset, int memberSize, short dataType, PlcValue value)
+        {
+            if (value == null)
+                throw new ArgumentNullException(nameof(value));
+
+            ExecuteWithLock(() =>
+            {
+                CheckConnection();
+                IntPtr udtPtr = Marshal.StringToHGlobalAnsi(udtName);
+                try
+                {
+                    // Serialize the value to JSON
+                    string jsonValue = value.ToJson();
+                    IntPtr valuePtr = Marshal.StringToHGlobalAnsi(jsonValue);
+                    try
+                    {
+                        int result = eip_write_udt_member_by_offset(_clientId, udtPtr, memberOffset, memberSize, dataType, valuePtr, jsonValue.Length);
+                        if (result != 0)
+                            throw new Exception($"Failed to write UDT member at offset {memberOffset} to '{udtName}'. Check UDT exists and offset is valid.");
+                    }
+                    finally
+                    {
+                        Marshal.FreeHGlobal(valuePtr);
+                    }
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(udtPtr);
+                }
+            });
         }
 
         #endregion

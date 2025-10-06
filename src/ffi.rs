@@ -7,7 +7,7 @@ use lazy_static::lazy_static;
 use serde_json;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
-use std::os::raw::{c_char, c_int};
+use std::os::raw::{c_char, c_int, c_short};
 use std::ptr;
 use std::sync::Mutex;
 
@@ -845,7 +845,7 @@ pub unsafe extern "C" fn eip_read_udt(
         return -1;
     };
 
-    let value = match RUNTIME.block_on(client.read_tag(tag_name_str)) {
+    let value = match RUNTIME.block_on(client.read_udt_chunked(tag_name_str)) {
         Ok(PlcValue::Udt(udt_data)) => udt_data,
         Ok(_) => return -1,  // Wrong data type
         Err(_) => return -1, // Error reading tag
@@ -1143,4 +1143,151 @@ pub unsafe extern "C" fn eip_configure_batch_operations(
 #[no_mangle]
 pub unsafe extern "C" fn eip_get_batch_config(_client_id: c_int, _config: *mut u8) -> c_int {
     -1 // Not implemented yet
+}
+
+// Enhanced UDT operations
+#[no_mangle]
+pub unsafe extern "C" fn eip_read_udt_chunked(
+    client_id: c_int,
+    tag_name: *const c_char,
+    result: *mut c_char,
+    max_size: c_int,
+) -> c_int {
+    if tag_name.is_null() || result.is_null() || max_size <= 0 {
+        return -1;
+    }
+
+    let Ok(tag_name_str) = unsafe { CStr::from_ptr(tag_name) }.to_str() else {
+        return -1;
+    };
+
+    let mut clients = FFI_CLIENTS.lock().unwrap();
+    let Some(client) = clients.get_mut(&client_id) else {
+        return -1;
+    };
+
+    let value = match RUNTIME.block_on(client.read_udt_chunked(tag_name_str)) {
+        Ok(PlcValue::Udt(udt_data)) => udt_data,
+        Ok(_) => return -1,  // Wrong data type
+        Err(_) => return -1, // Error reading tag
+    };
+
+    // Serialize UDT to JSON for C# consumption
+    let json_result = match serde_json::to_string(&value) {
+        Ok(json) => json,
+        Err(_) => return -1,
+    };
+
+    let Ok(c_string) = CString::new(json_result) else {
+        return -1;
+    };
+
+    let bytes = c_string.as_bytes_with_nul();
+    if bytes.len() > max_size as usize {
+        return -1; // JSON too long
+    }
+
+    unsafe {
+        ptr::copy_nonoverlapping(bytes.as_ptr(), result as *mut u8, bytes.len());
+    }
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn eip_read_udt_member_by_offset(
+    client_id: c_int,
+    udt_name: *const c_char,
+    member_offset: c_int,
+    member_size: c_int,
+    data_type: c_short,
+    result: *mut c_char,
+    max_size: c_int,
+) -> c_int {
+    if udt_name.is_null() || result.is_null() || max_size <= 0 {
+        return -1;
+    }
+
+    let Ok(udt_name_str) = unsafe { CStr::from_ptr(udt_name) }.to_str() else {
+        return -1;
+    };
+
+    let mut clients = FFI_CLIENTS.lock().unwrap();
+    let Some(client) = clients.get_mut(&client_id) else {
+        return -1;
+    };
+
+    let value = match RUNTIME.block_on(client.read_udt_member_by_offset(
+        udt_name_str,
+        member_offset as usize,
+        member_size as usize,
+        data_type as u16,
+    )) {
+        Ok(value) => value,
+        Err(_) => return -1,
+    };
+
+    // Serialize value to JSON for C# consumption
+    let json_result = match serde_json::to_string(&value) {
+        Ok(json) => json,
+        Err(_) => return -1,
+    };
+
+    let Ok(c_string) = CString::new(json_result) else {
+        return -1;
+    };
+
+    let bytes = c_string.as_bytes_with_nul();
+    if bytes.len() > max_size as usize {
+        return -1; // JSON too long
+    }
+
+    unsafe {
+        ptr::copy_nonoverlapping(bytes.as_ptr(), result as *mut u8, bytes.len());
+    }
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn eip_write_udt_member_by_offset(
+    client_id: c_int,
+    udt_name: *const c_char,
+    member_offset: c_int,
+    member_size: c_int,
+    data_type: c_short,
+    value: *const c_char,
+    size: c_int,
+) -> c_int {
+    if udt_name.is_null() || value.is_null() || size <= 0 {
+        return -1;
+    }
+
+    let Ok(udt_name_str) = unsafe { CStr::from_ptr(udt_name) }.to_str() else {
+        return -1;
+    };
+
+    let Ok(value_str) = unsafe { CStr::from_ptr(value) }.to_str() else {
+        return -1;
+    };
+
+    // Parse the value from JSON
+    let plc_value: PlcValue = match serde_json::from_str(value_str) {
+        Ok(value) => value,
+        Err(_) => return -1,
+    };
+
+    let mut clients = FFI_CLIENTS.lock().unwrap();
+    let Some(client) = clients.get_mut(&client_id) else {
+        return -1;
+    };
+
+    match RUNTIME.block_on(client.write_udt_member_by_offset(
+        udt_name_str,
+        member_offset as usize,
+        member_size as usize,
+        data_type as u16,
+        plc_value,
+    )) {
+        Ok(_) => 0,
+        Err(_) => -1,
+    }
 }

@@ -64,6 +64,11 @@ namespace RustEtherNetIp
         PlcValue GetUdtMember(string tagName, string memberPath);
         void SetUdtMember(string tagName, string memberPath, PlcValue value);
         
+        // Enhanced UDT Operations
+        PlcValue ReadUdtChunked(string tagName);
+        PlcValue ReadUdtMemberByOffset(string udtName, int memberOffset, int memberSize, short dataType);
+        void WriteUdtMemberByOffset(string udtName, int memberOffset, int memberSize, short dataType, PlcValue value);
+        
         // Batch Operations - High Performance Multi-Tag Operations
         
         /// <summary>

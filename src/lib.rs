@@ -1254,6 +1254,262 @@ impl EipClient {
         self.parse_cip_response(&cip_data)
     }
 
+    /// Reads a UDT with chunked reading to handle large structures
+    ///
+    /// This method handles partial transfer errors by reading the UDT in smaller chunks
+    /// when the UDT exceeds the maximum packet size.
+    ///
+    /// # Arguments
+    ///
+    /// * `tag_name` - The name of the UDT tag to read
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    /// # let mut client = rust_ethernet_ip::EipClient::connect("192.168.1.100:44818").await?;
+    /// let udt_value = client.read_udt_chunked("Part_Data").await?;
+    /// println!("UDT value: {:?}", udt_value);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn read_udt_chunked(&mut self, tag_name: &str) -> crate::error::Result<PlcValue> {
+        self.validate_session().await?;
+        
+        // First, try to read the UDT normally
+        match self.read_tag(tag_name).await {
+            Ok(value) => return Ok(value),
+            Err(crate::error::EtherNetIpError::Protocol(msg)) if msg.contains("Partial transfer") => {
+                // Handle partial transfer error by reading in chunks
+                self.read_udt_in_chunks(tag_name).await
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    /// Reads a UDT in chunks to handle large structures
+    async fn read_udt_in_chunks(&mut self, tag_name: &str) -> crate::error::Result<PlcValue> {
+        const MAX_CHUNK_SIZE: usize = 1000; // Conservative chunk size
+        let mut all_data = Vec::new();
+        let mut offset = 0;
+        let mut chunk_size = MAX_CHUNK_SIZE;
+
+        loop {
+            // Try to read a chunk
+            match self.read_udt_chunk(tag_name, offset, chunk_size).await {
+                Ok(chunk_data) => {
+                    all_data.extend_from_slice(&chunk_data);
+                    offset += chunk_data.len();
+                    
+                    // If we got less data than requested, we're done
+                    if chunk_data.len() < chunk_size {
+                        break;
+                    }
+                }
+                Err(crate::error::EtherNetIpError::Protocol(msg)) if msg.contains("Partial transfer") => {
+                    // Reduce chunk size and try again
+                    chunk_size = chunk_size / 2;
+                    if chunk_size < 100 {
+                        return Err(crate::error::EtherNetIpError::Protocol(
+                            "UDT too large even for smallest chunk size".to_string(),
+                        ));
+                    }
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        // Parse the complete UDT data
+        self.udt_manager
+            .lock()
+            .await
+            .parse_udt_instance(tag_name, &all_data)
+    }
+
+    /// Reads a specific chunk of a UDT
+    async fn read_udt_chunk(&mut self, tag_name: &str, offset: usize, size: usize) -> crate::error::Result<Vec<u8>> {
+        // Build a read request for a specific range
+        let mut request = Vec::new();
+        
+        // Service: Read Tag (0x4C)
+        request.push(0x4C);
+        
+        // Path size (in words) - tag name + array index
+        let path_size = 2 + (tag_name.len() + 1) / 2; // Round up for word alignment
+        request.push(path_size as u8);
+        
+        // Path: tag name
+        request.extend_from_slice(tag_name.as_bytes());
+        if tag_name.len() % 2 != 0 {
+            request.push(0); // Pad to word boundary
+        }
+        
+        // Array index for chunk reading
+        request.push(0x28); // Array index symbol
+        request.push(0x02); // 2 bytes for index
+        request.extend_from_slice(&(offset as u16).to_le_bytes());
+        
+        // Element count
+        request.push(0x28); // Element count symbol
+        request.push(0x02); // 2 bytes for count
+        request.extend_from_slice(&(size as u16).to_le_bytes());
+        
+        // Data type (assume DINT for raw data)
+        request.push(0x00);
+        request.push(0x01);
+
+        // Send the request
+        let response = self.send_cip_request(&request).await?;
+        let cip_data = self.extract_cip_from_response(&response)?;
+        
+        // Parse the response to get raw data
+        if cip_data.len() < 2 {
+            return Err(crate::error::EtherNetIpError::Protocol(
+                "Response too short".to_string(),
+            ));
+        }
+        
+        let _data_type = u16::from_le_bytes([cip_data[0], cip_data[1]]);
+        let data = &cip_data[2..];
+        
+        Ok(data.to_vec())
+    }
+
+    /// Reads a specific UDT member by offset
+    ///
+    /// This method reads a specific member of a UDT by calculating its offset
+    /// and reading only that portion of the UDT.
+    ///
+    /// # Arguments
+    ///
+    /// * `udt_name` - The name of the UDT tag
+    /// * `member_offset` - The byte offset of the member in the UDT
+    /// * `member_size` - The size of the member in bytes
+    /// * `data_type` - The data type of the member (0x00C1 for BOOL, 0x00CA for REAL, etc.)
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    /// # let mut client = rust_ethernet_ip::EipClient::connect("192.168.1.100:44818").await?;
+    /// let member_value = client.read_udt_member_by_offset("MyUDT", 0, 1, 0x00C1).await?;
+    /// println!("Member value: {:?}", member_value);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn read_udt_member_by_offset(
+        &mut self, 
+        udt_name: &str, 
+        member_offset: usize, 
+        member_size: usize, 
+        data_type: u16
+    ) -> crate::error::Result<PlcValue> {
+        self.validate_session().await?;
+        
+        // Read the UDT data
+        let udt_data = self.read_tag_raw(udt_name).await?;
+        
+        // Extract the member data
+        if member_offset + member_size > udt_data.len() {
+            return Err(crate::error::EtherNetIpError::Protocol(
+                format!("Member data incomplete: offset {} + size {} > UDT size {}", 
+                    member_offset, member_size, udt_data.len())
+            ));
+        }
+        
+        let member_data = &udt_data[member_offset..member_offset + member_size];
+        
+        // Parse the member value using the data type
+        let member = crate::udt::UdtMember {
+            name: "temp".to_string(),
+            data_type,
+            offset: member_offset as u32,
+            size: member_size as u32,
+        };
+        
+        let udt = crate::udt::UserDefinedType::new(udt_name.to_string());
+        udt.parse_member_value(&member, member_data)
+    }
+
+    /// Writes a specific UDT member by offset
+    ///
+    /// This method writes a specific member of a UDT by calculating its offset
+    /// and writing only that portion of the UDT.
+    ///
+    /// # Arguments
+    ///
+    /// * `udt_name` - The name of the UDT tag
+    /// * `member_offset` - The byte offset of the member in the UDT
+    /// * `member_size` - The size of the member in bytes
+    /// * `data_type` - The data type of the member (0x00C1 for BOOL, 0x00CA for REAL, etc.)
+    /// * `value` - The value to write
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    /// # let mut client = rust_ethernet_ip::EipClient::connect("192.168.1.100:44818").await?;
+    /// client.write_udt_member_by_offset("MyUDT", 0, 1, 0x00C1, PlcValue::Bool(true)).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn write_udt_member_by_offset(
+        &mut self, 
+        udt_name: &str, 
+        member_offset: usize, 
+        member_size: usize, 
+        data_type: u16, 
+        value: PlcValue
+    ) -> crate::error::Result<()> {
+        self.validate_session().await?;
+        
+        // Read the current UDT data
+        let mut udt_data = self.read_tag_raw(udt_name).await?;
+        
+        // Check bounds
+        if member_offset + member_size > udt_data.len() {
+            return Err(crate::error::EtherNetIpError::Protocol(
+                format!("Member data incomplete: offset {} + size {} > UDT size {}", 
+                    member_offset, member_size, udt_data.len())
+            ));
+        }
+        
+        // Serialize the value
+        let member = crate::udt::UdtMember {
+            name: "temp".to_string(),
+            data_type,
+            offset: member_offset as u32,
+            size: member_size as u32,
+        };
+        
+        let udt = crate::udt::UserDefinedType::new(udt_name.to_string());
+        let member_data = udt.serialize_member_value(&member, &value)?;
+        
+        // Update the UDT data
+        let end_offset = member_offset + member_data.len();
+        if end_offset <= udt_data.len() {
+            udt_data[member_offset..end_offset].copy_from_slice(&member_data);
+        } else {
+            return Err(crate::error::EtherNetIpError::Protocol(
+                format!("Member data exceeds UDT size: {} > {}", end_offset, udt_data.len())
+            ));
+        }
+        
+        // Write the updated UDT data back
+        self.write_tag_raw(udt_name, &udt_data).await
+    }
+
+    /// Gets UDT definition from the PLC (internal method)
+    async fn get_udt_definition_internal(&mut self, udt_name: &str) -> crate::error::Result<crate::udt::UdtDefinition> {
+        // TODO: Implement actual UDT definition discovery from PLC
+        // For now, return an empty definition
+        // In a real implementation, this would query the PLC for the UDT definition
+        Err(crate::error::EtherNetIpError::Protocol(
+            format!("UDT definition discovery not yet implemented for '{}'. Use read_udt_chunked() for raw UDT data.", udt_name)
+        ))
+    }
+
     /// Writes a value to a PLC tag
     ///
     /// This method automatically determines the best communication method based on the data type:

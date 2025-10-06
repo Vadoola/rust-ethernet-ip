@@ -212,7 +212,7 @@ namespace RustEtherNetIp.Examples
             Console.WriteLine("📖 Batch read results:");
             foreach (var (tagName, result) in results)
             {
-                if (result.IsSuccess && result.Value is PlcValue udtValue && udtValue.IsUdt)
+                if (result.Success && result.Value is PlcValue udtValue && udtValue.IsUdt)
                 {
                     var motorName = udtValue.GetNestedValue("Name")?.As<string>() ?? "Unknown";
                     var speed = udtValue.GetNestedValue("Config.Speed")?.As<float>() ?? 0.0f;
