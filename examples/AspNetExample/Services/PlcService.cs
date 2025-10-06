@@ -169,7 +169,7 @@ public class PlcService : IDisposable
     
     public Dictionary<string, object> ReadUdt(string tagName)
     {
-        var value = _plcClient.ReadUdt(tagName);
+        var value = _plcClient.ReadUdtAsDictionary(tagName);
         UpdateLastReadTime(tagName);
         return value;
     }
@@ -251,7 +251,7 @@ public class PlcService : IDisposable
 
         try
         {
-            return _plcClient.ReadUdt(tagName);
+            return _plcClient.ReadUdtAsDictionary(tagName);
         }
         catch (Exception ex)
         {
