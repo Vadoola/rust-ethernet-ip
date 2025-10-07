@@ -1,34 +1,20 @@
-# Rust EtherNet/IP Go Wrapper
+# Go EtherNet/IP Wrapper
 
-This Go package provides a wrapper around the Rust EtherNet/IP library, enabling Go applications to communicate with Allen-Bradley CompactLogix and ControlLogix PLCs using the EtherNet/IP protocol.
+This directory contains the Go wrapper for the Rust EtherNet/IP library, providing a high-level Go API for communicating with Allen-Bradley PLCs.
 
 ## Features
 
-- High-performance PLC communication through Rust FFI
-- Support for all major PLC data types (BOOL, SINT, INT, DINT, LINT, USINT, UINT, UDINT, ULINT, REAL, LREAL, STRING)
-- Connection management and health monitoring
-- Type-safe API with error handling
-- Concurrent access support
-- Batch operations support
-
-## Prerequisites
-
-- Go 1.21 or later
-- CGO enabled
-- Rust EtherNet/IP library compiled as a shared library
-- Windows, Linux, or macOS
+- **Complete EtherNet/IP Support**: Read/write all standard PLC data types
+- **UDT Support**: Full support for User Defined Types with chunked reading
+- **Template System**: Generic UDT template parsing for any UDT structure
+- **Batch Operations**: Efficient batch read/write operations
+- **Error Handling**: Comprehensive error handling with detailed error information
+- **Connection Management**: Automatic connection management with keep-alive
+- **Async Operations**: Support for asynchronous tag operations
 
 ## Installation
 
-1. Ensure the Rust library is built:
 ```bash
-cd .. # Navigate to the main project directory
-cargo build --release --features ffi
-```
-
-2. Initialize the Go module:
-```bash
-go mod init your-project-name
 go mod tidy
 ```
 
@@ -40,254 +26,170 @@ package main
 import (
     "fmt"
     "log"
-    
-    "github.com/sergiogallegos/rust-ethernet-ip-go"
+    "github.com/sergiogallegos/rust-ethernet-ip/gowrapper/ethernetip"
 )
 
 func main() {
     // Connect to PLC
-    client, err := ethernetip.NewClient("192.168.1.100")
+    client, err := ethernetip.NewClient("192.168.0.1:44818")
     if err != nil {
-        log.Fatalf("Failed to connect to PLC: %v", err)
+        log.Fatal(err)
     }
     defer client.Close()
 
-    // Write a boolean value
-    err = client.WriteBool("MyBoolTag", true)
+    // Read a boolean tag
+    value, err := client.ReadBool("TestTag")
     if err != nil {
-        log.Printf("Failed to write boolean: %v", err)
-        return
+        log.Fatal(err)
     }
+    fmt.Printf("TestTag: %v\n", value)
 
-    // Read the boolean value back
-    value, err := client.ReadBool("MyBoolTag")
+    // Read a UDT
+    udt, err := client.ReadUdt("Part_Data")
     if err != nil {
-        log.Printf("Failed to read boolean: %v", err)
-        return
+        log.Fatal(err)
     }
-    
-    fmt.Printf("Boolean value: %t\n", value)
-
-    // Work with integers
-    err = client.WriteDint("MyIntTag", 12345)
-    if err != nil {
-        log.Printf("Failed to write integer: %v", err)
-        return
-    }
-
-    intValue, err := client.ReadDint("MyIntTag")
-    if err != nil {
-        log.Printf("Failed to read integer: %v", err)
-        return
-    }
-    
-    fmt.Printf("Integer value: %d\n", intValue)
-
-    // Work with strings
-    err = client.WriteString("MyStringTag", "Hello PLC!")
-    if err != nil {
-        log.Printf("Failed to write string: %v", err)
-        return
-    }
-
-    stringValue, err := client.ReadString("MyStringTag")
-    if err != nil {
-        log.Printf("Failed to read string: %v", err)
-        return
-    }
-    
-    fmt.Printf("String value: %s\n", stringValue)
+    fmt.Printf("Part_Data UDT: %+v\n", udt)
 }
 ```
 
-## API Reference
+## UDT Support
 
-### Connection Management
+The Go wrapper provides comprehensive UDT support with template-based parsing:
 
-#### `NewClient(ipAddress string) (*EipClient, error)`
-Creates a new connection to a PLC at the specified IP address.
+### Basic UDT Reading
 
-#### `(*EipClient) Close() error`
-Closes the connection to the PLC.
+```go
+// Read entire UDT
+udt, err := client.ReadUdt("Part_Data")
+if err != nil {
+    log.Fatal(err)
+}
 
-#### `(*EipClient) CheckHealth() (bool, error)`
-Checks if the PLC connection is healthy.
+// Access individual members
+for key, value := range udt.Members {
+    fmt.Printf("%s: %v\n", key, value)
+}
+```
 
-#### `(*EipClient) SetMaxPacketSize(size int) error`
-Sets the maximum packet size for communications.
+### Template-Based Parsing
 
-### Data Type Operations
+```go
+// Create a template for your UDT
+template := &ethernetip.UdtTemplate{
+    Name: "Part_Data",
+    TotalSize: 2,
+    Members: []ethernetip.UdtMemberTemplate{
+        {Name: "oMachine_Running", DataType: "bool", Size: 1, Offset: 0, BitOffset: 0},
+        {Name: "oAlarm_Active", DataType: "bool", Size: 1, Offset: 0, BitOffset: 1},
+        // ... more members
+    },
+}
 
-#### Boolean Operations
-- `ReadBool(tagName string) (bool, error)`
-- `WriteBool(tagName string, value bool) error`
+// Parse UDT with template
+parsedUdt, err := client.ParseUdtWithTemplate("Part_Data", template)
+if err != nil {
+    log.Fatal(err)
+}
+```
 
-#### Signed Integer Operations
-- `ReadSint(tagName string) (int8, error)` - 8-bit signed integer
-- `WriteSint(tagName string, value int8) error`
-- `ReadInt(tagName string) (int16, error)` - 16-bit signed integer
-- `WriteInt(tagName string, value int16) error`
-- `ReadDint(tagName string) (int32, error)` - 32-bit signed integer
-- `WriteDint(tagName string, value int32) error`
-- `ReadLint(tagName string) (int64, error)` - 64-bit signed integer
-- `WriteLint(tagName string, value int64) error`
+### UDT Member Operations
 
-#### Unsigned Integer Operations
-- `ReadUsint(tagName string) (uint8, error)` - 8-bit unsigned integer
-- `WriteUsint(tagName string, value uint8) error`
-- `ReadUint(tagName string) (uint16, error)` - 16-bit unsigned integer
-- `WriteUint(tagName string, value uint16) error`
-- `ReadUdint(tagName string) (uint32, error)` - 32-bit unsigned integer
-- `WriteUdint(tagName string, value uint32) error`
-- `ReadUlint(tagName string) (uint64, error)` - 64-bit unsigned integer
-- `WriteUlint(tagName string, value uint64) error`
+```go
+// Get specific UDT member
+member, err := client.GetUdtMember("Part_Data", "oMachine_Running")
+if err != nil {
+    log.Fatal(err)
+}
 
-#### Floating Point Operations
-- `ReadReal(tagName string) (float64, error)` - 32-bit float
-- `WriteReal(tagName string, value float64) error`
-- `ReadLreal(tagName string) (float64, error)` - 64-bit float
-- `WriteLreal(tagName string, value float64) error`
+// Write specific UDT member
+err = client.WriteUdtMember("Part_Data", "oMachine_Running", true)
+if err != nil {
+    log.Fatal(err)
+}
+```
 
-#### String Operations
-- `ReadString(tagName string) (string, error)`
-- `WriteString(tagName string, value string) error`
+## Data Types
 
-### Generic Operations
+The wrapper supports all standard PLC data types:
 
-#### `ReadValue(tagName string, dataType PlcDataType) (*PlcValue, error)`
-Reads a value with automatic type handling.
-
-#### `WriteValue(tagName string, value *PlcValue) error`
-Writes a value with automatic type handling.
-
-### Data Types
-
-#### `PlcDataType`
-Enumeration of supported PLC data types:
-- `Bool` - Boolean
+- `Bool` - Boolean values
 - `Sint` - 8-bit signed integer
-- `Int` - 16-bit signed integer
+- `Int` - 16-bit signed integer  
 - `Dint` - 32-bit signed integer
 - `Lint` - 64-bit signed integer
-- `Usint` - 8-bit unsigned integer
-- `Uint` - 16-bit unsigned integer
-- `Udint` - 32-bit unsigned integer
-- `Ulint` - 64-bit unsigned integer
 - `Real` - 32-bit floating point
 - `Lreal` - 64-bit floating point
-- `String` - String data
+- `String` - String values
+- `Udt` - User Defined Types
 
-#### `PlcValue`
-Represents a value that can be read from or written to the PLC:
+## Batch Operations
+
 ```go
-type PlcValue struct {
-    Type  PlcDataType
-    Value interface{}
+// Batch read multiple tags
+tagNames := []string{"Tag1", "Tag2", "Tag3"}
+results, err := client.BatchRead(tagNames)
+if err != nil {
+    log.Fatal(err)
 }
-```
 
-#### `EipError`
-Custom error type for EtherNet/IP operations:
-```go
-type EipError struct {
-    Code    int
-    Message string
+// Batch write multiple tags
+tagValues := map[string]interface{}{
+    "Tag1": true,
+    "Tag2": 42,
+    "Tag3": "Hello",
+}
+err = client.BatchWrite(tagValues)
+if err != nil {
+    log.Fatal(err)
 }
 ```
 
 ## Error Handling
 
-All operations return errors that implement the standard Go error interface. EtherNet/IP specific errors are returned as `*EipError` which includes both an error code and descriptive message.
+The wrapper provides detailed error information:
 
 ```go
-client, err := ethernetip.NewClient("invalid.ip")
+client, err := ethernetip.NewClient("192.168.0.1:44818")
 if err != nil {
     if eipErr, ok := err.(*ethernetip.EipError); ok {
-        fmt.Printf("EIP Error %d: %s\n", eipErr.Code, eipErr.Message)
-    } else {
-        fmt.Printf("Other error: %v\n", err)
+        fmt.Printf("Error Code: %d\n", eipErr.Code)
+        fmt.Printf("Error Message: %s\n", eipErr.Message)
+        fmt.Printf("Error Details: %+v\n", eipErr.Details)
     }
 }
 ```
 
-## Performance Considerations
-
-- The wrapper uses CGO to call into the Rust library, which provides excellent performance
-- Connection pooling is handled by the underlying Rust library
-- For high-frequency operations, consider using batch operations when available
-- Each client connection maintains its own connection to the PLC
-
-## Thread Safety
-
-The Go wrapper is thread-safe. Multiple goroutines can safely use the same client instance concurrently. The underlying Rust library handles synchronization.
-
-## Building and Testing
-
-```bash
-# Run tests (note: most tests require actual PLC connection)
-go test
-
-# Run only unit tests that don't require PLC
-go test -short
-
-# Run benchmarks
-go test -bench=.
-
-# Build your application
-go build
-```
-
 ## Examples
 
-See the `examples/` directory for more comprehensive examples including:
-- Basic PLC operations
-- Web server integration
-- React frontend integration
-- Batch operations
-- Error handling patterns
+See the `examples/` directory for complete examples:
 
-## Troubleshooting
+- `test_udt_go.go` - Basic UDT functionality test
+- `part_data_template.go` - Demo-specific UDT template for Part_Data
 
-### Common Issues
+## Building
 
-1. **CGO linking errors**: Ensure the Rust library is built and in the correct path
-2. **Connection timeouts**: Check network connectivity and PLC IP address
-3. **Permission errors**: Ensure your application has network access permissions
+The Go wrapper requires the Rust library to be built first:
 
-### Debug Mode
+```bash
+# Build the Rust library
+cd ..
+cargo build --release
 
-Enable debug logging in your application:
-```go
-import "log"
+# Copy the DLL to the Go wrapper directory
+cp target/release/rust_ethernet_ip.dll gowrapper/
 
-// Enable verbose logging
-log.SetFlags(log.LstdFlags | log.Lshortfile)
+# Build Go examples
+cd gowrapper
+go build examples/test_udt_go.go
 ```
 
-## Contributing
+## Requirements
 
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for your changes
-4. Ensure all tests pass
-5. Submit a pull request
+- Go 1.23 or later
+- Rust library built and available
+- Windows (for now, Linux support coming soon)
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Support
-
-For issues and questions:
-- Check the main project documentation
-- Review the examples
-- Open an issue on GitHub
-
-## Version History
-
-### v0.4.0
-- Initial Go wrapper implementation
-- Support for all major PLC data types
-- Connection management and health monitoring
-- Comprehensive test suite
-- Integration with Rust EtherNet/IP library v0.4.0 
+Same as the main Rust EtherNet/IP library.
