@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    
+    <!-- Version Information -->
+    <Version>0.5.4</Version>
+    <AssemblyVersion>0.5.4.0</AssemblyVersion>
+    <FileVersion>0.5.4.0</FileVersion>
+    <Product>Connection Variations Test</Product>
+    <Description>Test different connection approaches</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../csharp/RustEtherNetIp/RustEtherNetIp.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../rust_ethernet_ip.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

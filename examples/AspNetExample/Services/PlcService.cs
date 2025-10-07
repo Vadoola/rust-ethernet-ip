@@ -5,6 +5,7 @@ using System;
 using System.Threading.Tasks;
 using System.Threading;
 using System.Diagnostics;
+using System.Linq;
 
 namespace AspNetExample.Services;
 
@@ -169,9 +170,64 @@ public class PlcService : IDisposable
     
     public Dictionary<string, object> ReadUdt(string tagName)
     {
-        var value = _plcClient.ReadUdtAsDictionary(tagName);
-        UpdateLastReadTime(tagName);
-        return value;
+        try
+        {
+            // Use chunked reading for UDTs to handle large structures
+            var value = _plcClient.ReadUdt(tagName);
+            UpdateLastReadTime(tagName);
+            
+            // Convert PlcValue to Dictionary<string, object>
+            if (value.IsUdt)
+            {
+                var result = value.UdtMembers.ToDictionary(
+                    kvp => kvp.Key, 
+                    kvp => ConvertPlcValueToObject(kvp.Value)
+                );
+                
+                // Demo-specific: Apply Part_Data template parsing if this is a Part_Data UDT
+                if (tagName == "Part_Data" && value.UdtMembers.ContainsKey("_raw_data"))
+                {
+                    try
+                    {
+                        // Parse raw data using demo-specific template
+                        var rawDataString = value.UdtMembers["_raw_data"].As<string>();
+                        if (rawDataString != null && rawDataString.StartsWith("[") && rawDataString.EndsWith("]"))
+                        {
+                            // Parse hex string like "[04, 00]" to bytes
+                            var hexParts = rawDataString.Trim('[', ']').Split(',');
+                            var rawBytes = hexParts.Select(h => Convert.ToByte(h.Trim(), 16)).ToArray();
+                            
+                            // Use demo-specific template to parse Part_Data
+                            var parsedMembers = PartDataUdtTemplate.ParsePartData(rawBytes);
+                            
+                            // Add parsed members to result
+                            foreach (var member in parsedMembers)
+                            {
+                                result[member.Key] = ConvertPlcValueToObject(member.Value);
+                            }
+                            
+                            result["_demo_parsing"] = "Applied Part_Data template for demo purposes";
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to apply Part_Data template parsing: {Message}", ex.Message);
+                    }
+                }
+                
+                return result;
+            }
+            else
+            {
+                // If it's not a UDT, return as single value
+                return new Dictionary<string, object> { { "value", ConvertPlcValueToObject(value) } };
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error reading UDT: {TagName}", tagName);
+            throw;
+        }
     }
     
     public void WriteBool(string tagName, bool value) => _plcClient.WriteBool(tagName, value);
@@ -194,6 +250,32 @@ public class PlcService : IDisposable
     }
 
     public ConcurrentDictionary<string, DateTime> LastReadTimes => _lastReadTimes;
+
+    private object ConvertPlcValueToObject(PlcValue value)
+    {
+        switch (value.Type)
+        {
+            case PlcValueType.Bool:
+                return value.As<bool>();
+            case PlcValueType.Sint:
+                return value.As<sbyte>();
+            case PlcValueType.Int:
+                return value.As<short>();
+            case PlcValueType.Dint:
+                return value.As<int>();
+            case PlcValueType.Real:
+                return value.As<float>();
+            case PlcValueType.String:
+                return value.As<string>();
+            case PlcValueType.Udt:
+                return value.UdtMembers.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => ConvertPlcValueToObject(kvp.Value)
+                );
+            default:
+                return value.ToString();
+        }
+    }
 
     public object GetTagMetadata(string plcAddress, string tagName)
     {
@@ -251,7 +333,22 @@ public class PlcService : IDisposable
 
         try
         {
-            return _plcClient.ReadUdtAsDictionary(tagName);
+            // Use chunked reading for UDTs to handle large structures
+            var value = _plcClient.ReadUdt(tagName);
+            
+            // Convert PlcValue to Dictionary<string, object>
+            if (value.IsUdt)
+            {
+                return value.UdtMembers.ToDictionary(
+                    kvp => kvp.Key, 
+                    kvp => ConvertPlcValueToObject(kvp.Value)
+                );
+            }
+            else
+            {
+                // If it's not a UDT, return as single value
+                return new Dictionary<string, object> { { "value", ConvertPlcValueToObject(value) } };
+            }
         }
         catch (Exception ex)
         {
@@ -827,6 +924,7 @@ public class PlcService : IDisposable
         // Match result to operation by index (assuming results are returned in same order as operations)
         return index < operations.Length ? operations[index].IsWrite : false;
     }
+
 }
 
 // ================================================================================

@@ -67,6 +67,89 @@
             </div>
         </div>
 
+        <!-- UDT Testing Section -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-xl font-bold mb-4">🏗️ UDT (User Defined Type) Testing</h2>
+            
+            <!-- UDT Operations -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">UDT Name</label>
+                    <input type="text" id="udtName" placeholder="Part_Data" 
+                           class="w-full px-4 py-2 border rounded-lg" value="Part_Data">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Action</label>
+                    <div class="flex space-x-2">
+                        <button id="readUdtBtn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600" disabled>
+                            Read UDT
+                        </button>
+                        <button id="readUdtAsDictBtn" class="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600" disabled>
+                            Read as Dictionary
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Individual UDT Member Testing -->
+            <div class="mb-4">
+                <h3 class="text-lg font-semibold mb-2">Individual UDT Member Testing</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">UDT Member</label>
+                        <select id="udtMemberSelect" class="w-full px-4 py-2 border rounded-lg">
+                            <option value="Part_Data.oFuse_Serial_Number">Part_Data.oFuse_Serial_Number</option>
+                            <option value="Part_Data.oFuse_Resistance">Part_Data.oFuse_Resistance</option>
+                            <option value="Part_Data.oFuse_Weight">Part_Data.oFuse_Weight</option>
+                            <option value="Part_Data.oMachine_Running">Part_Data.oMachine_Running</option>
+                            <option value="Part_Data.oMachine_Ready">Part_Data.oMachine_Ready</option>
+                            <option value="Part_Data.oProduction_Rate">Part_Data.oProduction_Rate</option>
+                            <option value="Part_Data.iStart_Production">Part_Data.iStart_Production</option>
+                            <option value="Part_Data.iTarget_Production">Part_Data.iTarget_Production</option>
+                            <option value="Part_Data.iStop_Production">Part_Data.iStop_Production</option>
+                            <option value="Part_Data.iReset_Production">Part_Data.iReset_Production</option>
+                            <option value="Part_Data.iEmergency_Stop">Part_Data.iEmergency_Stop</option>
+                            <option value="Part_Data.iMaintenance_Mode">Part_Data.iMaintenance_Mode</option>
+                            <option value="Part_Data.iQuality_Check">Part_Data.iQuality_Check</option>
+                            <option value="Part_Data.iCalibration_Required">Part_Data.iCalibration_Required</option>
+                            <option value="Part_Data.iOperator_Override">Part_Data.iOperator_Override</option>
+                            <option value="Part_Data.iSystem_Ready">Part_Data.iSystem_Ready</option>
+                            <option value="Part_Data.iProduction_Complete">Part_Data.iProduction_Complete</option>
+                            <option value="Part_Data.iError_State">Part_Data.iError_State</option>
+                            <option value="Part_Data.iWarning_State">Part_Data.iWarning_State</option>
+                            <option value="Part_Data.iData_Valid">Part_Data.iData_Valid</option>
+                            <option value="Part_Data.iCommunication_OK">Part_Data.iCommunication_OK</option>
+                            <option value="Part_Data.iSystem_Status">Part_Data.iSystem_Status</option>
+                            <option value="Part_Data.iProduction_Count">Part_Data.iProduction_Count</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Action</label>
+                        <div class="flex space-x-2">
+                            <button id="readUdtMemberBtn" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600" disabled>
+                                Read Member
+                            </button>
+                            <button id="writeUdtMemberBtn" class="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600" disabled>
+                                Write Member
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-2">
+                    <input type="text" id="udtMemberValue" placeholder="Value to write" 
+                           class="w-full px-4 py-2 border rounded-lg">
+                </div>
+            </div>
+
+            <!-- UDT Results -->
+            <div class="mt-4">
+                <h3 class="text-lg font-semibold mb-2">UDT Results</h3>
+                <div id="udtResults" class="bg-gray-900 text-green-400 p-4 rounded-lg h-[300px] overflow-y-auto font-mono text-sm">
+                    <!-- UDT results will be displayed here -->
+                </div>
+            </div>
+        </div>
+
         <div class="grid grid-cols-2 gap-6">
             <!-- Left Panel: Tag Monitoring -->
             <div class="bg-white rounded-lg shadow-md p-6">
@@ -158,6 +241,16 @@
         const writeRate = document.getElementById('writeRate');
         const tagsTable = document.getElementById('tagsTable');
         const logContainer = document.getElementById('logContainer');
+        
+        // UDT Elements
+        const udtName = document.getElementById('udtName');
+        const readUdtBtn = document.getElementById('readUdtBtn');
+        const readUdtAsDictBtn = document.getElementById('readUdtAsDictBtn');
+        const udtMemberSelect = document.getElementById('udtMemberSelect');
+        const readUdtMemberBtn = document.getElementById('readUdtMemberBtn');
+        const writeUdtMemberBtn = document.getElementById('writeUdtMemberBtn');
+        const udtMemberValue = document.getElementById('udtMemberValue');
+        const udtResults = document.getElementById('udtResults');
 
         // Event Listeners
         connectBtn.addEventListener('click', connect);
@@ -166,6 +259,12 @@
         discoverBtn.addEventListener('click', discoverTag);
         readBtn.addEventListener('click', readTag);
         writeBtn.addEventListener('click', writeTag);
+        
+        // UDT Event Listeners
+        readUdtBtn.addEventListener('click', readUdt);
+        readUdtAsDictBtn.addEventListener('click', readUdtAsDictionary);
+        readUdtMemberBtn.addEventListener('click', readUdtMember);
+        writeUdtMemberBtn.addEventListener('click', writeUdtMember);
 
         // Functions
         async function connect() {
@@ -378,6 +477,11 @@
                 discoverBtn.disabled = false;
                 readBtn.disabled = false;
                 writeBtn.disabled = false;
+                // Enable UDT buttons
+                readUdtBtn.disabled = false;
+                readUdtAsDictBtn.disabled = false;
+                readUdtMemberBtn.disabled = false;
+                writeUdtMemberBtn.disabled = false;
                 
                 // Start monitoring connection status
                 startConnectionMonitor();
@@ -391,6 +495,11 @@
                 discoverBtn.disabled = true;
                 readBtn.disabled = true;
                 writeBtn.disabled = true;
+                // Disable UDT buttons
+                readUdtBtn.disabled = true;
+                readUdtAsDictBtn.disabled = true;
+                readUdtMemberBtn.disabled = true;
+                writeUdtMemberBtn.disabled = true;
                 
                 // Stop monitoring connection status
                 stopConnectionMonitor();
@@ -477,6 +586,8 @@
             tags.set('TestTag', { name: 'TestTag', type: 'BOOL', value: null, updated: null });
             tags.set('TestDint', { name: 'TestDint', type: 'DINT', value: null, updated: null });
             tags.set('TestReal', { name: 'TestReal', type: 'REAL', value: null, updated: null });
+            // Add UDT tag
+            tags.set('Part_Data.oMachine_Running', { name: 'Part_Data.oMachine_Running', type: 'UDT', value: null, updated: null });
             updateTagsTable();
             
             // Start refresh interval with a longer delay
@@ -557,6 +668,182 @@
             // Keep only last 100 messages
             while (logContainer.children.length > 100) {
                 logContainer.removeChild(logContainer.lastChild);
+            }
+        }
+
+        // UDT Functions
+        async function readUdt() {
+            if (!isConnected) {
+                log('❌ Not connected to PLC');
+                return;
+            }
+
+            const udt = udtName.value.trim();
+            if (!udt) {
+                log('❌ Please enter a UDT name');
+                return;
+            }
+
+            try {
+                log(`🔍 Reading UDT: ${udt}`);
+                udtResults.innerHTML = 'Loading...';
+                
+                const response = await fetch(`/api/plc/udt/${encodeURIComponent(udt)}`);
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    log(`✅ Successfully read UDT: ${udt}`);
+                    udtResults.innerHTML = `<div class="text-green-400">✅ UDT Read Successfully</div>
+                        <div class="mt-2">Type: ${data.type}</div>
+                        <div>Value: ${JSON.stringify(data.value, null, 2)}</div>`;
+                } else {
+                    log(`❌ Failed to read UDT: ${data.message}`);
+                    udtResults.innerHTML = `<div class="text-red-400">❌ Error: ${data.message}</div>`;
+                }
+            } catch (error) {
+                log(`❌ Error reading UDT: ${error.message}`);
+                udtResults.innerHTML = `<div class="text-red-400">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function readUdtAsDictionary() {
+            if (!isConnected) {
+                log('❌ Not connected to PLC');
+                return;
+            }
+
+            const udt = udtName.value.trim();
+            if (!udt) {
+                log('❌ Please enter a UDT name');
+                return;
+            }
+
+            try {
+                log(`🔍 Reading UDT as Dictionary: ${udt}`);
+                udtResults.innerHTML = 'Loading...';
+                
+                const response = await fetch(`/api/plc/udt-dict/${encodeURIComponent(udt)}`);
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    log(`✅ Successfully read UDT as Dictionary: ${udt}`);
+                    const memberCount = Object.keys(data.value).length;
+                    udtResults.innerHTML = `<div class="text-green-400">✅ UDT Dictionary Read Successfully</div>
+                        <div class="mt-2">Members: ${memberCount}</div>
+                        <div class="mt-2 max-h-48 overflow-y-auto">${JSON.stringify(data.value, null, 2)}</div>`;
+                } else {
+                    log(`❌ Failed to read UDT as Dictionary: ${data.message}`);
+                    udtResults.innerHTML = `<div class="text-red-400">❌ Error: ${data.message}</div>`;
+                }
+            } catch (error) {
+                log(`❌ Error reading UDT as Dictionary: ${error.message}`);
+                udtResults.innerHTML = `<div class="text-red-400">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function readUdtMember() {
+            if (!isConnected) {
+                log('❌ Not connected to PLC');
+                return;
+            }
+
+            const member = udtMemberSelect.value.trim();
+            if (!member) {
+                log('❌ Please select a UDT member');
+                return;
+            }
+
+            try {
+                log(`🔍 Reading UDT Member: ${member}`);
+                udtResults.innerHTML = 'Loading...';
+                
+                const response = await fetch(`/api/plc/tag/${encodeURIComponent(member)}`);
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    log(`✅ Successfully read UDT Member: ${member}`);
+                    udtResults.innerHTML = `<div class="text-green-400">✅ UDT Member Read Successfully</div>
+                        <div class="mt-2">Member: ${member}</div>
+                        <div>Type: ${data.type}</div>
+                        <div>Value: ${JSON.stringify(data.value, null, 2)}</div>`;
+                } else {
+                    log(`❌ Failed to read UDT Member: ${data.message}`);
+                    udtResults.innerHTML = `<div class="text-red-400">❌ Error: ${data.message}</div>`;
+                }
+            } catch (error) {
+                log(`❌ Error reading UDT Member: ${error.message}`);
+                udtResults.innerHTML = `<div class="text-red-400">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function writeUdtMember() {
+            if (!isConnected) {
+                log('❌ Not connected to PLC');
+                return;
+            }
+
+            const member = udtMemberSelect.value.trim();
+            const value = udtMemberValue.value.trim();
+            
+            if (!member) {
+                log('❌ Please select a UDT member');
+                return;
+            }
+            
+            if (!value) {
+                log('❌ Please enter a value to write');
+                return;
+            }
+
+            try {
+                log(`✍️ Writing UDT Member: ${member} = ${value}`);
+                udtResults.innerHTML = 'Loading...';
+                
+                const response = await fetch(`/api/plc/tag/${encodeURIComponent(member)}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ value: value })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    log(`✅ Successfully wrote UDT Member: ${member} = ${value}`);
+                    udtResults.innerHTML = `<div class="text-green-400">✅ UDT Member Write Successfully</div>
+                        <div class="mt-2">Member: ${member}</div>
+                        <div>Value Written: ${value}</div>`;
+                } else {
+                    log(`❌ Failed to write UDT Member: ${data.message}`);
+                    udtResults.innerHTML = `<div class="text-red-400">❌ Error: ${data.message}</div>`;
+                }
+            } catch (error) {
+                log(`❌ Error writing UDT Member: ${error.message}`);
+                udtResults.innerHTML = `<div class="text-red-400">❌ Error: ${error.message}</div>`;
             }
         }
 

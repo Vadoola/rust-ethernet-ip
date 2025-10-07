@@ -1107,6 +1107,126 @@ public class PlcController : ControllerBase
             return StatusCode(500, new { success = false, message = ex.Message });
         }
     }
+
+    // ================================================================================
+    // UDT (User Defined Type) ENDPOINTS
+    // ================================================================================
+
+    [HttpGet("debug-udt/{udtName}")]
+    public IActionResult DebugUdt(string udtName)
+    {
+        try
+        {
+            _logger.LogInformation("Debug UDT reading for: {UdtName}", udtName);
+            
+            // Test direct UDT reading
+            var result = _plcService.ReadUdt(udtName);
+            _logger.LogInformation("UDT read successful with {Count} members", result.Count);
+            
+            return Ok(new { 
+                success = true, 
+                udtName = udtName,
+                memberCount = result.Count,
+                members = result,
+                message = "UDT read successfully" 
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in debug UDT reading: {Message}", ex.Message);
+            return StatusCode(500, new { 
+                success = false, 
+                message = ex.Message,
+                stackTrace = ex.StackTrace 
+            });
+        }
+    }
+
+    [HttpGet("udt/{udtName}")]
+    public IActionResult ReadUdt(string udtName)
+    {
+        try
+        {
+            _logger.LogInformation("Reading UDT: {UdtName}", udtName);
+            
+            // Try different tag path formats
+            var tagVariations = new[]
+            {
+                udtName,
+                $"{udtName}[0]",
+                $"Program:MainProgram.{udtName}",
+                $"Program:MainProgram.{udtName}[0]",
+                $"Controller:{udtName}",
+                $"Controller:{udtName}[0]"
+            };
+            
+            foreach (var tagPath in tagVariations)
+            {
+                try
+                {
+                    _logger.LogInformation("Trying UDT path: {TagPath}", tagPath);
+                    var result = _plcService.ReadUdt(tagPath);
+                    _logger.LogInformation("Successfully read UDT with path: {TagPath}", tagPath);
+                    return Ok(new { success = true, value = result, type = "UDT", path = tagPath });
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("Failed to read UDT with path {TagPath}: {Error}", tagPath, ex.Message);
+                    // Continue to next variation
+                }
+            }
+            
+            return BadRequest(new { success = false, message = $"UDT '{udtName}' not found. Tried paths: {string.Join(", ", tagVariations)}" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error reading UDT: {UdtName}", udtName);
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    [HttpGet("udt-dict/{udtName}")]
+    public IActionResult ReadUdtAsDictionary(string udtName)
+    {
+        try
+        {
+            _logger.LogInformation("Reading UDT as Dictionary: {UdtName}", udtName);
+            
+            // Try different tag path formats
+            var tagVariations = new[]
+            {
+                udtName,
+                $"{udtName}[0]",
+                $"Program:MainProgram.{udtName}",
+                $"Program:MainProgram.{udtName}[0]",
+                $"Controller:{udtName}",
+                $"Controller:{udtName}[0]"
+            };
+            
+            foreach (var tagPath in tagVariations)
+            {
+                try
+                {
+                    _logger.LogInformation("Trying UDT path: {TagPath}", tagPath);
+                    var result = _plcService.ReadUdt(tagPath);
+                    _logger.LogInformation("Successfully read UDT as Dictionary with path: {TagPath}", tagPath);
+                    return Ok(new { success = true, value = result, type = "UDT", path = tagPath });
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("Failed to read UDT as Dictionary with path {TagPath}: {Error}", tagPath, ex.Message);
+                    // Continue to next variation
+                }
+            }
+            
+            return BadRequest(new { success = false, message = $"UDT '{udtName}' not found. Tried paths: {string.Join(", ", tagVariations)}" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error reading UDT as Dictionary: {UdtName}", udtName);
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
 }
 
 public class ConnectRequest
