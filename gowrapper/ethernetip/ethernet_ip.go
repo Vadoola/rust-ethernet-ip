@@ -1,9 +1,11 @@
 package ethernetip
 
 /*
-#cgo windows LDFLAGS: -L${SRCDIR} -lrust_ethernet_ip
+#cgo windows LDFLAGS: -L${SRCDIR}/.. -lrust_ethernet_ip
 #cgo windows CFLAGS: -I${SRCDIR}
 #cgo windows LDFLAGS: -Wl,--allow-multiple-definition
+#cgo windows LDFLAGS: -Wl,--no-undefined
+#cgo windows LDFLAGS: -static-libgcc
 #include <stdlib.h>
 #include <string.h>
 
