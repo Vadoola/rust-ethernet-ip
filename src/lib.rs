@@ -2498,24 +2498,14 @@ impl EipClient {
         // Service: Write Tag Service (0x4D)
         cip_request.push(0x4D);
 
+        // Use the same path building logic as read operations
+        let path = self.build_tag_path(tag_name);
+        
         // Request Path Size (in words)
-        let tag_bytes = tag_name.as_bytes();
-        let path_len = if tag_bytes.len() % 2 == 0 {
-            tag_bytes.len() + 2
-        } else {
-            tag_bytes.len() + 3
-        };
-        cip_request.push((path_len / 2) as u8);
+        cip_request.push((path.len() / 2) as u8);
 
-        // Request Path: ANSI Extended Symbol Segment for tag name
-        cip_request.push(0x91); // ANSI Extended Symbol Segment
-        cip_request.push(tag_bytes.len() as u8); // Tag name length
-        cip_request.extend_from_slice(tag_bytes); // Tag name
-
-        // Pad to even length if necessary
-        if tag_bytes.len() % 2 != 0 {
-            cip_request.push(0x00);
-        }
+        // Request Path: Use the same path building as read operations
+        cip_request.extend_from_slice(&path);
 
         // Add data type and element count
         let data_type = value.get_data_type();
