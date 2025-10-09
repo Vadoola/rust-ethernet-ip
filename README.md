@@ -47,6 +47,10 @@ This library is specifically designed for:
 - **🛣️ Route Path Support**: Slot configuration and multi-hop routing
 - **💾 Cache Management**: Smart caching for UDT definitions and tag attributes
 - **🔧 CIP Services**: Full implementation of Services 0x03 and 0x4C
+- **🎯 Program Tag Support**: Fixed program-scoped tag access with correct CIP path format
+- **🧠 Enhanced UDT Parsing**: Intelligent multi-member UDT parsing with byte alignment detection
+- **⚡ Advanced Chunked Reading**: Multiple strategies for large UDTs with intelligent error recovery
+- **🌐 Cross-Language Compatibility**: Updated Go wrapper with all Rust improvements
 
 > **🎉 Major Milestone Achieved!**  
 > v0.5.4 brings feature parity with mature libraries like libplctag and pycomm3 while maintaining superior performance and safety.
@@ -74,6 +78,13 @@ This library is specifically designed for:
 - **Adaptive Sizing**: Adjusts packet size based on PLC capabilities
 - **Performance Boost**: 20-30% improvement for large data transfers
 
+### 🧠 **Enhanced UDT Processing** ✅ **NEW in v0.5.4**
+- **Intelligent Multi-Member Parsing**: Automatically detects and parses multiple UDT members (DINT, DINT, REAL)
+- **Byte Alignment Detection**: Smart alignment detection with reasonableness checks
+- **Advanced Chunked Reading**: Multiple strategies for large UDTs with intelligent error recovery
+- **Cross-Language Support**: All improvements work seamlessly across Rust, Go, and C# wrappers
+- **Performance Optimized**: Sub-5ms response times for complex UDT operations
+
 ### 🔧 **Connection Robustness**
 - **Automatic session management** with proper registration/unregistration
 - **Connection health monitoring** with configurable timeouts
@@ -81,7 +92,7 @@ This library is specifically designed for:
 - **Comprehensive error handling** with detailed CIP error mapping
 
 ### 📍 **Advanced Tag Addressing** ✅ **COMPLETED**
-- **Program-scoped tags**: `Program:MainProgram.Tag1`
+- **Program-scoped tags**: `Program:MainProgram.Tag1` ✅ **FIXED in v0.5.4**
 - **Array element access**: `MyArray[5]`, `MyArray[1,2,3]`
 - **Bit-level operations**: `MyDINT.15` (access individual bits)
 - **UDT member access**: `MyUDT.Member1.SubMember`

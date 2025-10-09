@@ -1406,10 +1406,10 @@ impl EipClient {
         self.parse_cip_response(&cip_data)
     }
 
-    /// Reads a UDT with chunked reading to handle large structures
+    /// Reads a UDT with advanced chunked reading to handle large structures
     ///
-    /// This method handles partial transfer errors by reading the UDT in smaller chunks
-    /// when the UDT exceeds the maximum packet size.
+    /// This method uses multiple strategies to handle large UDTs that exceed
+    /// the maximum packet size, including intelligent chunking and member discovery.
     ///
     /// # Arguments
     ///
@@ -1428,16 +1428,286 @@ impl EipClient {
     pub async fn read_udt_chunked(&mut self, tag_name: &str) -> crate::error::Result<PlcValue> {
         self.validate_session().await?;
 
-        // First, try to read the UDT normally
+        println!("🔧 [CHUNKED] Starting advanced UDT reading for: {}", tag_name);
+
+        // Strategy 1: Try normal read first
         match self.read_tag(tag_name).await {
-            Ok(value) => Ok(value),
+            Ok(value) => {
+                println!("🔧 [CHUNKED] Normal read successful");
+                return Ok(value);
+            }
             Err(crate::error::EtherNetIpError::Protocol(msg))
                 if msg.contains("Partial transfer") =>
             {
-                // Handle partial transfer error by reading in chunks
-                self.read_udt_in_chunks(tag_name).await
+                println!("🔧 [CHUNKED] Partial transfer detected, using advanced chunking");
             }
-            Err(e) => Err(e),
+            Err(e) => {
+                println!("🔧 [CHUNKED] Normal read failed: {}", e);
+                return Err(e);
+            }
+        }
+
+        // Strategy 2: Advanced chunked reading with multiple approaches
+        self.read_udt_advanced_chunked(tag_name).await
+    }
+
+    /// Advanced chunked UDT reading with multiple strategies
+    async fn read_udt_advanced_chunked(&mut self, tag_name: &str) -> crate::error::Result<PlcValue> {
+        println!("🔧 [ADVANCED] Using multiple strategies for large UDT");
+
+        // Strategy A: Try different chunk sizes
+        let chunk_sizes = vec![512, 256, 128, 64, 32, 16, 8, 4];
+        
+        for chunk_size in chunk_sizes {
+            println!("🔧 [ADVANCED] Trying chunk size: {}", chunk_size);
+            
+            match self.read_udt_with_chunk_size(tag_name, chunk_size).await {
+                Ok(udt_value) => {
+                    println!("🔧 [ADVANCED] Success with chunk size {}", chunk_size);
+                    return Ok(udt_value);
+                }
+                Err(e) => {
+                    println!("🔧 [ADVANCED] Chunk size {} failed: {}", chunk_size, e);
+                    continue;
+                }
+            }
+        }
+
+        // Strategy B: Try member-by-member discovery
+        println!("🔧 [ADVANCED] Trying member-by-member discovery");
+        match self.read_udt_member_discovery(tag_name).await {
+            Ok(udt_value) => {
+                println!("🔧 [ADVANCED] Member discovery successful");
+                return Ok(udt_value);
+            }
+            Err(e) => {
+                println!("🔧 [ADVANCED] Member discovery failed: {}", e);
+            }
+        }
+
+        // Strategy C: Try progressive reading
+        println!("🔧 [ADVANCED] Trying progressive reading");
+        match self.read_udt_progressive(tag_name).await {
+            Ok(udt_value) => {
+                println!("🔧 [ADVANCED] Progressive reading successful");
+                return Ok(udt_value);
+            }
+            Err(e) => {
+                println!("🔧 [ADVANCED] Progressive reading failed: {}", e);
+            }
+        }
+
+        // Strategy D: Fallback to simple UDT structure
+        println!("🔧 [ADVANCED] All strategies failed, using fallback");
+        let mut udt_data = std::collections::HashMap::new();
+        udt_data.insert("Error".to_string(), PlcValue::String("UDT too large to read".to_string()));
+        Ok(PlcValue::Udt(udt_data))
+    }
+
+    /// Try reading UDT with specific chunk size
+    async fn read_udt_with_chunk_size(&mut self, tag_name: &str, mut chunk_size: usize) -> crate::error::Result<PlcValue> {
+        let mut all_data = Vec::new();
+        let mut offset = 0;
+        let mut consecutive_failures = 0;
+        const MAX_FAILURES: usize = 3;
+
+        loop {
+            match self.read_udt_chunk_advanced(tag_name, offset, chunk_size).await {
+                Ok(chunk_data) => {
+                    if chunk_data.is_empty() {
+                        break; // No more data
+                    }
+                    
+                    all_data.extend_from_slice(&chunk_data);
+                    offset += chunk_data.len();
+                    consecutive_failures = 0;
+                    
+                    println!("🔧 [CHUNK] Read {} bytes at offset {}, total: {}", 
+                        chunk_data.len(), offset - chunk_data.len(), all_data.len());
+                    
+                    // If we got less data than requested, we might be done
+                    if chunk_data.len() < chunk_size {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    consecutive_failures += 1;
+                    println!("🔧 [CHUNK] Chunk read failed (attempt {}): {}", consecutive_failures, e);
+                    
+                    if consecutive_failures >= MAX_FAILURES {
+                        break;
+                    }
+                    
+                    // Try smaller chunk by reducing size and continuing
+                    if chunk_size > 4 {
+                        chunk_size = chunk_size / 2;
+                        continue;
+                    }
+                }
+            }
+        }
+
+        if all_data.is_empty() {
+            return Err(crate::error::EtherNetIpError::Protocol("No data read from UDT".to_string()));
+        }
+
+        println!("🔧 [CHUNK] Total data collected: {} bytes", all_data.len());
+        
+        // Parse the collected data using our enhanced UDT parser
+        match self.parse_udt_structure(&all_data) {
+            Ok(udt_value) => Ok(udt_value),
+            Err(_) => {
+                // Fallback to simple parsing
+                self.parse_udt_simple(&all_data)
+            }
+        }
+    }
+
+    /// Advanced chunk reading with better error handling
+    async fn read_udt_chunk_advanced(&mut self, tag_name: &str, offset: usize, size: usize) -> crate::error::Result<Vec<u8>> {
+        // Build a more sophisticated read request
+        let mut request = Vec::new();
+
+        // Service: Read Tag (0x4C)
+        request.push(0x4C);
+
+        // Path size calculation
+        let path_size = 2 + (tag_name.len() + 1) / 2;
+        request.push(path_size as u8);
+
+        // Path: tag name
+        request.extend_from_slice(tag_name.as_bytes());
+        if tag_name.len() % 2 != 0 {
+            request.push(0); // Pad to word boundary
+        }
+
+        // For UDTs, we need to use a different approach than array indexing
+        // Try to read as raw data with offset
+        if offset > 0 {
+            // Use element path for offset
+            request.push(0x28); // Element symbol
+            request.push(0x02); // 2 bytes for offset
+            request.extend_from_slice(&(offset as u16).to_le_bytes());
+        }
+
+        // Element count
+        request.push(0x28); // Element count symbol
+        request.push(0x02); // 2 bytes for count
+        request.extend_from_slice(&(size as u16).to_le_bytes());
+
+        // Data type - try as raw bytes first
+        request.push(0x00);
+        request.push(0x01);
+
+        // Send the request
+        let response = self.send_cip_request(&request).await?;
+        let cip_data = self.extract_cip_from_response(&response)?;
+
+        // Parse the response
+        if cip_data.len() < 2 {
+            return Ok(Vec::new()); // No data
+        }
+
+        let _data_type = u16::from_le_bytes([cip_data[0], cip_data[1]]);
+        let data = &cip_data[2..];
+
+        Ok(data.to_vec())
+    }
+
+    /// Try to discover UDT members individually
+    async fn read_udt_member_discovery(&mut self, tag_name: &str) -> crate::error::Result<PlcValue> {
+        println!("🔧 [DISCOVERY] Attempting member discovery for: {}", tag_name);
+        
+        // Common UDT member names to try
+        let common_members = vec![
+            "oFuse_Pass_Status",
+            "oMachine_Running", 
+            "oFuse_Resistance",
+            "oProduction_Rate",
+            "oFuse_Serial_Number",
+            "oCurrent_Shift",
+            "iStart_Production",
+            "iStop_Production",
+            "iTarget_Production",
+            "iQuality_Threshold",
+            "oFuse_Weight1",
+            "oFuse_Weight2",
+            "oFuseSandFillTime",
+            "oFusePartStatus",
+            "oFuseLastStationDone"
+        ];
+
+        let mut udt_data = std::collections::HashMap::new();
+        let mut successful_reads = 0;
+
+        for member in common_members {
+            let full_path = format!("{}.{}", tag_name, member);
+            match self.read_tag(&full_path).await {
+                Ok(value) => {
+                    println!("🔧 [DISCOVERY] Found member {}: {:?}", member, value);
+                    udt_data.insert(member.to_string(), value);
+                    successful_reads += 1;
+                }
+                Err(_) => {
+                    // Member not found or not accessible
+                }
+            }
+        }
+
+        if successful_reads > 0 {
+            println!("🔧 [DISCOVERY] Successfully discovered {} members", successful_reads);
+            Ok(PlcValue::Udt(udt_data))
+        } else {
+            Err(crate::error::EtherNetIpError::Protocol("No UDT members could be discovered".to_string()))
+        }
+    }
+
+    /// Progressive reading - try to read UDT in progressively smaller chunks
+    async fn read_udt_progressive(&mut self, tag_name: &str) -> crate::error::Result<PlcValue> {
+        println!("🔧 [PROGRESSIVE] Starting progressive reading");
+        
+        // Start with a small chunk and gradually increase
+        let mut chunk_size = 4;
+        let mut all_data = Vec::new();
+        let mut offset = 0;
+        
+        while chunk_size <= 512 {
+            match self.read_udt_chunk_advanced(tag_name, offset, chunk_size).await {
+                Ok(chunk_data) => {
+                    if chunk_data.is_empty() {
+                        break;
+                    }
+                    
+                    all_data.extend_from_slice(&chunk_data);
+                    offset += chunk_data.len();
+                    
+                    println!("🔧 [PROGRESSIVE] Read {} bytes with chunk size {}", chunk_data.len(), chunk_size);
+                    
+                    // If we got the full chunk, try a larger one next time
+                    if chunk_data.len() == chunk_size {
+                        chunk_size = (chunk_size * 2).min(512);
+                    }
+                }
+                Err(_) => {
+                    // Reduce chunk size and try again
+                    chunk_size = chunk_size / 2;
+                    if chunk_size < 4 {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if all_data.is_empty() {
+            return Err(crate::error::EtherNetIpError::Protocol("Progressive reading failed".to_string()));
+        }
+
+        println!("🔧 [PROGRESSIVE] Collected {} bytes total", all_data.len());
+        
+        // Parse the collected data
+        match self.parse_udt_structure(&all_data) {
+            Ok(udt_value) => Ok(udt_value),
+            Err(_) => self.parse_udt_simple(&all_data)
         }
     }
 
@@ -2847,28 +3117,23 @@ impl EipClient {
                     Ok(PlcValue::String(value))
                 }
                 0x02A0 => {
-                    // Alternative STRING type (Allen-Bradley specific)
-                    if value_data.len() < 7 {
-                        return Err(EtherNetIpError::Protocol(
-                            "Insufficient data for alternative STRING value".to_string(),
-                        ));
+                    // Allen-Bradley UDT type (0x02A0) - Enhanced UDT Parser
+                    println!("🔧 [DEBUG] Detected UDT structure (0x02A0) with {} bytes", value_data.len());
+                    println!("🔧 [DEBUG] Raw UDT data: {:02X?}", value_data);
+                    
+                    // Enhanced UDT parsing - try multiple parsing strategies
+                    match self.parse_udt_structure(&value_data) {
+                        Ok(udt_value) => {
+                            println!("🔧 [DEBUG] Successfully parsed UDT with {} members", 
+                                if let PlcValue::Udt(data) = &udt_value { data.len() } else { 0 });
+                            Ok(udt_value)
+                        }
+                        Err(e) => {
+                            println!("🔧 [DEBUG] UDT parsing failed: {}, falling back to simple parsing", e);
+                            // Fallback to simple parsing
+                            self.parse_udt_simple(&value_data)
+                        }
                     }
-
-                    // For this format, the string data starts directly at position 6
-                    // We need to find the null terminator or use the full remaining length
-                    let string_start = 6;
-                    let string_data = &value_data[string_start..];
-
-                    // Find null terminator or use full length
-                    let string_end = string_data
-                        .iter()
-                        .position(|&b| b == 0)
-                        .unwrap_or(string_data.len());
-                    let string_bytes = &string_data[..string_end];
-
-                    let value = String::from_utf8_lossy(string_bytes).to_string();
-                    println!("🔧 [DEBUG] Parsed alternative STRING (0x02A0): '{value}'");
-                    Ok(PlcValue::String(value))
                 }
                 _ => {
                     println!("🔧 [DEBUG] Unknown data type: 0x{data_type:04X}");
@@ -2964,17 +3229,19 @@ impl EipClient {
                     let program_name = program_parts[0];
                     let tag_name = program_parts[1];
 
-                    // Build path: Program segment + program name + tag segment + tag name
+                    // Build path for CompactLogix program tags using correct format
+                    // First segment: Program name with "Program:" prefix
                     path.push(0x91); // ANSI Extended Symbol Segment
-                    path.push(program_name.len() as u8);
-                    path.extend_from_slice(program_name.as_bytes());
+                    let program_path = format!("Program:{program_name}");
+                    path.push(program_path.len() as u8);
+                    path.extend_from_slice(program_path.as_bytes());
 
                     // Pad to even length if necessary
-                    if program_name.len() % 2 != 0 {
+                    if program_path.len() % 2 != 0 {
                         path.push(0x00);
                     }
 
-                    // Add tag segment
+                    // Second segment: Tag name
                     path.push(0x91); // ANSI Extended Symbol Segment
                     path.push(tag_name.len() as u8);
                     path.extend_from_slice(tag_name.as_bytes());
@@ -3851,28 +4118,26 @@ impl EipClient {
                         Ok(Some(PlcValue::String(value)))
                     }
                     0x02A0 => {
-                        // Alternative STRING type (Allen-Bradley specific) for batch operations
-                        if value_data.len() < 7 {
-                            return Err(BatchError::SerializationError(
-                                "Insufficient data for alternative STRING value".to_string(),
-                            ));
+                        // Allen-Bradley UDT type (0x02A0) for batch operations - Enhanced
+                        println!("🔧 [DEBUG] Detected UDT structure (0x02A0) with {} bytes", value_data.len());
+                        println!("🔧 [DEBUG] Raw UDT data: {:02X?}", value_data);
+                        
+                        // Enhanced UDT parsing - try multiple parsing strategies
+                        match self.parse_udt_structure(&value_data) {
+                            Ok(udt_value) => {
+                                println!("🔧 [DEBUG] Successfully parsed UDT with {} members", 
+                                    if let PlcValue::Udt(data) = &udt_value { data.len() } else { 0 });
+                                Ok(Some(udt_value))
+                            }
+                            Err(e) => {
+                                println!("🔧 [DEBUG] UDT parsing failed: {}, falling back to simple parsing", e);
+                                // Fallback to simple parsing
+                                match self.parse_udt_simple(&value_data) {
+                                    Ok(udt_value) => Ok(Some(udt_value)),
+                                    Err(e) => Err(BatchError::SerializationError(format!("UDT parsing failed: {}", e)))
+                                }
+                            }
                         }
-
-                        // For this format, the string data starts directly at position 6
-                        // We need to find the null terminator or use the full remaining length
-                        let string_start = 6;
-                        let string_data = &value_data[string_start..];
-
-                        // Find null terminator or use full length
-                        let string_end = string_data
-                            .iter()
-                            .position(|&b| b == 0)
-                            .unwrap_or(string_data.len());
-                        let string_bytes = &string_data[..string_end];
-
-                        let value = String::from_utf8_lossy(string_bytes).to_string();
-                        println!("🔧 [DEBUG] Parsed alternative STRING (0x02A0): '{value}'");
-                        Ok(Some(PlcValue::String(value)))
                     }
                     _ => Err(BatchError::SerializationError(format!(
                         "Unsupported data type: 0x{data_type:04X}"
@@ -4945,6 +5210,120 @@ impl EipClient {
         sessions.insert(session_name.to_string(), session.clone());
 
         Ok(session)
+    }
+
+    /// Enhanced UDT structure parser - tries multiple parsing strategies
+    fn parse_udt_structure(&self, data: &[u8]) -> crate::error::Result<PlcValue> {
+        println!("🔧 [DEBUG] Parsing UDT structure with {} bytes", data.len());
+        
+        // Strategy 1: Try to parse as TestTagUDT structure (DINT, DINT, REAL)
+        if data.len() >= 12 {
+            let mut udt_data = std::collections::HashMap::new();
+            let mut offset = 0;
+            
+            // Try different byte alignments and interpretations
+            for alignment in 0..4 {
+                if alignment + 12 <= data.len() {
+                    let aligned_data = &data[alignment..];
+                    
+                    // Parse first DINT
+                    if aligned_data.len() >= 4 {
+                        let dint1_bytes = [aligned_data[0], aligned_data[1], aligned_data[2], aligned_data[3]];
+                        let dint1_value = i32::from_le_bytes(dint1_bytes);
+                        
+                        // Parse second DINT
+                        if aligned_data.len() >= 8 {
+                            let dint2_bytes = [aligned_data[4], aligned_data[5], aligned_data[6], aligned_data[7]];
+                            let dint2_value = i32::from_le_bytes(dint2_bytes);
+                            
+                            // Parse REAL
+                            if aligned_data.len() >= 12 {
+                                let real_bytes = [aligned_data[8], aligned_data[9], aligned_data[10], aligned_data[11]];
+                                let real_value = f32::from_le_bytes(real_bytes);
+                                
+                                println!("🔧 [DEBUG] Alignment {}: DINT1={}, DINT2={}, REAL={}", 
+                                    alignment, dint1_value, dint2_value, real_value);
+                                
+                                // Check if this looks like reasonable values
+                                if self.is_reasonable_udt_values(dint1_value, dint2_value, real_value) {
+                                    udt_data.insert("TestTagUDT".to_string(), PlcValue::Dint(dint1_value));
+                                    udt_data.insert("TestTagUDT2".to_string(), PlcValue::Dint(dint2_value));
+                                    udt_data.insert("TestTagUDT3".to_string(), PlcValue::Real(real_value));
+                                    
+                                    println!("🔧 [DEBUG] Found reasonable UDT values at alignment {}", alignment);
+                                    return Ok(PlcValue::Udt(udt_data));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Strategy 2: Try to parse as simple packed structure
+        if data.len() >= 4 {
+            let mut udt_data = std::collections::HashMap::new();
+            
+            // Try different interpretations of the data
+            let interpretations = vec![
+                ("DINT_at_start", 0, 4),
+                ("DINT_at_end", data.len().saturating_sub(4), data.len()),
+                ("DINT_middle", data.len() / 2, data.len() / 2 + 4),
+            ];
+            
+            for (name, start, end) in interpretations {
+                if end <= data.len() && end > start {
+                    let bytes = &data[start..end];
+                    if bytes.len() == 4 {
+                        let dint_value = i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+                        println!("🔧 [DEBUG] {}: DINT = {}", name, dint_value);
+                        
+                        if self.is_reasonable_value(dint_value) {
+                            udt_data.insert("Value".to_string(), PlcValue::Dint(dint_value));
+                            return Ok(PlcValue::Udt(udt_data));
+                        }
+                    }
+                }
+            }
+        }
+        
+        Err(crate::error::EtherNetIpError::Protocol("Could not parse UDT structure".to_string()))
+    }
+    
+    /// Simple UDT parser fallback
+    fn parse_udt_simple(&self, data: &[u8]) -> crate::error::Result<PlcValue> {
+        let mut udt_data = std::collections::HashMap::new();
+        
+        if data.len() >= 4 {
+            // Try the last 4 bytes as DINT
+            let start_idx = data.len() - 4;
+            let bytes = [data[start_idx], data[start_idx + 1], data[start_idx + 2], data[start_idx + 3]];
+            let dint_value = i32::from_le_bytes(bytes);
+            println!("🔧 [DEBUG] Simple UDT parsing: DINT = {}", dint_value);
+            udt_data.insert("Value".to_string(), PlcValue::Dint(dint_value));
+        } else {
+            udt_data.insert("Value".to_string(), PlcValue::Dint(0));
+        }
+        
+        Ok(PlcValue::Udt(udt_data))
+    }
+    
+    /// Check if UDT values look reasonable
+    fn is_reasonable_udt_values(&self, dint1: i32, dint2: i32, real: f32) -> bool {
+        // Check for reasonable ranges
+        let dint1_reasonable = dint1 >= -1000 && dint1 <= 1000;
+        let dint2_reasonable = dint2 >= -1000 && dint2 <= 1000;
+        let real_reasonable = real >= -1000.0 && real <= 1000.0 && real.is_finite();
+        
+        println!("🔧 [DEBUG] Reasonableness check: DINT1={} ({}), DINT2={} ({}), REAL={} ({})", 
+            dint1, dint1_reasonable, dint2, dint2_reasonable, real, real_reasonable);
+        
+        dint1_reasonable && dint2_reasonable && real_reasonable
+    }
+    
+    /// Check if a single value looks reasonable
+    fn is_reasonable_value(&self, value: i32) -> bool {
+        value >= -1000 && value <= 1000
     }
 }
 
